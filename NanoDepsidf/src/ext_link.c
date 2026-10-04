@@ -67,6 +67,10 @@ static _Atomic uint8_t s_vkeys = 0;
 static _Atomic uint32_t s_vkeys_until = 0;
 static _Atomic int32_t s_vturns = 0;
 static _Atomic int s_input_link = HOST_LINK_USB; // whose hands they are
+// The WiFi client the knob's controls go to with no USB host (EXT_NET_CONTROLS): -1 none. The
+// generation is stored before the link, and read after it.
+static _Atomic int s_controls_link = -1;
+static _Atomic uint32_t s_controls_gen;
 
 uint8_t CONTROL_HOT ext_virtual_keys(void) {
     uint8_t k = atomic_load_explicit(&s_vkeys, memory_order_relaxed);
@@ -83,9 +87,19 @@ int8_t CONTROL_HOT ext_take_virtual_turn(void) {
 }
 
 void ext_link_stop(host_link_t link) {
+    int was = (int)link;
+    atomic_compare_exchange_strong(&s_controls_link, &was, -1);
     if (atomic_load(&s_input_link) != (int)link) return;
     atomic_store(&s_vkeys, 0);
     atomic_store(&s_vturns, 0);
+}
+
+bool ext_controls_link(host_link_t *link, uint32_t *gen) {
+    int l = atomic_load(&s_controls_link);
+    if (l < 0) return false;
+    *link = (host_link_t)l;
+    *gen = atomic_load(&s_controls_gen);
+    return true;
 }
 
 bool ext_take_serial_boot(void) {
@@ -333,6 +347,21 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
         case EXT_CMD_NET:
             // The network's name and password, the radio, the pairing key: someone with the knob
             // on a cable. Over WiFi they could only cut the link they came over, or hand it on.
+            if (in[1] == EXT_NET_CONTROLS) { // WiFi only: on USB the controls are the cable's anyway
+                if (link == HOST_LINK_USB) {
+                    ack(r, in[0], EXT_ST_BAD_PARAM);
+                    return true;
+                }
+                if (in[2] == 1) {
+                    atomic_store(&s_controls_gen, host_link_gen(link));
+                    atomic_store(&s_controls_link, link);
+                } else {
+                    int was = (int)link;
+                    atomic_compare_exchange_strong(&s_controls_link, &was, -1);
+                }
+                ack(r, in[0], EXT_ST_OK);
+                return true;
+            }
             if (in[1] != EXT_NET_STATUS && link != HOST_LINK_USB) {
                 ack(r, in[0], EXT_ST_USB_ONLY);
                 return true;

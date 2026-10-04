@@ -1,4 +1,5 @@
 #include "usb_task.h"
+#include <string.h>
 #include "tasks_common.h"
 #include "ipc.h"
 #include "freertos/FreeRTOS.h"
@@ -14,6 +15,9 @@
 #include "sysmon.h"
 #include "menu.h"
 #include "host_link.h"
+#include "ext_link.h"
+#include "ext_proto.h"
+#include "host_proto.h"
 
 static const char *TAG = "usb";
 
@@ -183,7 +187,36 @@ void tud_resume_cb(void) {
 // dropped back-to-back reports (stuck Option / middle button in the APP-mode test).
 #define HID_SEND_TRIES 5 // x 1 tick (10ms) -- well past one host poll
 
+// Where the reports go: the USB host when one has the knob, else the WiFi client that asked for
+// the controls (EXT_NET_CONTROLS -- the companion app types and scrolls for the knob, ext_proto.h
+// EXT_TAG_HID), else nowhere. Picked every pass of the usb task; everything upstream (app_sync,
+// BINDINGS, the macros' pauses) is the same for both.
+typedef enum { OUT_NONE, OUT_USB, OUT_NET } hid_out_t;
+static hid_out_t s_out = OUT_NONE;
+static host_link_t s_out_link;
+static uint32_t s_out_gen;
+
+static hid_out_t pick_out(void) {
+    if (tud_mounted()) return OUT_USB;
+    if (ext_controls_link(&s_out_link, &s_out_gen)) return OUT_NET;
+    return OUT_NONE;
+}
+
+// One report to the WiFi client, retried like USB's while its queue is full.
+static bool send_net(uint8_t kind, const uint8_t *body, size_t n) {
+    uint8_t r[HOST_REPORT_SIZE] = {EXT_TAG_HID, kind};
+    memcpy(r + 2, body, n);
+    for (int i = 0; i < HID_SEND_TRIES; i++) {
+        if (host_link_send_event(s_out_link, s_out_gen, r)) return true;
+        vTaskDelay(1);
+    }
+    ESP_LOGW(TAG, "report to the WiFi client dropped");
+    sysmon_note_hid_drop();
+    return false;
+}
+
 static bool send_mouse(uint8_t buttons, int8_t dx, int8_t dy, int8_t wheel) {
+    if (s_out == OUT_NET) return send_net(EXT_HID_MOUSE, (const uint8_t[]){buttons, (uint8_t)dx, (uint8_t)dy, (uint8_t)wheel}, 4);
     for (int i = 0; i < HID_SEND_TRIES; i++) {
         if (tud_hid_n_ready(HID_INSTANCE_INPUT) && tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, dx, dy, wheel, 0)) {
             return true;
@@ -212,6 +245,7 @@ static uint8_t host_modifier(uint8_t m) {
 static bool send_keys(uint8_t modifier, uint8_t keycode) {
     uint8_t keys[6] = {keycode, 0, 0, 0, 0, 0};
     modifier = host_modifier(modifier);
+    if (s_out == OUT_NET) return send_net(EXT_HID_KEYBOARD, (const uint8_t[]){modifier, keycode, 0, 0, 0, 0, 0}, 7);
     for (int i = 0; i < HID_SEND_TRIES; i++) {
         if (tud_hid_n_ready(HID_INSTANCE_INPUT)
             && tud_hid_keyboard_report(REPORT_ID_KEYBOARD, modifier, keycode ? keys : NULL)) {
@@ -226,6 +260,7 @@ static bool send_keys(uint8_t modifier, uint8_t keycode) {
 
 // Consumer page (media keys): the report is one 16-bit usage; 0 releases it.
 static bool send_consumer(uint16_t usage) {
+    if (s_out == OUT_NET) return send_net(EXT_HID_CONSUMER, (const uint8_t *)&usage, 2);
     for (int i = 0; i < HID_SEND_TRIES; i++) {
         if (tud_hid_n_ready(HID_INSTANCE_INPUT)
             && tud_hid_n_report(HID_INSTANCE_INPUT, REPORT_ID_CONSUMER, &usage, sizeof(usage))) {
@@ -365,14 +400,22 @@ static void usb_task_fn(void *arg) {
     menu_host_t host = menu_get_host();
     while (1) {
         bool got = xQueueReceive(g_hid_report_queue, &msg, 1) == pdTRUE;
-        if (!tud_mounted()) {
-            sent_buttons = 0; // a fresh enumeration starts with nothing held
+        if (!tud_mounted()) host_link_stop(); // USB's share (cheap); the companion over WiFi carries on
+        hid_out_t out = pick_out();
+        if (out != s_out) {
+            // Leaving the WiFi client (a cable came in, or another client asked): let go of what
+            // it holds first. A fresh USB enumeration, or a new client, starts with nothing held.
+            if (s_out == OUT_NET && (sent_buttons || sent_modifier)) {
+                send_keys(0, 0);
+                send_mouse(0, 0, 0, 0);
+            }
+            ESP_LOGI(TAG, "controls: %s", out == OUT_USB ? "USB" : out == OUT_NET ? "WiFi" : "none");
+            sent_buttons = 0;
             sent_modifier = 0;
-            host_link_stop(); // USB's share (cheap); the companion over WiFi carries on
-            host_link_poll();
-            continue;
+            s_out = out;
         }
         host_link_poll();
+        if (out == OUT_NONE) continue;
         // BINDINGS switched while a modifier may be down: the host holds it under the old
         // mapping (Cmd vs Ctrl), so let go of everything; app_sync presses what's wanted again.
         if (menu_get_host() != host) {

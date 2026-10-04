@@ -521,6 +521,7 @@ and the companion shows a feature only from the version that has it:
 | 7 | `NET KEY`: the WiFi pairing key |
 | 8 | `MUSIC`: the now-playing cover style (`PREFS` reports it, and how many styles there are) |
 | 9 | `PD`: the USB-PD chip's NVM, read and checked, or written to 5 V 3 A only (USB only, `quadra.py pd`). Also two WiFi clients at once, and `COVER` over WiFi |
+| 10 | `NET CONTROLS` and `EXT_TAG_HID`: with no USB host, the HID reports go to the WiFi client that asked (the companion app types and scrolls for the knob) |
 
 Work that touches NVS or decodes images runs in the usb task (`ext_link_poll`), not in
 TinyUSB's callback. Keys from `INPUT` are OR-ed into the real ones in the control loop and let
@@ -546,6 +547,13 @@ come from the same computer.
 - **USB only:** the WiFi network and password, the key, SERIAL boot, and icon uploads
   (`tools/send_icon.py`). The cover comes over either; its acknowledgement goes to the link
   that began it.
+
+**The controls over WiFi:** with no USB host, `usb_task.c` sends the reports USB would have
+carried (keyboard, mouse, media keys; the whole state each time) to the WiFi client that asked
+with `NET CONTROLS` -- the companion app, which posts them as macOS events
+(`companion/src-tauri/src/input.rs`, Accessibility permission). Everything upstream (APP mode,
+BINDINGS, macros) is the same. Leaving that client lets go of whatever it held; the app also
+lets go when the link drops or goes quiet for 1.5 s with something held.
 
 `host_link.c` serves the links side by side (USB and one per WiFi client): replies go back on
 the link that asked, ahead of the streams. An agent approval's answer goes to every link, the

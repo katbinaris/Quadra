@@ -5,9 +5,10 @@
 // range (0x20-0x2F, replies and events 0xC0-0xCF) so upstream can grow 0x10-0x1F freely.
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 9 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
-                            // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
-                            // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi
+#define EXT_PROTO_VERSION 10 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+                             // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
+                             // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi;
+                             // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi)
 
 // --- Host -> device ---
 enum {
@@ -39,6 +40,9 @@ enum {
                            //   STATUS -> EXT_TAG_NET. The password is never sent back.
                            //   KEY: [2]=1 a new one (every paired companion pairs again), 0 the
                            //     current one (made on first use) -> EXT_TAG_KEY
+                           //   CONTROLS (WiFi only): [2]=1 this client types and scrolls for the
+                           //     knob while no USB host has it (EXT_TAG_HID), 0 not -> EXT_TAG_ACK.
+                           //     One client at a time: the last to ask
     EXT_CMD_TIME = 0x2A,   // the Mac service, on connecting and every few minutes: [1..6] UTC time
                            //   in ms (48-bit) [7..18] LOCAL's label [19..63] its POSIX TZ rule
                            //   (clock.h), NUL-padded. No reply.
@@ -61,7 +65,8 @@ enum {
 };
 enum { EXT_INPUT_KEYS = 1, EXT_INPUT_TURN = 2 };
 enum { EXT_CLOCK_FORMAT = 1, EXT_CLOCK_ZONE = 2, EXT_CLOCK_GET = 3 };
-enum { EXT_NET_SSID = 1, EXT_NET_PASS_A = 2, EXT_NET_PASS_B = 3, EXT_NET_APPLY = 4, EXT_NET_STATUS = 5, EXT_NET_KEY = 6 };
+enum { EXT_NET_SSID = 1, EXT_NET_PASS_A = 2, EXT_NET_PASS_B = 3, EXT_NET_APPLY = 4, EXT_NET_STATUS = 5, EXT_NET_KEY = 6,
+       EXT_NET_CONTROLS = 7 };
 enum { EXT_COVER_BEGIN = 1, EXT_COVER_DATA = 2, EXT_COVER_END = 3 };
 #define EXT_COVER_CHUNK 58
 #define EXT_TRACK_PLAYING 0x01
@@ -97,7 +102,14 @@ enum {
     EXT_TAG_KEY = 0xC7,    // [1..32]=the WiFi pairing key (net_link.h) [33..34]=its TCP port
     EXT_TAG_PD = 0xC8,     // [1]=pd_nvm_result_t [2]=sink PDOs in the NVM before [3]=after
                            //   [4..43]=the NVM as read before (5 sectors x 8 bytes)
+    EXT_TAG_HID = 0xC9,    // to the EXT_NET_CONTROLS client: the HID report USB would have carried,
+                           //   the whole state each time (like HID). [1]=EXT_HID_*:
+                           //   KEYBOARD: [2]=modifiers (HID bits) [3..8]=keys held (HID usages)
+                           //   MOUSE: [2]=buttons (1 left, 2 right, 4 middle) [3]=dx [4]=dy
+                           //     [5]=wheel (int8; dx, dy, wheel are this report's motion, + = up)
+                           //   CONSUMER: [2..3]=usage held (media keys; 0 = released)
 };
+enum { EXT_HID_KEYBOARD = 1, EXT_HID_MOUSE = 2, EXT_HID_CONSUMER = 3 };
 
 enum {
     EXT_ST_OK = 0,

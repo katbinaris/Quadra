@@ -33,6 +33,9 @@ void host_link_queue(const uint8_t *report);
 // vendor HID interface sees every report: events whose owner may have reconnected (an agent
 // approval's answer).
 void host_link_queue_all(const uint8_t *report);
+// usb task: a report for `link`'s host `gen` (the controls over WiFi), on its way at once. false:
+// that host is gone, or its queue is full -- try again in a tick.
+bool host_link_send_event(host_link_t link, uint32_t gen, const uint8_t *report);
 
 // TinyUSB task: a vendor IN report went out -- sends USB's next one.
 void host_link_report_sent(void);

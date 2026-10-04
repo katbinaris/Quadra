@@ -23,8 +23,12 @@ bool ext_restart_due(void);
 uint8_t ext_virtual_keys(void);
 int8_t ext_take_virtual_turn(void);
 
-// `link`'s host went away: the keys it held let go, the turns it asked for are dropped.
+// `link`'s host went away: the keys it held let go, the turns it asked for are dropped, and it
+// stops being the controls' client.
 void ext_link_stop(host_link_t link);
+// usb task: the WiFi client that types and scrolls for the knob while no USB host has it
+// (EXT_NET_CONTROLS), and its host's generation (host_link_gen). false: none.
+bool ext_controls_link(host_link_t *link, uint32_t *gen);
 
 // main.c, once, before the USB personality is chosen: true when the restart that led to this
 // boot asked for a serial-only boot (EXT_REBOOT_SERIAL). Clears the request.

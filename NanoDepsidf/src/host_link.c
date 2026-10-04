@@ -129,6 +129,16 @@ void host_link_queue(const uint8_t *report) {
     queue_reply(HOST_LINK_USB, report);
 }
 
+static bool send_reply_locked(host_link_t l);
+
+bool host_link_send_event(host_link_t link, uint32_t gen, const uint8_t *report) {
+    xSemaphoreTake(s_tx_lock, portMAX_DELAY);
+    bool ok = atomic_load(&s_gen[link]) == gen && xQueueSend(s_replies[link], report, 0) == pdTRUE;
+    if (ok) send_reply_locked(link);
+    xSemaphoreGive(s_tx_lock);
+    return ok;
+}
+
 void host_link_queue_all(const uint8_t *report) {
     queue_reply(HOST_LINK_USB, report);
     for (int l = HOST_LINK_NET; l < HOST_LINK_COUNT; l++)
