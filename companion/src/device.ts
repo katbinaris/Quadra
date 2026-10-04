@@ -1,7 +1,7 @@
 // One knob, as the UI sees it: connection, the latest settings / state / SYS INFO, the app
 // profiles with their icons, and a short history for the charts. Views subscribe and redraw.
 
-import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, UploadFlag, type Hello, type ClockSlot, type Lights, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SysA, type SysB } from "./proto";
+import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lights, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SysA, type SysB } from "./proto";
 import { rgb565ToImage, tidy, type ProfileJson } from "./profile";
 import { loadPairing, savePairing, type Pairing, type Transport } from "./transport";
 
@@ -27,9 +27,12 @@ export interface History {
 const STREAM_HZ = 30;
 const SEARCH_MS = 1000;
 const TRANSFER_MS = 8000;
-const PREFS_MS = 1000; // LIGHTS and the idle word can change on the knob too (its menu)
+const PREFS_MS = 1000; // settings, LIGHTS and the idle word can change on the knob too (its menu)
 const LIGHTS_RETRY_MS = 60; // the knob takes one LIGHTS at a time
 const LIST_RETRY_MS = 2000; // a step of the profile list unanswered this long is asked again
+// An icon's chunks asked for at once. One at a time, a list of eight took ~25 s over WiFi (672
+// round trips); six in flight, ~3 s. The knob holds 16 replies, and the poll asks up to 8 at once.
+const ICON_WINDOW = 6;
 
 export class DeviceError extends Error {}
 
@@ -54,7 +57,8 @@ export class Device {
 
   private listeners = new Set<(t: Topic) => void>();
   private streamWanted = false; // the live stream (STATE, SYS, LEDs): only while a view needs it
-  private iconBuf = new Map<number, Uint8Array>();
+  // The icon being fetched: the offsets in, and how far the requests have gone.
+  private icon: { index: number; buf: Uint8Array; have: globalThis.Set<number>; sent: number; at: number } | null = null;
   // On a list reload, icons are fetched again only for these (all when null).
   private staleIcons: globalThis.Set<number> | null = null;
   private searchTimer: number | undefined;
@@ -135,12 +139,16 @@ export class Device {
     this.error = null;
     this.profiles = [];
     this.staleIcons = null;
-    this.iconBuf.clear();
+    this.icon = null;
     this.want = null;
     window.clearInterval(this.listTimer);
     this.listTimer = window.setInterval(() => {
-      const w = this.want;
+      const w = this.want, ic = this.icon;
       if (w && Date.now() - w.at > LIST_RETRY_MS) this.ask(w.r, w.key);
+      if (ic && Date.now() - ic.at > LIST_RETRY_MS) {
+        ic.at = Date.now();
+        for (let o = 0; o < ic.sent; o += ICON_CHUNK) if (!ic.have.has(o)) void this.send(encode.profileIcon(ic.index, o));
+      }
     }, LIST_RETRY_MS / 2);
     this.changed();
     this.ask(encode.hello(), "hello");
@@ -158,6 +166,7 @@ export class Device {
     window.clearInterval(this.listTimer);
     window.clearTimeout(this.listReload);
     this.want = null;
+    this.icon = null;
     this.changed();
     this.search();
   }
@@ -306,7 +315,7 @@ export class Device {
   // The list again (names, flags), after a change -- icons only for `changed` (all if not given:
   // a removal moves the ones after it).
   reloadProfiles(changed?: number) {
-    this.iconBuf.clear();
+    this.icon = null;
     this.staleIcons = changed === undefined ? null : new globalThis.Set([changed]);
     this.ask(encode.hello(), "hello");
   }
@@ -392,6 +401,8 @@ export class Device {
           window.clearInterval(this.prefsTimer);
           let tick = 0;
           const poll = () => {
+            // Settings too: a mode or profile picked on the knob shows here within a second
+            void this.send(encode.getSettings());
             void this.send(encode.extPrefs());
             // CLOCK: the format every second, the zones every 5 (the CLI can change them too)
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION && tick++ % 5 === 4) for (let s = 1; s < CLOCK_SLOTS; s++) void this.send(encode.clockGet(s));
@@ -454,6 +465,7 @@ export class Device {
             // The list changed under it (another client): start it over, after a pause so an
             // error that stays doesn't spin.
             this.want = null;
+            this.icon = null;
             window.clearTimeout(this.listReload);
             this.listReload = window.setTimeout(() => this.status === "connected" && this.reloadProfiles(), LIST_RETRY_MS);
             break;
@@ -500,25 +512,36 @@ export class Device {
     this.profiles[p.index] = { ...p, icon: same ? old.icon : null };
     const fresh = same && (old.icon !== null) === p.hasIcon && this.staleIcons !== null && !this.staleIcons.has(p.index);
     if (p.hasIcon && !fresh) {
-      this.iconBuf.set(p.index, new Uint8Array(ICON_BYTES));
-      this.ask(encode.profileIcon(p.index, 0), `i${p.index}:0`);
+      this.want = null; // the icon's own requests now (the list timer asks again for lost ones)
+      this.icon = { index: p.index, buf: new Uint8Array(ICON_BYTES), have: new globalThis.Set(), sent: 0, at: Date.now() };
+      this.pumpIcon();
     } else {
       this.nextProfile(p.index);
     }
     this.changed("profiles");
   }
 
+  // Up to ICON_WINDOW of the icon's chunks asked for and not in yet; each one in asks for the next.
+  private pumpIcon() {
+    const ic = this.icon!;
+    while (ic.sent < ICON_BYTES && ic.sent / ICON_CHUNK - ic.have.size < ICON_WINDOW) {
+      void this.send(encode.profileIcon(ic.index, ic.sent));
+      ic.sent += ICON_CHUNK;
+    }
+  }
+
   private onIconChunk(index: number, offset: number, bytes: Uint8Array) {
-    const buf = this.iconBuf.get(index);
-    if (!buf || this.want?.key !== `i${index}:${offset}`) return;
-    buf.set(bytes.subarray(0, ICON_BYTES - offset), offset);
-    const next = offset + bytes.length;
-    if (next < ICON_BYTES && bytes.length > 0) {
-      this.ask(encode.profileIcon(index, next), `i${index}:${next}`);
+    const ic = this.icon;
+    if (!ic || ic.index !== index || offset % ICON_CHUNK || offset >= ic.sent || ic.have.has(offset)) return;
+    ic.buf.set(bytes.subarray(0, Math.min(ICON_CHUNK, ICON_BYTES - offset)), offset);
+    ic.have.add(offset);
+    ic.at = Date.now();
+    if (ic.have.size < Math.ceil(ICON_BYTES / ICON_CHUNK)) {
+      this.pumpIcon();
       return;
     }
-    if (this.profiles[index]) this.profiles[index].icon = rgb565ToImage(buf, 48);
-    this.iconBuf.delete(index);
+    this.icon = null;
+    if (this.profiles[index]) this.profiles[index].icon = rgb565ToImage(ic.buf, 48);
     this.nextProfile(index);
     this.changed("profiles");
   }

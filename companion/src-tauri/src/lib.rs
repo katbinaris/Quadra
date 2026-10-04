@@ -131,7 +131,8 @@ fn hid_close(link: State<Link>) {
 
 const WIRE: usize = REPORT_SIZE + 16;
 const NET_IO: Duration = Duration::from_secs(3);
-// The knob streams STATE at 30 Hz while the app is in: this long without a word, it's gone.
+// The app polls the knob every second (device.ts), so it always hears back: this long without a
+// word, it's gone.
 const NET_SILENCE: Duration = Duration::from_secs(10);
 
 #[derive(Default)]

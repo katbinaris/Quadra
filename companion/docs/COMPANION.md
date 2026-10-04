@@ -45,6 +45,11 @@ a few seconds. Pairing hands the app the knob's key: nothing else on the network
 forge or replay what goes between them. The network, the password and the key itself change
 over USB only.
 
+Wi-Fi carries what this app does: settings, haptics, the lights and the profiles (the list
+takes a few seconds to fill). The knob's controls don't go over it: turning it and pressing
+F1–F4 type and scroll over USB, on the computer its cable is in. The music cover comes from the
+Mac service, also over USB.
+
 Neither needs a driver, and macOS doesn't ask for Input Monitoring permission.
 
 The knob has to start in **HID** mode, which is the normal one. In serial mode (used for

@@ -1,7 +1,7 @@
 // A pretend knob for working on the UI without hardware: open the page with ?demo. Answers
 // the protocol like host_link.c does and streams a slowly turning knob.
 
-import { CLOCK_SLOTS, ClockOp, Cmd, EXT_CLOCK_VERSION, ExtCmd, ExtTag, ICON_BYTES, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, Tag, TEXT_CHUNK, crc32 } from "./proto";
+import { CLOCK_SLOTS, ClockOp, Cmd, EXT_CLOCK_VERSION, ExtCmd, ExtTag, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, Tag, TEXT_CHUNK, crc32 } from "./proto";
 import { b64ToBytes, ID_RE, type ProfileJson } from "./profile";
 import type { Transport } from "./transport";
 import builtins from "./demo_builtins.json";
@@ -211,7 +211,7 @@ export class MockTransport implements Transport {
         const p = this.reg[idx] && view(this.reg[idx]);
         if (!p?.icon48) return;
         const icon = b64ToBytes(p.icon48);
-        const len = Math.min(56, ICON_BYTES - off);
+        const len = Math.min(ICON_CHUNK, ICON_BYTES - off);
         out[0] = Tag.PROFILE_ICON;
         out[1] = idx;
         v.setUint16(2, off, true);

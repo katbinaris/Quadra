@@ -6,6 +6,7 @@ export const REPORT_SIZE = 64;
 export const PROTO_VERSION = 3;
 export const TEXT_CHUNK = 60; // profile JSON per report
 export const ICON_BYTES = 48 * 48 * 2;
+export const ICON_CHUNK = 56; // icon bytes per report (HOST_ICON_CHUNK)
 export const LED_COUNT = 68; // 0-59 the ring (clockwise from 12 o'clock), 60-67 the keys, two each
 
 export const Cmd = {
