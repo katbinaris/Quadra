@@ -5,10 +5,12 @@
 
 // The desktop app's link (host_proto.h has the wire format; the icon upload shares it,
 // icon_store.h): over the vendor HID interface (usb_task.c) and, once paired, over WiFi
-// (net_link.c). Each command's reply goes back on the link it came on; the live stream and the
-// screen go to the link that last asked for them.
+// (net_link.c), up to two clients at once (the companion app and the Mac service). Each command's
+// reply goes back on the link it came on; the live stream and the screen go to the link that
+// last asked for them.
 
-typedef enum { HOST_LINK_USB = 0, HOST_LINK_NET = 1, HOST_LINK_COUNT } host_link_t;
+// HOST_LINK_NET + slot: WiFi client `slot` (net_link.h, NET_LINK_SESSIONS of them).
+typedef enum { HOST_LINK_USB = 0, HOST_LINK_NET = 1, HOST_LINK_NET2 = 2, HOST_LINK_COUNT } host_link_t;
 
 void host_link_init(uint8_t vendor_instance);
 
@@ -27,6 +29,10 @@ void host_link_poll(void);
 uint32_t host_link_gen(host_link_t link);
 void host_link_queue_to(host_link_t link, uint32_t gen, const uint8_t *report);
 void host_link_queue(const uint8_t *report);
+// Every link's host now -- USB and each WiFi client -- the way every program that opens the
+// vendor HID interface sees every report: events whose owner may have reconnected (an agent
+// approval's answer).
+void host_link_queue_all(const uint8_t *report);
 
 // TinyUSB task: a vendor IN report went out -- sends USB's next one.
 void host_link_report_sent(void);

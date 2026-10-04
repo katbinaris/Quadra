@@ -514,7 +514,7 @@ and the companion shows a feature only from the version that has it:
 
 | Version | Adds |
 |---|---|
-| 1–3 | `REBOOT` (also into SERIAL, for buttonless flashing), `TEXT` (the idle word), `LIGHTS`, `PREFS`, `NOTIFY` (agent requests and their answers), `COVER` (a 240×240 JPEG, USB only), `TRACK` (title, artist, colours, volume), `AGENTS` (the dashboard). The companion's Look page needs any of these |
+| 1–3 | `REBOOT` (also into SERIAL, for buttonless flashing), `TEXT` (the idle word), `LIGHTS`, `PREFS`, `NOTIFY` (agent requests and their answers), `COVER` (a 240×240 JPEG, from one link at a time), `TRACK` (title, artist, colours, volume), `AGENTS` (the dashboard). The companion's Look page needs any of these |
 | 4 | `NET`: WiFi setup and status |
 | 5 | `TIME` (from the Mac service), `CLOCK` (format and zones) |
 | 6 | `SCREEN` (the live screen: changed 16×16 tiles, RLE when shorter) and `INPUT` (keys and turns from a host). The companion used them as a live remote until its redesign (2026-10); it asks for neither now |
@@ -528,8 +528,11 @@ approving an agent request (`notify.c`): only the physical F1 counts there.
 
 ### 10.2 Over WiFi
 
-`net_link.c` serves the same 64-byte reports over TCP port 3333 (mDNS `_quadra._tcp`) to one
-client at a time; a newly authenticated one takes over.
+`net_link.c` serves the same 64-byte reports over TCP port 3333 (mDNS `_quadra._tcp`) to two
+clients at once, the companion app and the Mac service. A newly authenticated client takes a
+free slot, or else the slot of the one that has been quiet the longest (a live client sends
+something every second or two, so that's one that left without closing). Not by address: both
+come from the same computer.
 
 - **Pairing** is over USB only. The knob makes a random 256-bit key (`NET KEY`) and the
   companion keeps it.
@@ -539,11 +542,13 @@ client at a time; a newly authenticated one takes over.
 - **Strangers:** handshakes run side by side, one slot per peer address, with a 2 s
   deadline. A peer that stalls or floods never holds up the companion that's in
   (`net_pend.h`, `tools/net_pend_test`).
-- **USB only:** the WiFi network and password, the key, SERIAL boot, and cover and icon
-  uploads.
+- **USB only:** the WiFi network and password, the key, SERIAL boot, and icon uploads
+  (`tools/send_icon.py`). The cover comes over either; its acknowledgement goes to the link
+  that began it.
 
-`host_link.c` serves both links side by side: replies go back on the link that asked, ahead
-of the streams.
+`host_link.c` serves the links side by side (USB and one per WiFi client): replies go back on
+the link that asked, ahead of the streams. An agent approval's answer goes to every link, the
+way every program that opens the vendor HID interface sees every report.
 
 The extensions, WiFi, MUSIC, AGENTS, CLOCK, LIGHTS and the idle word were contributed by
 [@Dviros](https://github.com/Dviros) in

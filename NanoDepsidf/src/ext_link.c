@@ -45,6 +45,10 @@ static _Atomic bool s_lights_pending = false;
 static _Atomic bool s_cover_end_pending = false;
 static host_link_t s_text_link, s_lights_link;
 static uint32_t s_text_gen, s_lights_gen; // host_link_gen() of the link that asked
+// The cover being received: one transfer at a time (media.h), on the link that began it -- the
+// Mac service, over USB or WiFi. Its pieces from any other link are ignored.
+static _Atomic int s_cover_link = HOST_LINK_USB;
+static uint32_t s_cover_gen;
 static bool s_key_fresh;
 static _Atomic bool s_key_pending = false; // EXT_NET_KEY (USB)
 // WiFi setup, staged until APPLY (EXT_CMD_NET). The password is wiped once it's stored.
@@ -210,17 +214,16 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             build_prefs(r);
             return true;
         case EXT_CMD_COVER:
-            if (link != HOST_LINK_USB) { // the Mac service's, one transfer at a time
-                ack(r, in[0], EXT_ST_USB_ONLY);
-                return true;
-            }
-            if (in[1] == EXT_COVER_BEGIN) {
+            if (in[1] == EXT_COVER_BEGIN) { // a new transfer, from whichever link (it replaces one going)
                 uint32_t len, crc;
                 memcpy(&len, in + 4, 4);
                 memcpy(&crc, in + 8, 4);
+                atomic_store(&s_cover_link, link);
+                s_cover_gen = host_link_gen(link);
                 ack(r, in[0], media_cover_begin(len, crc) ? EXT_ST_OK : EXT_ST_BAD_PARAM);
                 return true;
             }
+            if (atomic_load(&s_cover_link) != (int)link) return false; // not this link's transfer
             if (in[1] == EXT_COVER_DATA) {
                 uint32_t off = in[2] | in[3] << 8 | (uint32_t)in[4] << 16;
                 media_cover_data(off, in + 6, in[5] <= EXT_COVER_CHUNK ? in[5] : 0); // a failure shows at END
@@ -383,7 +386,7 @@ void ext_link_poll(void) {
         bool ok = media_cover_end();
         memset(r, 0, sizeof(r));
         ack(r, EXT_CMD_COVER, ok ? EXT_ST_OK : EXT_ST_BAD_PARAM);
-        host_link_queue(r); // USB only
+        host_link_queue_to((host_link_t)atomic_load(&s_cover_link), s_cover_gen, r); // the link that sent it
         atomic_store(&s_cover_end_pending, false);
     }
     if (atomic_load(&s_net_apply_pending)) {
@@ -420,7 +423,7 @@ void ext_link_poll(void) {
         r[0] = EXT_TAG_NOTIFY;
         r[1] = decision;
         put_u16(r + 2, id);
-        host_link_queue(r);
+        host_link_queue_all(r); // the Mac service, on whichever link (it ignores ids it didn't post)
     }
     if (atomic_load(&s_reboot_pending) && (int32_t)(xTaskGetTickCount() - s_reboot_at) >= REBOOT_FALLBACK_TICKS) {
         ESP_LOGW(TAG, "restart requested by the host -- the control loop didn't take it, restarting from here");

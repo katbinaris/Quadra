@@ -641,6 +641,23 @@ def cmd_wifi_check(args):
     live = Link(key)
     p, _ = live.ask([EXT_HELLO], EXT_TAG_HELLO)
     check("handshake, encrypted round trip", p[1] >= 7)
+
+    # Two clients at once (the companion app and the Mac service), each answered on its own
+    # session; a third takes the slot of the one that's been quiet the longest.
+    second = Link(key)
+    p1, _ = live.ask([EXT_HELLO], EXT_TAG_HELLO)
+    p2, _ = second.ask([EXT_HELLO], EXT_TAG_HELLO)
+    check("two clients at once, both answered", p1[0] == p2[0] == EXT_TAG_HELLO)
+    time.sleep(0.3)
+    live.ask([EXT_HELLO], EXT_TAG_HELLO)  # `second` is the quieter one now
+    third = Link(key)
+    p3, _ = third.ask([EXT_HELLO], EXT_TAG_HELLO)
+    check("a third client takes the quietest one's slot", p3[0] == EXT_TAG_HELLO and second.closed_by_knob())
+    p1, _ = live.ask([EXT_HELLO], EXT_TAG_HELLO)
+    check("...and the other client carries on", p1[0] == EXT_TAG_HELLO)
+    third.s.close()
+    second.s.close()
+    time.sleep(0.3)
     count = hello[2]
     rtt = [live.ask([0x16, i % count], 0xB2)[1] * 1000 for i in range(20)]
     check("round trips", max(rtt) < 250, f"{min(rtt):.0f}/{sum(rtt) / len(rtt):.0f}/{max(rtt):.0f} ms min/avg/max")
@@ -716,7 +733,7 @@ def cmd_wifi_check(args):
           max(during) < 250, f"max {max(during):.0f} ms")
     check("...the knob keeps one of them (one slot per address)", kept <= 1, f"{kept} still open")
     try:
-        live = Link(key)  # takes over from the session before
+        live = Link(key)  # the free slot (the session before keeps its own)
         p, _ = live.ask([EXT_HELLO], EXT_TAG_HELLO)
         check("...and a handshake from the same address goes through", p[0] == EXT_TAG_HELLO)
     except (ConnectionError, OSError) as e:

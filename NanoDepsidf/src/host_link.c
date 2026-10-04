@@ -111,7 +111,7 @@ static void put_str(uint8_t *b, const char *s, size_t n) {
 }
 
 static void queue_reply(host_link_t link, const uint8_t *r) {
-    if (xQueueSend(s_replies[link], r, 0) != pdTRUE && link == HOST_LINK_NET)
+    if (xQueueSend(s_replies[link], r, 0) != pdTRUE && link != HOST_LINK_USB)
         ESP_LOGW(TAG, "reply dropped (queue full)"); // USB with no host: nobody to tell
 }
 
@@ -127,6 +127,12 @@ void host_link_queue_to(host_link_t link, uint32_t gen, const uint8_t *report) {
 
 void host_link_queue(const uint8_t *report) {
     queue_reply(HOST_LINK_USB, report);
+}
+
+void host_link_queue_all(const uint8_t *report) {
+    queue_reply(HOST_LINK_USB, report);
+    for (int l = HOST_LINK_NET; l < HOST_LINK_COUNT; l++)
+        if (net_link_connected(l - HOST_LINK_NET)) host_link_queue_to((host_link_t)l, host_link_gen((host_link_t)l), report);
 }
 
 
@@ -325,7 +331,9 @@ static bool handle(host_link_t link, const uint8_t *in, uint8_t *r) {
 void host_link_init(uint8_t vendor_instance) {
     s_instance = vendor_instance;
     for (int l = 0; l < HOST_LINK_COUNT; l++) {
-        s_replies[l] = xQueueCreate(REPLY_QUEUE_DEPTH, HOST_REPORT_SIZE);
+        // WiFi's in PSRAM (internal RAM is short; no task that uses them runs with the cache off)
+        s_replies[l] = l == HOST_LINK_USB ? xQueueCreate(REPLY_QUEUE_DEPTH, HOST_REPORT_SIZE)
+                                          : xQueueCreateWithCaps(REPLY_QUEUE_DEPTH, HOST_REPORT_SIZE, MALLOC_CAP_SPIRAM);
         s_st[l].led_part = LED_PARTS;
         s_dl[l].req = -1;
     }
@@ -411,11 +419,11 @@ static void build_sys(uint8_t *a, uint8_t *b) {
 // --- Sending: on USB (the vendor IN endpoint) or the network (net_link.c) ---
 
 static bool link_ready(host_link_t l) {
-    return l == HOST_LINK_USB ? tud_hid_n_ready(s_instance) : net_link_ready();
+    return l == HOST_LINK_USB ? tud_hid_n_ready(s_instance) : net_link_ready(l - HOST_LINK_NET);
 }
 
 static bool link_send(host_link_t l, const uint8_t *r) {
-    return l == HOST_LINK_USB ? tud_hid_n_report(s_instance, 0, r, HOST_REPORT_SIZE) : net_link_send(r);
+    return l == HOST_LINK_USB ? tud_hid_n_report(s_instance, 0, r, HOST_REPORT_SIZE) : net_link_send(l - HOST_LINK_NET, r);
 }
 
 // The next piece of link `l`'s profile download, if it has room. Caller holds s_tx_lock.
@@ -489,7 +497,7 @@ static bool send_screen_or_leds_locked(host_link_t l) {
 static bool send_reply_locked(host_link_t l) {
     uint8_t r[HOST_REPORT_SIZE];
     if (xQueuePeek(s_replies[l], r, 0) != pdTRUE) return false;
-    bool sent = l == HOST_LINK_USB ? link_ready(l) && link_send(l, r) : net_link_reply(r);
+    bool sent = l == HOST_LINK_USB ? link_ready(l) && link_send(l, r) : net_link_reply(l - HOST_LINK_NET, r);
     if (sent) xQueueReceive(s_replies[l], r, 0);
     return sent;
 }
@@ -645,7 +653,8 @@ void host_link_poll(void) {
     // USB: one report a pass; its completion callback sends the rest back to back. The network
     // has no such callback: a batch a pass, into net_link's queue.
     send_next(HOST_LINK_USB);
-    for (int i = 0; i < NET_BATCH && send_next(HOST_LINK_NET); i++) {}
+    for (int l = HOST_LINK_NET; l < HOST_LINK_COUNT; l++)
+        for (int i = 0; i < NET_BATCH && send_next((host_link_t)l); i++) {}
 }
 
 // The screen to link `to` at `fps` (0: off). A new owner starts from a whole frame: what the
@@ -659,13 +668,17 @@ static void screen_to_locked(host_link_t to, uint8_t fps) {
     screen_stream_set(fps);
 }
 
-// The screen's next owner once `link` lets go: the other link, if it still wants it.
+// The screen's next owner once `link` lets go: another link that still wants it, if any.
 static void screen_release_locked(host_link_t link) {
     if (atomic_load(&s_screen_link) != (int)link) return;
-    host_link_t other = link == HOST_LINK_USB ? HOST_LINK_NET : HOST_LINK_USB;
-    uint8_t fps = atomic_load(&s_st[other].screen_fps);
-    if (fps) screen_to_locked(other, fps);
-    else screen_stream_stop();
+    for (int l = 0; l < HOST_LINK_COUNT; l++) {
+        uint8_t fps = atomic_load(&s_st[l].screen_fps);
+        if (l != (int)link && fps) {
+            screen_to_locked((host_link_t)l, fps);
+            return;
+        }
+    }
+    screen_stream_stop();
 }
 
 void host_link_screen(host_link_t link, uint8_t fps) {

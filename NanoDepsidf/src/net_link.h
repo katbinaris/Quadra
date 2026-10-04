@@ -4,8 +4,10 @@
 #include <stdint.h>
 
 // The companion protocol over WiFi: the same 64-byte reports as the vendor HID interface, on a
-// TCP connection (port NET_LINK_PORT, advertised over mDNS as _quadra._tcp), one client at a
-// time -- a newly authenticated one takes over.
+// TCP connection (port NET_LINK_PORT, advertised over mDNS as _quadra._tcp), up to
+// NET_LINK_SESSIONS clients at once (the companion app and the Mac service), each its own host
+// link (HOST_LINK_NET + slot). A newly authenticated client takes a free slot, else the one that
+// has been quiet the longest.
 //
 // Pairing happens over USB only: the knob makes a random 256-bit key (EXT_CMD_NET KEY) and the
 // companion keeps it. A connection then opens with
@@ -21,15 +23,17 @@
 
 #define NET_LINK_PORT 3333
 #define NET_KEY_BYTES 32
+#define NET_LINK_SESSIONS 2 // host_link.h has a link for each
 
 void net_link_start(void); // app_main, after net_start(): serves while WiFi is connected
 // The pairing key, made on first use (usb task, EXT_CMD_NET KEY). `fresh`: replace it -- every
 // paired companion has to pair again. false if NVS failed.
 bool net_link_key(uint8_t key[NET_KEY_BYTES], bool fresh);
-// host_link: room for another stream report on the way to the client, and handing it one; and a
-// reply, which goes out ahead of the streams (a queue of its own), so a request isn't answered
-// seconds late behind a screen frame. false: no room (or no client) -- try again later.
-bool net_link_ready(void);
-bool net_link_send(const uint8_t *report);
-bool net_link_reply(const uint8_t *report);
-bool net_link_connected(void); // a client is in
+// host_link, for the client in `slot`: room for another stream report on the way to it, and
+// handing it one; and a reply, which goes out ahead of the streams (a queue of its own), so a
+// request isn't answered seconds late behind a screen frame. false: no room (or no client in
+// that slot) -- try again later.
+bool net_link_ready(int slot);
+bool net_link_send(int slot, const uint8_t *report);
+bool net_link_reply(int slot, const uint8_t *report);
+bool net_link_connected(int slot); // a client is in that slot

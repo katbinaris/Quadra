@@ -22,7 +22,7 @@ enum {
     EXT_CMD_NOTIFY = 0x25, // [1]=EXT_NOTIFY_* [2..3]=id; POST: [4]=source [5]=kind (notify.h),
                            //   | EXT_NOTIFY_NUDGE [6..21]=title [22..60]=body, NUL-padded
                            //   [61..63]=colour RGB (0,0,0 = the source's own). No reply.
-    EXT_CMD_COVER = 0x26,  // now-playing cover, a JPEG (media.h), USB only, in order:
+    EXT_CMD_COVER = 0x26,  // now-playing cover, a JPEG (media.h), from one link at a time, in order:
                            //   [1]=EXT_COVER_BEGIN [4..7]=length [8..11]=CRC-32 -> EXT_TAG_ACK
                            //   [1]=EXT_COVER_DATA [2..4]=offset (24-bit) [5]=n (<= 58) [6..]=bytes
                            //   [1]=EXT_COVER_END -> EXT_TAG_ACK (EXT_ST_BAD_PARAM: rejected)

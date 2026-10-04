@@ -22,6 +22,8 @@
 
 static const char *TAG = "net_link";
 
+_Static_assert(NET_LINK_SESSIONS == HOST_LINK_COUNT - HOST_LINK_NET, "a host link for each WiFi client");
+
 #define REPORT 64
 #define TAG_LEN 16
 #define WIRE (REPORT + TAG_LEN)
@@ -32,18 +34,26 @@ static const char *TAG = "net_link";
 #define PENDING 4        // handshakes going on at once (net_pend.h: one per peer address)
 #define IO_TIMEOUT_S 3   // a write that can't finish means the client is gone
 
-static QueueHandle_t s_txq, s_replyq;
 static int s_wake = -1; // eventfd: host_link queued a report, or the key changed
-static _Atomic bool s_live = false, s_drop = false;
+static _Atomic bool s_drop = false;
 static portMUX_TYPE s_key_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t s_key[NET_KEY_BYTES]; // under s_key_mux
 static bool s_have_key;
-// net_link task only:
-static int s_conn = -1;
-static psa_key_id_t s_aead = 0;
-static uint64_t s_tx_seq, s_rx_seq;
-static uint8_t s_rx[WIRE * 4]; // a frame can arrive in pieces
-static size_t s_rx_have;
+
+// A client that proved the key: its own host link (HOST_LINK_NET + slot), queues (in PSRAM: the
+// tasks that use them never run with the cache off) and counters. `live` and the queues are any
+// task's; the rest is the net_link task's.
+typedef struct {
+    QueueHandle_t txq, replyq;
+    _Atomic bool live;
+    int fd;
+    psa_key_id_t aead;
+    uint64_t tx_seq, rx_seq;
+    uint8_t rx[WIRE * 4]; // a frame can arrive in pieces
+    size_t rx_have;
+    int64_t last_rx; // when it last sent a frame: the quietest goes when a third one comes in
+} session_t;
+static session_t s_ses[NET_LINK_SESSIONS];
 
 static void wake(void) {
     uint64_t one = 1;
@@ -156,18 +166,29 @@ static void drop_all_pending(void) {
     for (int i = 0; i < PENDING; i++) drop_pending(&s_pend[i], NULL);
 }
 
-static void close_conn(void) {
-    if (s_conn < 0) return;
-    atomic_store(&s_live, false);
-    close(s_conn);
-    s_conn = -1;
-    if (s_aead) {
-        psa_destroy_key(s_aead);
-        s_aead = 0;
+static bool any_live(void) {
+    for (int i = 0; i < NET_LINK_SESSIONS; i++)
+        if (s_ses[i].fd >= 0) return true;
+    return false;
+}
+
+static void close_session(int i) {
+    session_t *c = &s_ses[i];
+    if (c->fd < 0) return;
+    atomic_store(&c->live, false);
+    close(c->fd);
+    c->fd = -1;
+    if (c->aead) {
+        psa_destroy_key(c->aead);
+        c->aead = 0;
     }
-    host_link_stop_link(HOST_LINK_NET); // its streams stop, its replies go
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-    ESP_LOGI(TAG, "companion gone");
+    host_link_stop_link((host_link_t)(HOST_LINK_NET + i)); // its streams stop, its replies go
+    if (!any_live()) esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    ESP_LOGI(TAG, "companion gone (slot %d)", i);
+}
+
+static void close_all(void) {
+    for (int i = 0; i < NET_LINK_SESSIONS; i++) close_session(i);
 }
 
 static void accept_pending(int lsock) {
@@ -183,17 +204,28 @@ static void accept_pending(int lsock) {
     *p = (net_pend_t){.fd = c, .addr = from.sin_addr.s_addr, .since = esp_timer_get_time()};
 }
 
-// A pending connection proved the key: it's the client now (a new one takes over).
+// A pending connection proved the key: it takes a free slot, else the one that's been quiet the
+// longest (a live companion polls every second, so that's one that left without closing). Not by
+// address: the app and the Mac service come from the same computer.
 static void promote(net_pend_t *p) {
     int c = p->fd;
     p->fd = -1;
-    close_conn();
+    int slot = 0;
+    for (int i = 0; i < NET_LINK_SESSIONS; i++) {
+        if (s_ses[i].fd < 0) {
+            slot = i;
+            break;
+        }
+        if (s_ses[i].last_rx < s_ses[slot].last_rx) slot = i;
+    }
+    close_session(slot);
+    session_t *ses = &s_ses[slot];
     psa_key_attributes_t a = PSA_KEY_ATTRIBUTES_INIT;
     psa_set_key_type(&a, PSA_KEY_TYPE_AES);
     psa_set_key_bits(&a, 256);
     psa_set_key_algorithm(&a, PSA_ALG_GCM);
     psa_set_key_usage_flags(&a, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
-    bool ok = psa_import_key(&a, p->k, sizeof(p->k), &s_aead) == PSA_SUCCESS;
+    bool ok = psa_import_key(&a, p->k, sizeof(p->k), &ses->aead) == PSA_SUCCESS;
     memset(p->k, 0, sizeof(p->k));
     if (!ok) {
         close(c);
@@ -209,14 +241,15 @@ static void promote(net_pend_t *p) {
     setsockopt(c, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
     setsockopt(c, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
     setsockopt(c, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
-    xQueueReset(s_txq);
-    xQueueReset(s_replyq);
-    s_conn = c;
-    s_tx_seq = s_rx_seq = 0;
-    s_rx_have = 0;
+    xQueueReset(ses->txq);
+    xQueueReset(ses->replyq);
+    ses->fd = c;
+    ses->tx_seq = ses->rx_seq = 0;
+    ses->rx_have = 0;
+    ses->last_rx = esp_timer_get_time();
     esp_wifi_set_ps(WIFI_PS_NONE); // a companion is in: answer in milliseconds, not at the next beacon
-    atomic_store(&s_live, true);
-    ESP_LOGI(TAG, "companion in");
+    atomic_store(&ses->live, true);
+    ESP_LOGI(TAG, "companion in (slot %d)", slot);
 }
 
 // A pending connection's next bytes: its hello (then our half goes out, in one non-blocking
@@ -261,27 +294,28 @@ static void step_pending(net_pend_t *p) {
 
 // Everything waiting, replies first, encrypted, TX_BATCH reports a write, until both queues are
 // empty (so a report queued after this returns wakes the task). false: the client is gone.
-static bool flush_tx(void) {
+static bool flush_tx(session_t *c) {
     static uint8_t buf[WIRE * TX_BATCH];
     uint8_t plain[REPORT], n12[12];
     for (;;) {
         size_t n = 0, out = 0;
-        while (n < TX_BATCH && (xQueueReceive(s_replyq, plain, 0) == pdTRUE || xQueueReceive(s_txq, plain, 0) == pdTRUE)) {
-            nonce(n12, 'K', s_tx_seq++);
-            if (psa_aead_encrypt(s_aead, PSA_ALG_GCM, n12, sizeof(n12), NULL, 0, plain, REPORT, buf + n * WIRE, WIRE, &out)
+        while (n < TX_BATCH && (xQueueReceive(c->replyq, plain, 0) == pdTRUE || xQueueReceive(c->txq, plain, 0) == pdTRUE)) {
+            nonce(n12, 'K', c->tx_seq++);
+            if (psa_aead_encrypt(c->aead, PSA_ALG_GCM, n12, sizeof(n12), NULL, 0, plain, REPORT, buf + n * WIRE, WIRE, &out)
                 != PSA_SUCCESS || out != WIRE) return false;
             n++;
         }
         if (n == 0) return true;
-        if (!send_all(s_conn, buf, n * WIRE)) return false;
+        if (!send_all(c->fd, buf, n * WIRE)) return false;
     }
 }
 
 // What the client sent: whole frames, decrypted, to host_link. false: a bad frame, or gone.
-static bool read_rx(void) {
-    uint8_t *buf = s_rx;
-    size_t have = s_rx_have;
-    int r = recv(s_conn, buf + have, sizeof(s_rx) - have, MSG_DONTWAIT);
+static bool read_rx(int slot) {
+    session_t *c = &s_ses[slot];
+    uint8_t *buf = c->rx;
+    size_t have = c->rx_have;
+    int r = recv(c->fd, buf + have, sizeof(c->rx) - have, MSG_DONTWAIT);
     if (r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) return false;
     if (r > 0) have += (size_t)r;
     size_t at = 0;
@@ -289,17 +323,18 @@ static bool read_rx(void) {
         uint8_t plain[REPORT], n12[12];
         size_t out = 0;
         if (atomic_load(&s_drop)) return false; // rekeyed: not one more frame of this session
-        nonce(n12, 'C', s_rx_seq++);
-        if (psa_aead_decrypt(s_aead, PSA_ALG_GCM, n12, sizeof(n12), NULL, 0, buf + at, WIRE, plain, REPORT, &out)
+        nonce(n12, 'C', c->rx_seq++);
+        if (psa_aead_decrypt(c->aead, PSA_ALG_GCM, n12, sizeof(n12), NULL, 0, buf + at, WIRE, plain, REPORT, &out)
             != PSA_SUCCESS || out != REPORT) {
             ESP_LOGW(TAG, "a frame that didn't verify: closed");
             return false;
         }
-        host_link_receive(HOST_LINK_NET, plain, REPORT);
+        c->last_rx = esp_timer_get_time();
+        host_link_receive((host_link_t)(HOST_LINK_NET + slot), plain, REPORT);
         at += WIRE;
     }
     memmove(buf, buf + at, have - at);
-    s_rx_have = have - at;
+    c->rx_have = have - at;
     return true;
 }
 
@@ -322,7 +357,7 @@ static void net_link_task(void *arg) {
         net_status_t st;
         net_status(&st);
         if (st.state != NET_CONNECTED) { // no WiFi: nothing to serve
-            close_conn();
+            close_all();
             drop_all_pending();
             if (lsock >= 0) {
                 close(lsock);
@@ -336,7 +371,7 @@ static void net_link_task(void *arg) {
             continue;
         }
         if (atomic_exchange(&s_drop, false)) { // a new key: whoever holds the old one is out
-            close_conn();
+            close_all();
             drop_all_pending();
         }
         fd_set rd;
@@ -344,10 +379,11 @@ static void net_link_task(void *arg) {
         FD_SET(lsock, &rd);
         FD_SET(s_wake, &rd);
         int top = lsock > s_wake ? lsock : s_wake;
-        int conn = s_conn, pend[PENDING];
-        if (conn >= 0) {
-            FD_SET(conn, &rd);
-            if (conn > top) top = conn;
+        int conn[NET_LINK_SESSIONS], pend[PENDING];
+        for (int i = 0; i < NET_LINK_SESSIONS; i++) {
+            if ((conn[i] = s_ses[i].fd) < 0) continue;
+            FD_SET(conn[i], &rd);
+            if (conn[i] > top) top = conn[i];
         }
         int64_t now = esp_timer_get_time(), wake_at = now + 1000000; // WiFi's state, between events
         for (int i = 0; i < PENDING; i++) {
@@ -363,7 +399,7 @@ static void net_link_task(void *arg) {
         int n = select(top + 1, &rd, NULL, NULL, &tv);
         if (n < 0) { // shouldn't happen; never spin on it
             ESP_LOGW(TAG, "select: errno %d", errno);
-            close_conn();
+            close_all();
             drop_all_pending();
             close(lsock);
             lsock = -1;
@@ -375,14 +411,16 @@ static void net_link_task(void *arg) {
             read(s_wake, &v, sizeof(v));
         }
         if (atomic_exchange(&s_drop, false)) { // rekeyed while this waited: not one more frame
-            close_conn();
+            close_all();
             drop_all_pending();
         }
-        if (n > 0 && conn >= 0 && conn == s_conn && FD_ISSET(conn, &rd) && !read_rx()) close_conn();
+        for (int i = 0; n > 0 && i < NET_LINK_SESSIONS; i++)
+            if (conn[i] >= 0 && conn[i] == s_ses[i].fd && FD_ISSET(conn[i], &rd) && !read_rx(i)) close_session(i);
         for (int i = 0; n > 0 && i < PENDING; i++)
             if (pend[i] >= 0 && pend[i] == s_pend[i].fd && FD_ISSET(pend[i], &rd)) step_pending(&s_pend[i]);
         if (n > 0 && FD_ISSET(lsock, &rd)) accept_pending(lsock);
-        if (s_conn >= 0 && !flush_tx()) close_conn();
+        for (int i = 0; i < NET_LINK_SESSIONS; i++)
+            if (s_ses[i].fd >= 0 && !flush_tx(&s_ses[i])) close_session(i);
     }
 }
 
@@ -399,27 +437,37 @@ void net_link_start(void) {
     }
     load_key();
     for (int i = 0; i < PENDING; i++) s_pend[i].fd = -1;
-    s_txq = xQueueCreate(TXQ_DEPTH, REPORT);
-    s_replyq = xQueueCreate(REPLYQ_DEPTH, REPORT);
+    for (int i = 0; i < NET_LINK_SESSIONS; i++) {
+        s_ses[i].fd = -1;
+        s_ses[i].txq = xQueueCreateWithCaps(TXQ_DEPTH, REPORT, MALLOC_CAP_SPIRAM);
+        s_ses[i].replyq = xQueueCreateWithCaps(REPLYQ_DEPTH, REPORT, MALLOC_CAP_SPIRAM);
+        if (s_ses[i].txq == NULL || s_ses[i].replyq == NULL) {
+            ESP_LOGE(TAG, "no memory for the queues: no companion over WiFi");
+            return;
+        }
+    }
     xTaskCreatePinnedToCore(net_link_task, "net_link", 6144, NULL, PRIO_NET_LINK, NULL, CORE_IO);
 }
 
-bool net_link_ready(void) {
-    return s_txq != NULL && atomic_load(&s_live) && uxQueueSpacesAvailable(s_txq) > 0;
+bool net_link_ready(int slot) {
+    session_t *c = &s_ses[slot];
+    return c->txq != NULL && atomic_load(&c->live) && uxQueueSpacesAvailable(c->txq) > 0;
 }
 
-bool net_link_send(const uint8_t *report) {
-    if (!atomic_load(&s_live) || xQueueSend(s_txq, report, 0) != pdTRUE) return false;
-    if (uxQueueMessagesWaiting(s_txq) == 1) wake(); // it was empty: the task may be asleep
+bool net_link_send(int slot, const uint8_t *report) {
+    session_t *c = &s_ses[slot];
+    if (!atomic_load(&c->live) || xQueueSend(c->txq, report, 0) != pdTRUE) return false;
+    if (uxQueueMessagesWaiting(c->txq) == 1) wake(); // it was empty: the task may be asleep
     return true;
 }
 
-bool net_link_reply(const uint8_t *report) {
-    if (s_replyq == NULL || !atomic_load(&s_live) || xQueueSend(s_replyq, report, 0) != pdTRUE) return false;
+bool net_link_reply(int slot, const uint8_t *report) {
+    session_t *c = &s_ses[slot];
+    if (c->replyq == NULL || !atomic_load(&c->live) || xQueueSend(c->replyq, report, 0) != pdTRUE) return false;
     wake();
     return true;
 }
 
-bool net_link_connected(void) {
-    return atomic_load(&s_live);
+bool net_link_connected(int slot) {
+    return atomic_load(&s_ses[slot].live);
 }
