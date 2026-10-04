@@ -12,7 +12,7 @@ import { drawMainScreen } from "./draw";
 import { ProfileIcon } from "./icons";
 import { createProfile, MAX_PROFILES } from "../profiles";
 
-const MODE_NAMES: Record<number, string> = { [HidType.APP]: "App", [HidType.MOUSE]: "Mouse", [HidType.KEYBOARD]: "Keys", [HidType.MIDI]: "MIDI" };
+const MODE_NAMES: Record<number, string> = { [HidType.APP]: "App", [HidType.HOME]: "Home", [HidType.MOUSE]: "Mouse", [HidType.KEYBOARD]: "Keys", [HidType.MIDI]: "MIDI" };
 
 export function Shell(p: { children: preact.ComponentChildren }) {
   const on = connected.value;
@@ -105,7 +105,7 @@ function KnobPicture() {
   const on = connected.value;
   const s = device.settings;
   const p = s && s.hidType === HidType.APP ? device.profiles[s.profile] : undefined;
-  const info = s ? { icon: p?.icon ?? null, name: p ? p.name : (MODE_NAMES[s.hidType] ?? "").toUpperCase(), feel: s.feel, legend: p ? p.legend : ["SEL", "", "BACK", "MENU"] } : null;
+  const info = s ? { icon: p?.icon ?? null, name: p ? p.name : (MODE_NAMES[s.hidType] ?? "").toUpperCase(), feel: s.feel, legend: p ? p.legend : s.hidType === HidType.HOME ? ["EDIT", "POWER", "SCAN", "MENU"] : ["SEL", "", "BACK", "MENU"] } : null;
   const key = info ? `${info.name}|${info.feel}|${info.legend.join()}|${!!info.icon}` : "";
   useEffect(() => {
     if (!canvas.current || !info) return;

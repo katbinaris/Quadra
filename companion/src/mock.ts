@@ -61,7 +61,7 @@ export class MockTransport implements Transport {
     return { feel, tune: [0, 1, 2].map((f) => ({ kp: t[0], kd: t[1], shape: f === 0 ? t[2] : 0, amp: t[3], pitch: t[4] })) };
   }
   private static hpFactory() {
-    return { edit: 1, mode: [1, 1, 1, 1], profiles: [0, 1, 2, 3, 4].map((p) => MockTransport.hpProfile(p)) };
+    return { edit: 1, mode: [1, 1, 1, 1, 1], profiles: [0, 1, 2, 3, 4].map((p) => MockTransport.hpProfile(p)) };
   }
   private static hpLimits(feel: number) {
     return feel === 2 ? { kpMin: 0, kpMax: 0, kdMin: 0, kdMax: 0.15, ampMax: 20, pitchMin: 1, pitchMax: 2 } : { kpMin: 0, kpMax: 20, kdMin: 0, kdMax: 0.15, ampMax: 100, pitchMin: 0.5, pitchMax: 2 };

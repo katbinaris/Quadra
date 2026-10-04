@@ -39,6 +39,9 @@ await windowMap();
 await click(".card", "Mouse");
 await pg.waitForTimeout(600);
 await shot("app-mode-mouse");
+await click(".card", "Home");
+await pg.waitForTimeout(600);
+await shot("app-mode-home");
 await click(".card", "App");
 await pg.waitForTimeout(600);
 

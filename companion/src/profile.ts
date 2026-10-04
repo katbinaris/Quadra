@@ -103,7 +103,7 @@ export interface ProfileJson {
   shape?: "cube" | "pyramid" | "octa";
   shape_style?: "face" | "grips" | "thick";
   shape_stepped?: boolean;
-  plasma?: [number, number, number];
+  accents?: [number, number, number]; // "plasma" before 2026-10-04: the firmware reads both
   slots?: Partial<Record<SlotName, Action>>;
   rings?: Ring[];
   search?: { open?: Key; open_wait?: number; result_wait?: number };

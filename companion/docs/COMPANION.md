@@ -110,13 +110,14 @@ music cover style, the clock, and Wi-Fi. Their pages say so.
 
 ## 4. Mode
 
-<img src="app-mode.png" width="720" alt="Mode: App, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; Edit and Duplicate">
+<img src="app-mode.png" width="720" alt="Mode: App, Home, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; Edit and Duplicate">
 
 **Mode** is what the knob sends to the computer:
 
 | Mode | What the knob does |
 |---|---|
 | **App** | Follows an app profile |
+| **Home** | A remote for your Xiaomi lamps on the network |
 | **Mouse** | Scroll wheel |
 | **Keys** | Keyboard keys |
 | **MIDI** | Stores a MIDI channel only; no MIDI is sent yet |
@@ -139,6 +140,12 @@ In **Mouse** and **Keys**, the page shows which haptic profile the knob uses in 
 mode keeps its own:
 
 <img src="app-mode-mouse.png" width="720" alt="Mode with Mouse: the haptic profile for Mouse">
+
+In **Home**, the knob finds your lamps on the network and changes them itself; the app only
+switches the mode. The lamps and their keys come from your Xiaomi account, once, over USB:
+run the token extractor, then `quadra.py home import` (see the README's HOME section).
+
+<img src="app-mode-home.png" width="720" alt="Mode with Home: how the lamps get onto the knob">
 
 ## 5. Haptics
 

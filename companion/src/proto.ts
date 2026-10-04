@@ -143,7 +143,7 @@ const FLOAT_SETTINGS: ReadonlySet<number> = new globalThis.Set([Set.KP, Set.KD, 
 
 // Enums as the firmware stores them (menu.h, haptic_params.h, boot_mode.h).
 export const Feel = { SAW: 0, SINE: 1, VISCOSE: 2 } as const;
-export const HidType = { KEYBOARD: 0, MOUSE: 1, MIDI: 2, APP: 3 } as const;
+export const HidType = { KEYBOARD: 0, MOUSE: 1, MIDI: 2, APP: 3, HOME: 4 } as const;
 export const Host = { MAC: 0, PC: 1 } as const;
 export const Boot = { SERIAL: 0, HID: 1 } as const; // boot_usb_mode_t
 

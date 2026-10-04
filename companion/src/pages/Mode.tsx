@@ -1,4 +1,4 @@
-// MODE: what the knob sends (APP / MOUSE / KEYS / MIDI) and, per mode, what goes with it: the
+// MODE: what the knob sends (APP / HOME / MOUSE / KEYS / MIDI) and, per mode, what goes with it: the
 // app profile in use, the haptic profile, the MIDI channel.
 
 import { HapticProfiles, HidType, ProfileFlag, Set } from "../proto";
@@ -10,6 +10,7 @@ import { titleCase } from "../ui/shell";
 
 const MODES = [
   { value: HidType.APP, name: "App", sub: "Your app profiles: shortcuts, command wheels and macros per app" },
+  { value: HidType.HOME, name: "Home", sub: "Your Xiaomi lamps on the network: brightness, white and colour" },
   { value: HidType.MOUSE, name: "Mouse", sub: "A scroll wheel" },
   { value: HidType.KEYBOARD, name: "Keys", sub: "Keyboard keys" },
   { value: HidType.MIDI, name: "MIDI", sub: "Channel only for now: no MIDI is sent yet" },
@@ -90,6 +91,16 @@ export function ModePage() {
           </div>
           <span class="hint">
             Mouse and Keys each keep their own. Tune the five under <a href="#/haptics">Haptics</a>.
+          </span>
+        </Box>
+      )}
+
+      {s.hidType === HidType.HOME && (
+        <Box title="Lamps" note="The knob finds them on the network and talks to them itself">
+          <span class="hint">
+            The lamps and their keys come from your Xiaomi account, once, over USB: run the token extractor, then{" "}
+            <span class="mono">quadra.py home import</span>. On the knob: turn to pick a lamp, F1 to change it (F1 again
+            for the next setting), F2 switches it on or off, F3 goes back or looks again.
           </span>
         </Box>
       )}
