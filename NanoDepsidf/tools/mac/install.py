@@ -20,7 +20,7 @@ What it does:
     exactly those. Codex's single `notify` setting is left alone.
 
 The daemon needs `hidapi` and `Pillow` for this Python (python3 -m pip install --user hidapi
-Pillow). The hook
+Pillow), and `cryptography` to reach the knob over WiFi (without it, USB only). The hook
 script only needs the standard library.
 """
 import argparse
@@ -254,6 +254,11 @@ def main():
                 __import__(mod)
             except ImportError:
                 raise SystemExit(f"the daemon needs {pkg} for {PY}: {PY} -m pip install --user {pkg}")
+        try:
+            __import__("cryptography")
+        except ImportError:
+            print(f"note: without cryptography the daemon reaches the knob over USB only. For WiFi too: "
+                  f"{PY} -m pip install --user cryptography")
     only = set(args.only.split(","))
     daemon(args.uninstall, args.dry_run)
     configure(args.uninstall, args.dry_run, only)

@@ -47,8 +47,9 @@ over USB only.
 
 Wi-Fi carries what this app does: settings, haptics, the lights and the profiles (the list
 takes a few seconds to fill). The knob's controls don't go over it: turning it and pressing
-F1–F4 type and scroll over USB, on the computer its cable is in. The music cover comes from the
-Mac service, also over USB.
+F1–F4 type and scroll over USB, on the computer its cable is in. The music cover, agent
+requests and the clock's time come from the Mac service, which reaches the knob over Wi-Fi
+too.
 
 Neither needs a driver, and macOS doesn't ask for Input Monitoring permission.
 

@@ -477,10 +477,13 @@ SECONDS turns the ring into a seconds hand. The clock never goes to the idle scr
 
 `NanoDepsidf/tools/mac/` is an optional background service for macOS. It powers MUSIC's now
 playing, the AGENTS requests and dashboard, and CLOCK's local time. It talks to the knob
-over USB.
+over USB when it's plugged in, and otherwise over Wi-Fi: each time it sees the knob on USB it
+keeps the knob's address and pairing key (`~/.quadra/wifi.json`, readable only by you), then
+reaches it on the network without a cable, encrypted like the companion app. Wi-Fi needs the
+`cryptography` package; without it the service uses USB only.
 
 ```sh
-python3 -m pip install --user hidapi Pillow
+python3 -m pip install --user hidapi Pillow cryptography
 python3 NanoDepsidf/tools/mac/install.py             # install or update
 python3 NanoDepsidf/tools/mac/install.py --dry-run   # show what would change
 python3 NanoDepsidf/tools/mac/install.py --uninstall # take it all out again

@@ -14,6 +14,11 @@ Spotify, a browser tab -- read from MediaRemote by a small helper that /usr/bin/
 as a 240x240 JPEG (EXT_CMD_COVER), the title, artist, the cover's colours, the system volume and
 the play state (EXT_CMD_TRACK). Without the helper: Music and Spotify over AppleScript.
 
+The knob over USB when it's plugged in, else over WiFi (src/net_link.h): whenever it's on USB
+this service keeps its WiFi address and pairing key (~/.quadra/wifi.json, owner-only), and
+without a cable reaches it on the network -- the same reports, encrypted. WiFi needs the
+`cryptography` package; without it, USB only.
+
 Config: ~/.quadra/config.json (see DEFAULTS). Log: stdout (the LaunchAgent sends it to
 ~/Library/Logs/quadrad.log).
 """
@@ -21,10 +26,14 @@ import asyncio
 import base64
 import colorsys
 import ctypes
+import hashlib
+import hmac
 import io
 import json
 import os
 import queue
+import select
+import socket
 import ssl
 import struct
 import subprocess
@@ -37,6 +46,11 @@ import urllib.request
 import zlib
 
 import hid
+
+try:  # WiFi only (NetLink)
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+except ImportError:
+    AESGCM = None
 
 # quadra.py (the CLI) sits next to this file once installed (tools/ in the repo): the device
 # protocol's helpers -- time zones for the CLOCK app.
@@ -58,6 +72,7 @@ share_hid()
 HOME = os.environ.get("QUADRA_HOME") or os.path.expanduser("~/.quadra")
 SOCK = os.path.join(HOME, "agentd.sock")
 CONFIG = os.path.join(HOME, "config.json")
+WIFI = os.path.join(HOME, "wifi.json")  # the knob's WiFi pairing, from USB (owner-only)
 DEFAULTS = {
     "approval_wait_s": 30,  # how long an approval waits for the knob before the app asks
     "your_turn": True,      # blink when an agent finishes its turn and waits for you
@@ -77,6 +92,12 @@ REPORT = 64
 VENDOR_USAGE_PAGE, PRODUCT = 0xFF00, "Quadra"
 EXT_CMD_NOTIFY, EXT_CMD_COVER, EXT_CMD_TRACK, EXT_CMD_AGENTS = 0x25, 0x26, 0x27, 0x28
 EXT_TAG_ACK, EXT_TAG_NOTIFY = 0xC1, 0xC3
+EXT_CMD_NET, EXT_TAG_NET, EXT_TAG_KEY = 0x29, 0xC4, 0xC7
+NET_STATUS, NET_KEY, NET_CONNECTED = 5, 6, 2
+NET_KEEPALIVE_S = 2   # the knob gives a third client the slot of the quietest: never be quiet
+USB_STATUS_S = 30     # on USB: the knob's WiFi address again (DHCP can move it)
+USB_WATCH_S = 3       # on WiFi: a cable plugged in meanwhile -> back to USB
+NET_RETRY_S = 5
 EXT_NOTIFY_NUDGE = 0x80
 POST, CLEAR, CLEAR_ALL = 1, 2, 3
 COVER_BEGIN, COVER_DATA, COVER_END, COVER_CHUNK = 1, 2, 3, 58
@@ -127,61 +148,229 @@ def cstr(s: str, n: int) -> bytes:
     return s.encode("ascii")[:n].ljust(n, b"\0")
 
 
+def load_pairing():
+    try:
+        p = json.load(open(WIFI))
+        return p if len(bytes.fromhex(p["key"])) == 32 and p["port"] > 0 and (p["host"] or p["ip"]) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_pairing(p):
+    fd = os.open(WIFI + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(p, f)
+    os.replace(WIFI + ".tmp", WIFI)
+
+
+# QUADRA_NO_USB=1: no knob on USB, so the service takes WiFi with the cable in (the cable powers it).
+NO_USB = bool(os.environ.get("QUADRA_NO_USB"))
+
+
+def usb_present():
+    return not NO_USB and any(d.get("usage_page") == VENDOR_USAGE_PAGE and d.get("product_string") == PRODUCT for d in hid.enumerate())
+
+
+class UsbLink:
+    via = "USB"
+
+    def __init__(self, dev):
+        self.dev = dev
+
+    def write(self, report: bytes):
+        if self.dev.write(b"\0" + report) < 0:
+            raise OSError("write failed")
+
+    def read(self, ms):
+        data = self.dev.read(REPORT, ms)
+        return bytes(data) if data else None
+
+    def close(self):
+        self.dev.close()
+
+
+class NetLink:
+    """The knob over WiFi (src/net_link.h): TCP, a handshake that proves both ends hold the
+    pairing key, then every report AES-256-GCM with a per-direction counter."""
+    via = "WiFi"
+
+    def __init__(self, p):
+        key, last = bytes.fromhex(p["key"]), None
+        for h in [f"{p['host']}.local" if p["host"] else None, p["ip"] or None]:
+            if not h:
+                continue
+            try:  # IPv4 only: asked for any family, macOS waits seconds for a .local IPv6 answer
+                addr = socket.getaddrinfo(h, p["port"], socket.AF_INET, socket.SOCK_STREAM)[0][4]
+                self.s = socket.create_connection(addr, timeout=3)
+                break
+            except OSError as e:
+                last = e
+        else:
+            raise last or OSError("no address")
+        self.s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        cn = os.urandom(16)
+        self.s.sendall(b"QDR1" + cn)
+        r = self._recv(36)
+        k = hmac.new(key, b"quadra session" + cn + r[4:20], hashlib.sha256).digest()
+        if r[:4] != b"QDR1" or not hmac.compare_digest(hmac.new(k, b"knob", hashlib.sha256).digest()[:16], r[20:]):
+            raise ConnectionError("the knob holds another key: plug it in once to pair again")
+        self.s.sendall(hmac.new(k, b"client", hashlib.sha256).digest()[:16])
+        self.g, self.tx, self.rx, self.buf = AESGCM(k), 0, 0, b""
+        self.s.settimeout(3)
+
+    def _recv(self, n):
+        b = b""
+        while len(b) < n:
+            c = self.s.recv(n - len(b))
+            if not c:
+                raise ConnectionError("closed by the knob")
+            b += c
+        return b
+
+    @staticmethod
+    def _nonce(d, seq):
+        return bytes([d]) + struct.pack("<Q", seq) + b"\0\0\0"
+
+    def write(self, report: bytes):
+        self.s.sendall(self.g.encrypt(self._nonce(ord("C"), self.tx), report, None))
+        self.tx += 1
+
+    def read(self, ms):
+        if len(self.buf) < REPORT + 16:
+            if select.select([self.s], [], [], ms / 1000)[0]:
+                c = self.s.recv(4096)
+                if not c:
+                    raise ConnectionError("closed by the knob")
+                self.buf += c
+            if len(self.buf) < REPORT + 16:
+                return None
+        frame, self.buf = self.buf[:REPORT + 16], self.buf[REPORT + 16:]
+        try:
+            p = self.g.decrypt(self._nonce(ord("K"), self.rx), frame, None)
+        except Exception:
+            raise ConnectionError("a frame from the knob didn't verify")
+        self.rx += 1
+        return p
+
+    def close(self):
+        self.s.close()
+
+
 class Device(threading.Thread):
-    """Owns the HID handle: reconnects forever, writes queued reports, reads what comes back."""
+    """Owns the link to the knob -- USB when it's plugged in, else WiFi once paired: reconnects
+    forever, writes queued reports, reads what comes back."""
 
     def __init__(self, loop, on_decision, on_ack, on_link):
         super().__init__(daemon=True)
         self.loop, self.on_decision, self.on_ack, self.on_link = loop, on_decision, on_ack, on_link
         self.out = queue.Queue()
         self.connected = False
+        self.via = None
+        self.net_why = None  # why WiFi last failed: logged once, not every retry
+        self.pending_host = None  # on USB: the WiFi status that came, waiting for its key
 
     def send(self, report: bytes):
         if self.connected:
             self.out.put(report.ljust(REPORT, b"\0"))
 
     def _open(self):
+        if NO_USB:
+            return None
         for d in hid.enumerate():
             if d.get("usage_page") == VENDOR_USAGE_PAGE and d.get("product_string") == PRODUCT:
                 dev = hid.device()
                 dev.open_path(d["path"])
-                return dev
+                return UsbLink(dev)
         return None
+
+    def _open_net(self):
+        p = load_pairing()
+        if p is None or AESGCM is None:
+            return None
+        try:
+            link = NetLink(p)
+            self.net_why = None
+            return link
+        except (OSError, ConnectionError) as e:
+            if str(e) != self.net_why:
+                log(f"knob over WiFi: {e}")
+                self.net_why = str(e)
+            return None
 
     def run(self):
         while True:
             try:
-                dev = self._open()
+                link = self._open()
             except OSError:
-                dev = None
-            if dev is None:
-                time.sleep(1)
+                link = None
+            if link is None:
+                link = self._open_net()
+            if link is None:
+                time.sleep(1 if load_pairing() is None or AESGCM is None else NET_RETRY_S)
                 continue
-            while not self.out.empty():  # anything queued was for the previous connection
-                self.out.get_nowait()
-            self.connected = True
-            log("knob connected")
-            self.loop.call_soon_threadsafe(self.on_link, True)
-            try:
-                while True:
-                    while not self.out.empty():
-                        if dev.write(b"\0" + self.out.get_nowait()) < 0:
-                            raise OSError("write failed")
-                    data = dev.read(REPORT, 20)
-                    if data and data[0] == EXT_TAG_NOTIFY:
-                        self.loop.call_soon_threadsafe(self.on_decision, data[2] | data[3] << 8, data[1])
-                    elif data and data[0] == EXT_TAG_ACK:
-                        self.loop.call_soon_threadsafe(self.on_ack, data[1], data[2])
-            except (OSError, ValueError) as e:
-                log("knob gone:", e)
-            finally:
-                self.connected = False
-                try:
-                    dev.close()
-                except Exception:
-                    pass
-                self.loop.call_soon_threadsafe(self.on_link, False)
+            self._serve(link)
             time.sleep(0.5)
+
+    def _on_net(self, data, link):
+        """On USB: the knob's WiFi status, then its key -- kept so this service can reach it
+        without a cable (the current key: never a new one, which would unpair every companion)."""
+        if data[0] == EXT_TAG_NET and data[1] == NET_CONNECTED:
+            host, ip = data[41:64].split(b"\0", 1)[0].decode(errors="replace"), ".".join(map(str, data[3:7]))
+            if link.via == "USB":
+                self.pending_host = (host, ip)
+                link.write(bytes([EXT_CMD_NET, NET_KEY, 0]).ljust(REPORT, b"\0"))
+            else:
+                p = load_pairing()
+                if p and p["ip"] != ip:
+                    save_pairing({**p, "ip": ip})  # DHCP moved it: the fallback follows
+        elif data[0] == EXT_TAG_KEY and link.via == "USB" and self.pending_host:
+            host, ip = self.pending_host
+            self.pending_host = None
+            p = {"host": host, "ip": ip, "port": data[33] | data[34] << 8, "key": data[1:33].hex()}
+            if p != load_pairing():
+                save_pairing(p)
+                log(f"WiFi pairing kept: {host}.local ({ip})")
+
+    def _serve(self, link):
+        while not self.out.empty():  # anything queued was for the previous connection
+            self.out.get_nowait()
+        self.connected, self.via = True, link.via
+        log(f"knob connected ({link.via})")
+        self.loop.call_soon_threadsafe(self.on_link, True)
+        status = bytes([EXT_CMD_NET, NET_STATUS]).ljust(REPORT, b"\0")
+        next_status = 0.0
+        next_watch = time.monotonic() + USB_WATCH_S
+        try:
+            while True:
+                now = time.monotonic()
+                if now >= next_status:  # USB: keep the pairing current; WiFi: the keepalive
+                    link.write(status)
+                    next_status = now + (USB_STATUS_S if link.via == "USB" else NET_KEEPALIVE_S)
+                if link.via == "WiFi" and now >= next_watch:
+                    next_watch = now + USB_WATCH_S
+                    if usb_present():
+                        log("knob plugged in: over to USB")
+                        break
+                while not self.out.empty():
+                    link.write(self.out.get_nowait())
+                data = link.read(20)
+                if not data:
+                    continue
+                if data[0] == EXT_TAG_NOTIFY:
+                    self.loop.call_soon_threadsafe(self.on_decision, data[2] | data[3] << 8, data[1])
+                elif data[0] == EXT_TAG_ACK:
+                    self.loop.call_soon_threadsafe(self.on_ack, data[1], data[2])
+                elif data[0] in (EXT_TAG_NET, EXT_TAG_KEY):
+                    self._on_net(data, link)
+        except (OSError, ValueError, ConnectionError) as e:
+            log(f"knob gone ({link.via}):", e)
+        finally:
+            self.connected, self.via = False, None
+            try:
+                link.close()
+            except Exception:
+                pass
+            self.loop.call_soon_threadsafe(self.on_link, False)
 
 
 class Item:
