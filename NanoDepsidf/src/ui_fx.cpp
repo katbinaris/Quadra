@@ -80,16 +80,15 @@ void fx_boot(uint32_t e) {
 
 // --- attract: arcade attract mode ---
 // The idle screen (DEVELOPMENT_PLAN.md "Idle screen: arcade attract mode"): the active app's
-// 48x48 icon -- or the QUADRA wordmark at 2x -- in one of three routines, picked at random:
+// 48x48 icon -- or the QUADRA wordmark at 2x -- in one of two routines:
 //   JUMP   always on screen: hops, a big jump with afterimages, a hard landing (squash,
 //          shake, dust, debris), a gleam, side hops, a spinning jump, breathing with sparkles.
 //   BOUNCE rattles around inside the glass: squash against the rim, rim flash, sparks,
 //          afterimages; parallax stars in three sizes behind.
-//   BOOM   fuse, pixel explosion (core, colour ring, smoke, debris, shake), a springy pop,
-//          bobbing with sparkles, implode into a flash.
-// When a routine's loop ends the next is picked (never the same twice running). Whole pixels
-// only: the sprite is scaled nearest-neighbour. Colours: the UI palette plus three accent
-// colours -- the profile's plasma_heat, sampled from its icon, or AMBER for QUADRA.
+// When a routine's loop ends the next is picked (never the same twice running, when more than
+// one is on). Whole pixels only: the sprite is scaled nearest-neighbour. Colours: the UI palette
+// plus three accent colours -- the profile's own accents, sampled from its icon, or AMBER for
+// QUADRA. (BOOM, an explosion, was removed on 2026-10-04; PLASMA long before.)
 
 #define ATTRACT_ICON 48
 static inline float rndf(int i, int k) { return rnd(i, k); }
@@ -120,14 +119,6 @@ static void blob(float fcx, float fcy, int r, uint32_t c, int dens) {
             if (dens == 0 && ((X & 1) | (Y & 1))) continue;
             pt(X, Y, c);
         }
-    }
-}
-static void dotted_ring(float cx, float cy, float r, uint32_t c, int step) {
-    int n = (int)lroundf(2 * (float)M_PI * r);
-    if (n < 8) n = 8;
-    for (int s = 0; s < n; s += step) {
-        float t = (float)s / n * 2 * (float)M_PI;
-        pt(cx + cosf(t) * r, cy + sinf(t) * r, c);
     }
 }
 
@@ -443,62 +434,25 @@ static void routine_bounce(float t, const Spr &sp, const uint32_t *cols, bool re
     }
 }
 
-// --- BOOM ---
-static const float POP[8] = {0.2f, 0.62f, 1.3f, 1.16f, 0.9f, 0.95f, 1.05f, 1.0f}; // one per 66 ms (on twos)
-static const float WOB[8] = {0, 0.14f, -0.12f, 0.08f, -0.06f, 0.04f, -0.02f, 0};
-static void routine_boom(float t, const Spr &sp, const uint32_t *cols) {
-    const float cy = 120;
-    s_ox = shake_at(t, 320, 5, 320);
-    s_oy = t > 320 && t < 480 ? (((int)(t / 33) & 1) ? 2 : -2) : 0;
-    if (t < 320 && ((int)(t / 100)) % 2 == 0) box(119, 119, 3, 3, cols[1]); // the fuse
-    float e = t - 320;
-    if (e >= 0 && e < 1000) {
-        for (int i = 0; i < 8; i++) { // smoke
-            float k = e / 1000, a = i / 8.0f * 2 * (float)M_PI + 0.3f, d = 14 + k * 34;
-            if (k > 0.15f) blob(120 + cosf(a) * d, cy + sinf(a) * d - k * 16, lroundf(5 + k * 6), k < 0.55f ? GREY : DARK, k < 0.75f ? 1 : 0);
-        }
-        if (e < 200) blob(120, cy, lroundf(4 + e / 200 * 18), WHITE, 2); // core
-        if (e >= 120 && e < 460) {
-            float k = (e - 120) / 340, r = lroundf(20 + k * 22);
-            for (int w = 0; w < 3; w++) dotted_ring(120, cy, r - w, k < 0.5f ? cols[2] : cols[0], k < 0.6f ? 1 : 2);
-        }
-        debris(t, 320, 120, cy, 16, cols, 11, 1.2f);
-    }
-    float s = 0, w = 0;
-    int bob = 0;
-    const float pop_end = 420 + 8 * 66;
-    if (e >= 100 && t < pop_end) { int i = (int)((e - 100) / 66); s = POP[i]; w = WOB[i]; }
-    else if (t >= pop_end && t < 5300) { s = 1; bob = lroundf(2 * sinf((int)(t / 66) * 0.42f)); }
-    else if (t >= 5300 && t < 5560) { float k = (t - 5300) / 260; s = 1 - k > 0.05f ? 1 - k : 0.05f; w = -0.3f * k; }
-    if (s > 0) {
-        float H = rest_h(sp) * s * (1 - w);
-        if (t < 5300) shadow(120, cy + rest_h(sp) / 2.0f + 6, rest_w(sp) * 0.9f, bob > 0 ? 8 : 0);
-        int gleam = t > 1600 && t < 2000 ? (int)lroundf((t - 1600) / 400 * (rest_w(sp) + rest_h(sp) + 12)) - 12 : -1;
-        spr_draw(sp, 120, cy + H / 2 - bob, s * (1 + w), s * (1 - w), 0, false, false, gleam);
-        if (t > 1100 && t < 5300) sparkles(t, 120, cy, rest_w(sp) / 2.0f + 12, cols);
-    }
-    if (t >= 5560 && t < 5700) blob(120, cy, lroundf(8 - (t - 5560) / 20), WHITE, 2);
-}
-
-// The accent colours: the profile's plasma_heat, or sampled from its icon (app_colors.c,
+// The accent colours: the profile's own accents, or sampled from its icon (app_colors.c,
 // shared with the LEDs). Cached per icon / heat.
 static uint32_t s_accents[3];
 static const uint8_t *s_acc_icon = nullptr;
 static const uint32_t *s_acc_heat = nullptr;
 
 // --- the sequence ---
-static const uint32_t BOUNCE_MS = 16000, BOOM_MS = 6000;
-static uint32_t routine_ms(int r) { return r == ATTRACT_JUMP ? s_jump_ms : r == ATTRACT_BOUNCE ? BOUNCE_MS : BOOM_MS; }
+static const uint32_t BOUNCE_MS = 16000;
+static uint32_t routine_ms(int r) { return r == ATTRACT_BOUNCE ? BOUNCE_MS : s_jump_ms; }
 static uint32_t hash32(uint32_t x) {
     x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16;
     return x;
 }
 // Which routines the random pick may choose. BOUNCE is switched off (user, 2026-09-30) but
 // kept: set it back to true to bring it back. The host preview can still pin it (`only`).
+// With JUMP alone on, it repeats.
 static const bool ROUTINE_ON[ATTRACT_ROUTINES] = {
     [ATTRACT_JUMP] = true,
     [ATTRACT_BOUNCE] = false,
-    [ATTRACT_BOOM] = true,
 };
 // The k-th enabled routine, skipping `except` (-1 = none); count = how many that leaves.
 static int pick_routine(uint32_t h, int except) {
@@ -545,9 +499,8 @@ void fx_attract(uint32_t t_ms, const uint8_t *icon48, const uint32_t *heat, uint
     s_word_sheen = cols[2];
     s_ox = s_oy = 0;
     switch (s_seq.routine) {
-        case ATTRACT_JUMP: routine_jump(t, sp, cols); break;
         case ATTRACT_BOUNCE: routine_bounce(t, sp, cols, restart); break;
-        default: routine_boom(t, sp, cols); break;
+        default: routine_jump(t, sp, cols); break;
     }
     s_ox = s_oy = 0;
 }

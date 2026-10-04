@@ -5,6 +5,7 @@
 #include <stdint.h>
 extern "C" {
 #include "menu.h"
+#include "home.h"
 }
 
 namespace ui {
@@ -77,5 +78,19 @@ struct AgentRowView {
     int state; // agent_board.h agent_state_t
 };
 void draw_agent_board(const AgentRowView *rows, int n, uint32_t t_ms);
+
+// HOME (home.h): the whole Main Screen -- scanning, the lamps as a carousel, or one lamp's option
+// being turned, its scale thin on the rim. The lamp's colours and the Mi badge are HOME's palette
+// exceptions (PIXEL_ART.md section 2).
+struct HomeInputs {
+    const home_snapshot_t *snap;
+    uint32_t t_ms;     // the scan animation's clock
+    float slide_px;    // the carousel's offset while sliding to `selected`, 0 at rest
+    uint8_t buttons;   // held keys (UI_BTN_*)
+};
+void draw_home(const HomeInputs &in);
+// HOME's idle-screen icon: lamp `l` drawn into a 48x48 RGB565 BE image (black = see-through),
+// and its three accent colours for the idle effects and LEDs.
+void home_idle_icon(const home_lamp_view_t &l, uint8_t *icon48, uint32_t accents[3]);
 
 } // namespace ui

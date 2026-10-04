@@ -11,12 +11,17 @@
     quadra.py loop [SECONDS]          the control loop's health over a window (missed ticks, jitter)
     quadra.py wifi-check [--rekey]    the companion's WiFi link against this knob: crypto, USB-only
                                       commands, a stalling peer (needs: pip install cryptography)
+    quadra.py home import [FILE]      HOME's lamps: Xiaomi lights from the token extractor's JSON
+                                      (default ~/.quadra/xiaomi-devices.json) to the knob, USB only
+    quadra.py home list               the lamps on the knob and what it sees of them
 
 Talks to the vendor HID interface (no macOS Input Monitoring permission needed).
 Setup: python3 -m pip install hidapi esptool
 """
 import argparse
 import getpass
+import hashlib
+import json
 import os
 import re
 import struct
@@ -24,6 +29,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
+import urllib.request
 
 import hid
 
@@ -470,6 +477,251 @@ def cmd_pd(args):
         raise SystemExit(PD_RESULT.get(r[1], f"result {r[1]}"))
 
 
+# --- HOME (src/home.h): Xiaomi lamps on the network, run from the knob ---
+EXT_HOME, EXT_TAG_HOME = 0x30, 0xCA
+HOME_BEGIN, HOME_LAMP, HOME_COMMIT, HOME_STATUS = 1, 2, 3, 4
+HOME_MAX_LAMPS, HOME_NAME_LEN = 12, 20
+CAP_BRIGHT, CAP_TEMP, CAP_COLOR = 1, 2, 4
+KIND_BULB, KIND_DESK, KIND_DESK_ARM, KIND_STRIP = 0, 1, 2, 3  # src/home.h HOME_KIND_*: the icon
+PROTO_MIOT, PROTO_LEGACY = 0, 1
+MIOT_SPEC = "https://miot-spec.org/miot-spec-v2"
+SPEC_CACHE = os.path.expanduser("~/.quadra/miot-spec")
+EXTRACTOR_JSON = os.path.expanduser("~/.quadra/xiaomi-devices.json")
+
+
+def miot_spec(model):
+    """A model's MIoT spec (miot-spec.org), cached in ~/.quadra/miot-spec/."""
+    os.makedirs(SPEC_CACHE, exist_ok=True)
+    path = os.path.join(SPEC_CACHE, model + ".json")
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    with urllib.request.urlopen(f"{MIOT_SPEC}/instances?status=all", timeout=30) as r:
+        instances = json.load(r)["instances"]
+    found = [i for i in instances if i["model"] == model]
+    if not found:
+        return None
+    best = max(found, key=lambda i: (i.get("status") == "released", i.get("version", 0)))
+    with urllib.request.urlopen(f"{MIOT_SPEC}/instance?type={best['type']}", timeout=30) as r:
+        spec = json.load(r)
+    with open(path, "w") as f:
+        json.dump(spec, f)
+    return spec
+
+
+def light_props(spec):
+    """From the spec's light service: (siid, piid) of on, brightness, colour temperature, colour, the
+    capabilities, and the colour temperature's range."""
+    siid, piid, caps, ct = [0] * 4, [0] * 4, 0, (0, 0)
+    for svc in spec.get("services", []):
+        if svc["type"].split(":")[3] != "light":
+            continue
+        for p in svc.get("properties", []):
+            if "write" not in p.get("access", []):
+                continue
+            name = p["type"].split(":")[3]
+            slot = {"on": 0, "brightness": 1, "color-temperature": 2, "color": 3}.get(name)
+            if slot is None or siid[slot]:
+                continue
+            siid[slot], piid[slot] = svc["iid"], p["iid"]
+            if slot == 1:
+                caps |= CAP_BRIGHT
+            elif slot == 2:
+                caps |= CAP_TEMP
+                lo, hi = p.get("value-range", [2700, 6500])[:2]
+                ct = (int(lo), int(hi))
+            elif slot == 3:
+                caps |= CAP_COLOR
+        break
+    return siid, piid, caps, ct
+
+
+class Miio:
+    """Just enough miIO to ask a lamp which protocol it answers (src/home.c does the rest)."""
+
+    def __init__(self, ip, token):
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        import socket
+        self.ip, self.token = ip, token
+        self.key = hashlib.md5(token).digest()
+        self.iv = hashlib.md5(self.key + token).digest()
+        self.cipher = lambda: Cipher(algorithms.AES(self.key), modes.CBC(self.iv))
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(1.0)
+        self.did = self.stamp = None
+
+    def hello(self):
+        self.sock.sendto(bytes.fromhex("21310020" + "ff" * 28), (self.ip, 54321))
+        try:
+            data, _ = self.sock.recvfrom(1024)
+        except OSError:
+            return False
+        self.did, self.stamp = struct.unpack(">II", data[8:16])
+        self.t0 = time.monotonic()
+        return True
+
+    def call(self, method, params, mid):
+        body = json.dumps({"id": mid, "method": method, "params": params}).encode()
+        pad = 16 - len(body) % 16
+        e = self.cipher().encryptor()
+        enc = e.update(body + bytes([pad]) * pad) + e.finalize()
+        hdr = struct.pack(">HHIII", 0x2131, 32 + len(enc), 0, self.did, self.stamp + int(time.monotonic() - self.t0) + 1)
+        self.sock.sendto(hdr + hashlib.md5(hdr + self.token + enc).digest() + enc, (self.ip, 54321))
+        try:
+            data, _ = self.sock.recvfrom(4096)
+        except OSError:
+            return None
+        d = self.cipher().decryptor()
+        dec = d.update(data[32:]) + d.finalize()
+        return json.loads(dec[:-dec[-1]].rstrip(b"\0"))
+
+
+def probe_proto(ip, token, did, siid, piid):
+    """Which protocol a lamp answers: MIoT, the older one, or None (no answer: offline)."""
+    try:
+        m = Miio(ip, token)
+    except ImportError:
+        return None
+    if not m.hello():
+        return None
+    props = [{"did": str(did), "siid": siid[i], "piid": piid[i]} for i in range(4) if siid[i]][:1]
+    if props and m.call("get_properties", props, 101):
+        return PROTO_MIOT
+    if m.call("get_prop", ["power"], 102):
+        return PROTO_LEGACY
+    return None
+
+
+def find_lamps(ips):
+    """Where each miIO device answers now ({did: ip}): a hello to every address of the subnets the
+    lamps were last seen on (a router hands out new addresses; the extractor's are from the cloud)."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.05)
+    hello = bytes.fromhex("21310020" + "ff" * 28)
+    for net in sorted({ip.rsplit(".", 1)[0] for ip in ips}):
+        for i in range(1, 255):
+            s.sendto(hello, (f"{net}.{i}", 54321))
+    seen, end = {}, time.monotonic() + 2.0
+    while time.monotonic() < end:
+        try:
+            data, (ip, _) = s.recvfrom(1024)
+        except OSError:
+            continue
+        if len(data) == 32:
+            seen[struct.unpack(">I", data[8:12])[0]] = ip
+    s.close()
+    return seen
+
+
+def lamp_kind(model):
+    """Which icon the knob draws, from the model name: a strip, a desk lamp (the 1S-style ones
+    with a slim arm: lamp1, lamp4), another desk lamp, or a bulb (anything else)."""
+    m = model.split(".")[-1]
+    if "strip" in m:
+        return KIND_STRIP
+    if m in ("lamp1", "lamp4"):
+        return KIND_DESK_ARM
+    if m.startswith("lamp"):
+        return KIND_DESK
+    return KIND_BULB
+
+
+def knob_name(name):
+    """The knob's font is ASCII upper case: accents dropped, a leading brand word too (every lamp
+    here is one), cut to fit."""
+    name = name.translate({ord("Ł"): "L", ord("ł"): "l", ord("Ø"): "O", ord("ø"): "o", ord("ß"): "ss"})  # no NFKD form
+    n = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().upper().strip()
+    n = re.sub(r"^(XIAOMI|MIJIA|MI|YEELIGHT)\s+(?=\S)", "", n)
+    return n[:HOME_NAME_LEN - 1].strip() or "LAMP"
+
+
+def cmd_home_import(args):
+    """Every Xiaomi light in the token extractor's output, with its MIoT spec, to the knob."""
+    with open(args.file) as f:
+        data = json.load(f)
+    lamps = []
+    devices = [d for server in data for home in server.get("homes", []) for d in home.get("devices", [])]
+    where = {} if args.no_probe else find_lamps([d["localip"] for d in devices if d.get("localip")])
+    for d in devices:
+        model = d.get("model", "")
+        if ".light." not in model or not d.get("token") or not d.get("localip"):
+            continue
+        spec = miot_spec(model)
+        if spec is None:
+            print(f"  {d.get('name')}: {model} has no MIoT spec, skipped")
+            continue
+        siid, piid, caps, ct = light_props(spec)
+        if not siid[0]:
+            print(f"  {d.get('name')}: {model} has no light service, skipped")
+            continue
+        token = bytes.fromhex(d["token"])
+        ip = where.get(int(d["did"]), d["localip"])
+        if ip != d["localip"]:
+            print(f"  {d.get('name')}: moved from {d['localip']} to {ip}")
+        proto = None if args.no_probe else probe_proto(ip, token, int(d["did"]), siid, piid)
+        lamps.append(dict(name=knob_name(d.get("name") or model), model=model, did=int(d["did"]),
+                          ip=ip, token=token, siid=siid, piid=piid, caps=caps, ct=ct, kind=lamp_kind(model),
+                          proto=PROTO_MIOT if proto is None else proto, seen=proto is not None))
+    if not lamps:
+        raise SystemExit("no Xiaomi lights with tokens in " + args.file)
+    if len(lamps) > HOME_MAX_LAMPS:
+        print(f"{len(lamps)} lights: the knob takes {HOME_MAX_LAMPS}, the rest are left out")
+        lamps = lamps[:HOME_MAX_LAMPS]
+    q = Quadra()
+    try:
+        def ok(r, what):
+            if not r or r[0] != EXT_TAG_ACK or r[2] != 0:
+                st = EXT_ST.get(r[2], r[2]) if r and r[0] == EXT_TAG_ACK else "no answer"
+                raise SystemExit(f"{what}: {st} (firmware before extensions v11, or not over USB?)")
+        ok(q.request(bytes([EXT_HOME, HOME_BEGIN]), {EXT_TAG_ACK}), "begin")
+        for i, l in enumerate(lamps):
+            rep = bytes([EXT_HOME, HOME_LAMP, i]) + struct.pack("<I", l["did"]) + bytes(map(int, l["ip"].split(".")))
+            rep += l["token"] + bytes([l["proto"], l["caps"]]) + struct.pack("<HH", *l["ct"])
+            rep += bytes(l["siid"]) + bytes(l["piid"]) + l["name"].encode().ljust(HOME_NAME_LEN, b"\0")[:HOME_NAME_LEN]
+            rep += bytes([l["kind"]])
+            assert len(rep) <= REPORT_SIZE
+            ok(q.request(rep, {EXT_TAG_ACK}), f"lamp {i}")
+        ok(q.request(bytes([EXT_HOME, HOME_COMMIT, len(lamps)]), {EXT_TAG_ACK}, 3.0), "store")
+    finally:
+        q.close()
+    names = {CAP_BRIGHT: "brightness", CAP_TEMP: "white", CAP_COLOR: "colour"}
+    for l in lamps:
+        what = ", ".join(v for k, v in names.items() if l["caps"] & k)
+        how = ("older protocol" if l["proto"] == PROTO_LEGACY else "MIoT") if l["seen"] else "offline now, MIoT assumed"
+        print(f"  {l['name']:<20} {l['model']:<24} {l['ip']:<15} {how}; {what}")
+    print(f"{len(lamps)} lamps on the knob: pick HOME in PROFILES")
+
+
+def cmd_home_list(_args):
+    q = Quadra()
+    try:
+        slot, rows = 0, []
+        while slot < HOME_MAX_LAMPS:
+            r = q.request(bytes([EXT_HOME, HOME_STATUS, slot]), {EXT_TAG_HOME, EXT_TAG_ACK})
+            if not r or r[0] != EXT_TAG_HOME:
+                raise SystemExit("no answer (firmware before extensions v11)")
+            if slot >= r[1]:
+                break
+            rows.append(r)
+            slot += 1
+    finally:
+        q.close()
+    if not rows:
+        print("no lamps: quadra.py home import")
+    for r in rows:
+        f = r[7]
+        state = "offline" if not f & 1 else "no reply" if not f & 2 else "on" if f & 4 else "off"
+        if f & 1 and f & 2 and f & 4:
+            state += f" {r[8]}%"
+            if r[14] & CAP_TEMP:
+                state += f" {struct.unpack('<H', r[9:11])[0]} K"
+        if f & 8:
+            state += " (last change got no reply)"
+        print(f"  {cstr(r[15:35]):<20} {state}   #{r[11]:02x}{r[12]:02x}{r[13]:02x}")
+    print("(states are read while HOME is on screen)")
+
+
 def cmd_reboot(args):
     if not reboot(args.serial):
         raise SystemExit("this firmware has no reboot command (stock?)")
@@ -855,6 +1107,13 @@ def main():
     p = sub.add_parser("pd", help="the USB-PD chip's NVM: check it; --write-5v: 5 V 3 A only, for good")
     p.add_argument("--write-5v", action="store_true")
     p.set_defaults(fn=cmd_pd)
+    p = sub.add_parser("home", help="HOME's lamps: import them from the token extractor, or list them")
+    hs = p.add_subparsers(dest="home_cmd", required=True)
+    h = hs.add_parser("import", help="Xiaomi lights from the token extractor's JSON to the knob (USB)")
+    h.add_argument("file", nargs="?", default=EXTRACTOR_JSON)
+    h.add_argument("--no-probe", action="store_true", help="don't ask each lamp which protocol it answers")
+    h.set_defaults(fn=cmd_home_import)
+    hs.add_parser("list", help="the lamps on the knob and what it sees of them").set_defaults(fn=cmd_home_list)
     p = sub.add_parser("reboot")
     p.add_argument("--serial", action="store_true", help="one boot as USB-Serial-JTAG (for flashing)")
     p.set_defaults(fn=cmd_reboot)

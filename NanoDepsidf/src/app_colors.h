@@ -1,6 +1,6 @@
 #pragma once
 // An app's three accent colours (RGB888, dark to bright), shared by the idle screen and the
-// LEDs so both show the same colours: the profile's own `plasma_heat` when it names them,
+// LEDs so both show the same colours: the profile's own `accents` when it names them,
 // otherwise the three most common colours of its 48x48 icon. Pure function, no state.
 
 #include <stdint.h>

@@ -42,12 +42,17 @@ extern const Sprite SPR_STEPS, SPR_SNAP, SPR_DAMP, SPR_PITCH;
 extern const Sprite SPR_USB_M, SPR_SPK_M, SPR_KBD_M, SPR_MOUSE_M, SPR_NOTE_M, SPR_TERM_M, SPR_CUBE_M;
 extern const Sprite SPR_TRI_L_M, SPR_TRI_R_M;
 extern const Sprite SPR_STEPS_M, SPR_SNAP_M, SPR_DAMP_M, SPR_SHAPE_M, SPR_PITCH_M;
+// HOME's bulb: outline and glass, at 1x and hand-drawn 1.5x.
+extern const Sprite SPR_BULB, SPR_BULB_LIT, SPR_BULB_M, SPR_BULB_LIT_M;
 
 void bind(LGFX_Sprite *target);
 void clip(int x, int y, int w, int h);
 void unclip();
 
 void rect(float x, float y, int w, int h, uint32_t c);
+// Until target(nullptr, 0, 0): rect(), cut() and disc() draw into `be565` (w x h, RGB565
+// big-endian, the icon format) instead of the frame -- HOME's lamp as an idle-screen icon.
+void target(uint16_t *be565, int w, int h);
 void cut(int x, int y, int w, int h, uint32_t c);       // rect with the 4 corner pixels cut
 void frame_box(int x, int y, int w, int h, uint32_t c); // 1px outline, corners cut
 void disc(float cx, float cy, float r, uint32_t c);

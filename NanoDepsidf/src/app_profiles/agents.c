@@ -83,7 +83,7 @@ const app_profile_t app_profile_agents = {
     .icon24 = app_icon_agents_24,
     .icon48 = app_icon_agents_48,
     .legend = {"ENTER", "ESC", "MODE", "MENU"},
-    .plasma_heat = {0x3A1A12, 0xE8825F, 0xFFD2BF},
+    .accents = {0x3A1A12, 0xE8825F, 0xFFD2BF},
     .slot = {
         [APP_SLOT_KNOB] = {
             .kind = APP_ACT_WHEEL, .label = "SCROLL", .sign = 1,

@@ -215,7 +215,7 @@ const app_profile_t app_profile_onshape = {
     .shape_style = APP_SHAPE_STYLE_THICK,
     .shape_stepped = true,
     // The icon is only green + white, too few colours to sample: teal -> Onshape green -> lime.
-    .plasma_heat = {0x0F9D8A, 0x64BC4F, 0xB5E35A},
+    .accents = {0x0F9D8A, 0x64BC4F, 0xB5E35A},
     .slot = {
         [APP_SLOT_KNOB] = ZOOM,
         [APP_SLOT_F1] = ZOOM,

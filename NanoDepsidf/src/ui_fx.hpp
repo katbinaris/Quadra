@@ -6,7 +6,7 @@
 
 namespace ui {
 
-void fx_init(); // one-time tables (logo particles, plasma lookups)
+void fx_init(); // one-time tables (logo particles, the jump's choreography)
 
 // The word the loading screen assembles and the idle screen animates: the user's own
 // (user_prefs.h, up to 12 characters) or nullptr / "" for the stock QUADRA. With an app icon
@@ -19,11 +19,11 @@ constexpr uint32_t BOOT_ANIM_MS = 3400;
 void fx_boot(uint32_t elapsed_ms);
 
 // Attract (idle) animation, arcade attract mode: the active profile's 48x48 icon -- or, with
-// none, the QUADRA wordmark -- in one of three routines (JUMP, BOUNCE, BOOM). `t_ms` counts from
+// none, the QUADRA wordmark -- in a routine (JUMP; BOUNCE is kept but off). `t_ms` counts from
 // the start of the idle session; `seed` picks the random sequence of routines (a new seed or
 // time going back starts a new one). `heat`: 3 accent colours (RGB888), nullptr = sampled from
 // the icon, AMBER without one. `only` >= 0 pins one routine (the host preview).
-enum { ATTRACT_JUMP = 0, ATTRACT_BOUNCE, ATTRACT_BOOM, ATTRACT_ROUTINES };
+enum { ATTRACT_JUMP = 0, ATTRACT_BOUNCE, ATTRACT_ROUTINES };
 void fx_attract(uint32_t t_ms, const uint8_t *icon48 = nullptr, const uint32_t *heat = nullptr, uint32_t seed = 0,
                 int only = -1);
 

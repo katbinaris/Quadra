@@ -241,9 +241,9 @@ char *profile_json_write(const app_profile_t *p, size_t *len) {
     w_enum(o, "shape", p->shape, SHAPE, N(SHAPE));
     w_enum(o, "shape_style", p->shape_style, STYLE, N(STYLE));
     w_bool(o, "shape_stepped", p->shape_stepped);
-    if (p->plasma_heat[0] | p->plasma_heat[1] | p->plasma_heat[2]) {
-        cJSON *h = cJSON_AddArrayToObject(o, "plasma");
-        for (int i = 0; i < 3; i++) cJSON_AddItemToArray(h, cJSON_CreateNumber(p->plasma_heat[i]));
+    if (p->accents[0] | p->accents[1] | p->accents[2]) {
+        cJSON *h = cJSON_AddArrayToObject(o, "accents");
+        for (int i = 0; i < 3; i++) cJSON_AddItemToArray(h, cJSON_CreateNumber(p->accents[i]));
     }
     if (p->macro_count) cJSON_AddItemToObject(o, "macros", w_macros(p));
     cJSON *slots = cJSON_AddObjectToObject(o, "slots");
@@ -677,13 +677,14 @@ static void parse(rd_t *r, const cJSON *o) {
     p->shape = (app_shape_t)r_enum(r, o, "shape", SHAPE, N(SHAPE));
     p->shape_style = (app_shape_style_t)r_enum(r, o, "shape_style", STYLE, N(STYLE));
     p->shape_stepped = r_bool(r, o, "shape_stepped");
-    const cJSON *heat = get(o, "plasma");
+    const cJSON *heat = get(o, "accents");
+    if (heat == NULL) heat = get(o, "plasma"); // its name before 2026-10-04 (profiles stored then)
     if (heat) {
-        if (!cJSON_IsArray(heat) || cJSON_GetArraySize(heat) != 3) fail(r, "plasma: 3 colours");
+        if (!cJSON_IsArray(heat) || cJSON_GetArraySize(heat) != 3) fail(r, "accents: 3 colours");
         for (int i = 0; i < 3 && !r->failed; i++) {
             const cJSON *c = cJSON_GetArrayItem(heat, i);
-            if (!cJSON_IsNumber(c) || c->valuedouble < 0 || c->valuedouble > 0xFFFFFF) fail(r, "plasma: 0xRRGGBB numbers");
-            else p->plasma_heat[i] = (uint32_t)c->valuedouble;
+            if (!cJSON_IsNumber(c) || c->valuedouble < 0 || c->valuedouble > 0xFFFFFF) fail(r, "accents: 0xRRGGBB numbers");
+            else p->accents[i] = (uint32_t)c->valuedouble;
         }
     }
 

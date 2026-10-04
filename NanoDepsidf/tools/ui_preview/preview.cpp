@@ -71,7 +71,8 @@ int main() {
                                &ui::SPR_TRI_L, &ui::SPR_TRI_R, &ui::SPR_STEPS, &ui::SPR_SNAP, &ui::SPR_DAMP,
                                &ui::SPR_PITCH, &ui::SPR_USB_M, &ui::SPR_SPK_M, &ui::SPR_KBD_M, &ui::SPR_MOUSE_M,
                                &ui::SPR_NOTE_M, &ui::SPR_TERM_M, &ui::SPR_TRI_L_M, &ui::SPR_TRI_R_M,
-                               &ui::SPR_STEPS_M, &ui::SPR_SNAP_M, &ui::SPR_DAMP_M, &ui::SPR_SHAPE_M, &ui::SPR_PITCH_M};
+                               &ui::SPR_STEPS_M, &ui::SPR_SNAP_M, &ui::SPR_DAMP_M, &ui::SPR_SHAPE_M, &ui::SPR_PITCH_M,
+                               &ui::SPR_BULB, &ui::SPR_BULB_LIT, &ui::SPR_BULB_M, &ui::SPR_BULB_LIT_M};
     for (const ui::Sprite *s : all) {
         if (strlen(s->rows) != (size_t)s->w * s->h) {
             fprintf(stderr, "sprite %dx%d has %zu chars\n", s->w, s->h, strlen(s->rows));
@@ -190,6 +191,89 @@ int main() {
     hid.rows[0] = row("PROFILES", "", "APP", true);
     ui::draw_hid(hid, {MENU_HID_APP, 0, true, "FIGMA", app_icon_figma_24});
     keep("hid APP");
+    hid.rows[0] = row("PROFILES", "", "HOME", true);
+    ui::draw_hid(hid, {MENU_HID_HOME, 0, true});
+    keep("hid HOME");
+
+    // HOME (home.h): the user's lamps, made up here.
+    {
+        static home_snapshot_t hs;
+        auto lamp = [](const char *name, uint8_t kind, uint8_t caps, bool online, bool on, int bright, int ct, int lo, int hi, int hue,
+                       uint32_t rgb) {
+            home_lamp_view_t l = {};
+            snprintf(l.name, sizeof(l.name), "%s", name);
+            l.kind = kind;
+            l.caps = caps;
+            l.online = online;
+            l.known = online;
+            l.on = on;
+            l.bright = (uint8_t)bright;
+            l.ct = (uint16_t)ct;
+            l.ct_min = (uint16_t)lo;
+            l.ct_max = (uint16_t)hi;
+            l.hue = (uint16_t)hue;
+            l.rgb = rgb;
+            return l;
+        };
+        hs.count = 4;
+        hs.lamps[0] = lamp("LED DESK LAMP 2", HOME_KIND_DESK, HOME_CAP_BRIGHT | HOME_CAP_TEMP, true, true, 64, 2700, 2700, 5100, 0, 0xFFA757);
+        hs.lamps[1] = lamp("SMART LIGHTSTRIP", HOME_KIND_STRIP, HOME_CAP_BRIGHT | HOME_CAP_COLOR, true, true, 76, 0, 0, 0, 200, 0x00AAFF);
+        hs.lamps[2] = lamp("DESK LAMP", HOME_KIND_DESK_ARM, HOME_CAP_BRIGHT | HOME_CAP_TEMP, true, false, 1, 2600, 2600, 5000, 0, 0xFFA04F);
+        hs.lamps[3] = lamp("SMART LED LEFT", HOME_KIND_BULB, HOME_CAP_BRIGHT | HOME_CAP_TEMP | HOME_CAP_COLOR, false, false, 50, 4000,
+                           1700, 6500, 0, 0xFFD1A3);
+        hs.phase = HOME_PHASE_SCAN;
+        hs.found = 2;
+        ui::draw_home({&hs, 700, 0, 0});
+        keep("home: scanning");
+        hs.phase = HOME_PHASE_LIST;
+        hs.selected = 1;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: lightstrip, on");
+        hs.selected = 0;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: desk lamp 2, on");
+        hs.selected = 2;
+        ui::draw_home({&hs, 0, 0, UI_BTN_F2});
+        keep("home: desk lamp off, F2 held");
+        hs.selected = 3;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: bulb offline");
+        hs.selected = 1;
+        ui::draw_home({&hs, 0, 30, 0});
+        keep("home: sliding");
+        hs.phase = HOME_PHASE_EDIT;
+        hs.selected = 0;
+        hs.option = HOME_OPT_BRIGHT;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: edit BRIGHT");
+        hs.option = HOME_OPT_TEMP;
+        hs.lamps[0].ct = 4300;
+        hs.lamps[0].rgb = 0xFFDCC0;
+        ui::draw_home({&hs, 0, 0, UI_BTN_F1});
+        keep("home: edit TEMP, F1 held");
+        hs.selected = 1;
+        hs.option = HOME_OPT_COLOR;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: edit COLOR");
+        hs.lamps[1].failed = true;
+        hs.option = HOME_OPT_BRIGHT;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: edit, no reply");
+        hs.phase = HOME_PHASE_EMPTY;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: no lamps");
+        hs.phase = HOME_PHASE_NO_WIFI;
+        ui::draw_home({&hs, 0, 0, 0});
+        keep("home: no wifi");
+        // The idle screen in HOME: the lamp changed last, as the jumping icon.
+        static uint8_t icon[48 * 48 * 2];
+        uint32_t acc[3];
+        ui::home_idle_icon(hs.lamps[1], icon, acc);
+        ui::fx_attract(0, icon, acc, 1, ui::ATTRACT_JUMP);
+        for (uint32_t t = 33; t < 2300; t += 33) ui::fx_attract(t, icon, acc, 1, ui::ATTRACT_JUMP), g.clear();
+        ui::fx_attract(2300, icon, acc, 1, ui::ATTRACT_JUMP);
+        keep("home: idle, lightstrip");
+    }
 
     // The built-ins in the firmware's order (app_profiles.c).
     static const ui::ProfileItem profiles[8] = {
@@ -428,17 +512,15 @@ int main() {
         {ui::ATTRACT_JUMP, "idle JUMP big jump", 2300}, {ui::ATTRACT_JUMP, "idle JUMP landing", 2720},
         {ui::ATTRACT_JUMP, "idle JUMP spin", 6900}, {ui::ATTRACT_JUMP, "idle JUMP sparkles", 8200},
         {ui::ATTRACT_BOUNCE, "idle BOUNCE travel", 700}, {ui::ATTRACT_BOUNCE, "idle BOUNCE rim hit", 1420},
-        {ui::ATTRACT_BOOM, "idle BOOM explosion", 500}, {ui::ATTRACT_BOOM, "idle BOOM pop", 700},
-        {ui::ATTRACT_BOOM, "idle BOOM idle", 2600},
     };
     for (const Idle &d : idles) {
-        ui::fx_attract(0, app_icon_onshape_48, app_profile_onshape.plasma_heat, 1, d.routine);
-        for (uint32_t t = 33; t < d.ms; t += 33) ui::fx_attract(t, app_icon_onshape_48, app_profile_onshape.plasma_heat, 1, d.routine), g.clear();
-        ui::fx_attract(d.ms, app_icon_onshape_48, app_profile_onshape.plasma_heat, 1, d.routine);
+        ui::fx_attract(0, app_icon_onshape_48, app_profile_onshape.accents, 1, d.routine);
+        for (uint32_t t = 33; t < d.ms; t += 33) ui::fx_attract(t, app_icon_onshape_48, app_profile_onshape.accents, 1, d.routine), g.clear();
+        ui::fx_attract(d.ms, app_icon_onshape_48, app_profile_onshape.accents, 1, d.routine);
         keep(d.name);
     }
     for (int r = 0; r < ui::ATTRACT_ROUTINES; r++) {
-        uint32_t ms = r == ui::ATTRACT_BOOM ? 2600 : 900;
+        uint32_t ms = 900;
         for (uint32_t t = 0; t < ms; t += 33) ui::fx_attract(t, nullptr, nullptr, 2, r), g.clear();
         ui::fx_attract(ms, nullptr, nullptr, 2, r);
         keep("idle QUADRA");

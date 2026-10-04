@@ -23,7 +23,7 @@ static const char *TAG = "config_store";
 // load-time range check too loose or too strict, not silently corrupt anything: menu.c's own
 // rotate_*() callbacks already clamp every value they ever produce, so this check only
 // guards against corrupted flash.
-#define HID_TYPE_COUNT 4 // KEYBOARD, MOUSE, MIDI, APP
+#define HID_TYPE_COUNT 5 // KEYBOARD, MOUSE, MIDI, APP, HOME
 #define HOST_COUNT 2     // menu.h's menu_host_t: MAC, PC
 
 static bool nvs_load_blob(const char *ns, void *out, size_t size) {

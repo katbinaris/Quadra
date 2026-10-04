@@ -66,6 +66,18 @@ const Sprite SPR_SHAPE_M = {11, 6,
     ".........##" "........###" ".......###." ".....####.." "#######...." "#####......"};
 const Sprite SPR_PITCH_M = {11, 6,
     "..........#" "........#.#" "......#.#.#" "....#.#.#.#" "..#.#.#.#.#" "#.#.#.#.#.#"};
+// HOME (home.h): a bulb, its outline and, apart, its glass -- a lit lamp's glass is drawn in
+// the lamp's own colour under the outline.
+const Sprite SPR_BULB = {7, 10,
+    "..###.." ".#...#." "#.....#" "#.....#" "#.....#" ".#...#." "..#.#.." "..###.." "..###.." "...#..."};
+const Sprite SPR_BULB_LIT = {7, 10,
+    "......." "..###.." ".#####." ".#####." ".#####." "..###.." "...#..." "......." "......." "......."};
+const Sprite SPR_BULB_M = {11, 14,
+    "...#####..." ".##.....##." ".#.......#." "#.........#" "#.........#" "#.........#" "#.........#"
+    ".#.......#." "..#.....#.." "...#...#..." "...#####..." "...#####..." "....###...." ".....#....."};
+const Sprite SPR_BULB_LIT_M = {11, 14,
+    "..........." "...#####..." "..#######.." ".#########." ".#########." ".#########." ".#########."
+    "..#######.." "...#####..." "....###...." "..........." "..........." "..........." "..........."};
 
 void bind(LGFX_Sprite *target) {
     s_g = target;
@@ -79,9 +91,30 @@ void unclip() {
     s_g->clearClipRect();
 }
 
+// target(): rect() (and so cut(), disc()) into a small RGB565 big-endian image instead of the frame.
+static uint16_t *s_tgt = nullptr;
+static int s_tgt_w = 0, s_tgt_h = 0;
+void target(uint16_t *be565, int w, int h) {
+    s_tgt = be565;
+    s_tgt_w = w;
+    s_tgt_h = h;
+}
+
+static inline uint16_t to_be565(uint32_t c) {
+    uint16_t v = (uint16_t)(((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) | ((c >> 3) & 0x001F));
+    return (uint16_t)(v >> 8 | v << 8);
+}
+
 void rect(float x, float y, int w, int h, uint32_t c) {
     if (w <= 0 || h <= 0) return;
-    s_g->fillRect((int32_t)lroundf(x), (int32_t)lroundf(y), w, h, c);
+    int x0 = (int)lroundf(x), y0 = (int)lroundf(y);
+    if (s_tgt != nullptr) {
+        uint16_t v = to_be565(c);
+        for (int j = y0 < 0 ? 0 : y0; j < y0 + h && j < s_tgt_h; j++)
+            for (int i = x0 < 0 ? 0 : x0; i < x0 + w && i < s_tgt_w; i++) s_tgt[j * s_tgt_w + i] = v;
+        return;
+    }
+    s_g->fillRect(x0, y0, w, h, c);
 }
 
 void cut(int x, int y, int w, int h, uint32_t c) {

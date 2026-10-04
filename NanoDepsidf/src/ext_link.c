@@ -9,6 +9,7 @@
 #include "net.h"
 #include "net_link.h"
 #include "pd_status.h"
+#include "home.h"
 #include "clock.h"
 #include "screen_stream.h"
 #include "tasks_common.h"
@@ -54,6 +55,8 @@ static bool s_key_fresh;
 static _Atomic bool s_key_pending = false; // EXT_NET_KEY (USB)
 static bool s_pd_write;
 static _Atomic bool s_pd_pending = false; // EXT_CMD_PD (USB): I2C and NVM, in the usb task
+static int s_home_count;
+static _Atomic bool s_home_pending = false; // EXT_HOME_COMMIT (USB): NVS, in the usb task
 // WiFi setup, staged until APPLY (EXT_CMD_NET). The password is wiped once it's stored.
 static char s_net_ssid[NET_SSID_MAX + 1], s_net_pass[64];
 static bool s_net_have_ssid, s_net_have_pass, s_net_on;
@@ -164,6 +167,29 @@ static void build_net(uint8_t *r) {
     r[8] = st.enabled;
     memcpy(r + 9, st.ssid, strnlen(st.ssid, NET_SSID_MAX));
     memcpy(r + 41, st.host, strnlen(st.host, NET_HOST_MAX));
+}
+
+static uint32_t rd_u32(const uint8_t *p) { return (uint32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24); }
+
+// One of HOME's lamps as the knob sees it now (never its token).
+EXT_RAM_BSS_ATTR static home_snapshot_t s_home_snap;
+static void build_home(uint8_t *r, int slot) {
+    home_get_snapshot(&s_home_snap);
+    r[0] = EXT_TAG_HOME;
+    r[1] = (uint8_t)home_lamp_count();
+    r[2] = (uint8_t)slot;
+    if (slot >= s_home_snap.count) return;
+    const home_lamp_view_t *l = &s_home_snap.lamps[slot];
+    memcpy(r + 3, &l->did, 4);
+    r[7] = (l->online ? EXT_HOME_ONLINE : 0) | (l->known ? EXT_HOME_KNOWN : 0) | (l->on ? EXT_HOME_ON : 0)
+         | (l->failed ? EXT_HOME_FAILED : 0);
+    r[8] = l->bright;
+    put_u16(r + 9, l->ct);
+    r[11] = (uint8_t)(l->rgb >> 16);
+    r[12] = (uint8_t)(l->rgb >> 8);
+    r[13] = (uint8_t)l->rgb;
+    r[14] = l->caps;
+    memcpy(r + 15, l->name, strnlen(l->name, HOME_NAME_LEN - 1));
 }
 
 bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
@@ -344,6 +370,50 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             s_pd_write = in[1] == 1;
             atomic_store(&s_pd_pending, true);
             return false;
+        case EXT_CMD_HOME:
+            if (in[1] == EXT_HOME_STATUS) {
+                build_home(r, in[2]);
+                return true;
+            }
+            if (link != HOST_LINK_USB) { // the lamps' tokens: someone with the knob on a cable
+                ack(r, in[0], EXT_ST_USB_ONLY);
+                return true;
+            }
+            switch (in[1]) {
+                case EXT_HOME_BEGIN:
+                    home_import_begin();
+                    ack(r, in[0], EXT_ST_OK);
+                    return true;
+                case EXT_HOME_LAMP: {
+                    home_lamp_cfg_t l = {0};
+                    l.did = rd_u32(in + 3);
+                    memcpy(&l.ip, in + 7, 4); // a.b.c.d: network order as it stands
+                    memcpy(l.token, in + 11, 16);
+                    l.proto = in[27];
+                    l.caps = in[28];
+                    l.ct_min = rd_u16(in + 29);
+                    l.ct_max = rd_u16(in + 31);
+                    memcpy(l.siid, in + 33, HOME_PROP_COUNT);
+                    memcpy(l.piid, in + 37, HOME_PROP_COUNT);
+                    memcpy(l.name, in + 41, HOME_NAME_LEN - 1);
+                    l.kind = in[61];
+                    bool ok = home_import_lamp(in[2], &l);
+                    memset(&l, 0, sizeof(l));
+                    ack(r, in[0], ok ? EXT_ST_OK : EXT_ST_BAD_PARAM);
+                    return true;
+                }
+                case EXT_HOME_COMMIT:
+                    if (in[2] > HOME_MAX_LAMPS) {
+                        ack(r, in[0], EXT_ST_BAD_PARAM);
+                        return true;
+                    }
+                    s_home_count = in[2];
+                    atomic_store(&s_home_pending, true); // NVS: ext_link_poll
+                    return false;
+                default:
+                    ack(r, in[0], EXT_ST_BAD_PARAM);
+                    return true;
+            }
         case EXT_CMD_NET:
             // The network's name and password, the radio, the pairing key: someone with the knob
             // on a cable. Over WiFi they could only cut the link they came over, or hand it on.
@@ -463,6 +533,13 @@ void ext_link_poll(void) {
         r[3] = after;
         host_link_queue(r);
         atomic_store(&s_pd_pending, false);
+    }
+    if (atomic_load(&s_home_pending)) {
+        bool ok = home_import_commit(s_home_count);
+        memset(r, 0, sizeof(r));
+        ack(r, EXT_CMD_HOME, ok ? EXT_ST_OK : EXT_ST_STORAGE);
+        host_link_queue(r);
+        atomic_store(&s_home_pending, false);
     }
     clock_poll();      // stores a changed format / zone
     user_prefs_poll(); // and MUSIC's cover style

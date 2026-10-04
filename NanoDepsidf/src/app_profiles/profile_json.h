@@ -10,7 +10,7 @@
 //
 //   {"format": 1, "id": "figma", "name": "FIGMA", "legend": ["UNDO", "DEPTH", "CMDS", "FRAME"],
 //    "icon48": "...", "icon24": "...", "visual": "shape", "shape": "pyramid",
-//    "shape_style": "thick", "shape_stepped": true, "plasma": [16711680, 65280, 255],
+//    "shape_style": "thick", "shape_stepped": true, "accents": [16711680, 65280, 255],
 //    "slots": {"knob": {"kind": "wheel", "label": "ZOOM", "modifier": 8, "sign": 1,
 //                       "feel": "saw", "detents": 24}, "f1": {...}, ...},
 //    "rings": [{"name": "LAYOUT", "tab": "LAYOUT", "slot": "f1",

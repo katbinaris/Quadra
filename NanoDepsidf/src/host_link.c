@@ -361,7 +361,7 @@ void host_link_receive(host_link_t link, const uint8_t *report, uint16_t len) {
     xSemaphoreTake(s_rx_lock, portMAX_DELAY);
     bool reply = false;
     if (in[0] >= 0x10 && in[0] <= 0x1F) reply = handle(link, in, r);
-    else if (in[0] >= 0x20 && in[0] <= 0x2F) reply = ext_link_handle(link, in, r);
+    else if (in[0] >= 0x20 && in[0] <= 0x3F) reply = ext_link_handle(link, in, r);
     else if (link == HOST_LINK_USB) reply = icon_store_handle_report(in, sizeof(in), r); // tools/send_icon.py
     if (reply) {
         queue_reply(link, r);

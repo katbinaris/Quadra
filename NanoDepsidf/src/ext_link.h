@@ -6,7 +6,7 @@
 
 // This fork's companion-protocol extensions (ext_proto.h), served next to host_link.c.
 
-// One command in 0x20-0x2F from `link` (host_link_receive) -> at most one reply in `r` (64
+// One command in 0x20-0x3F from `link` (host_link_receive) -> at most one reply in `r` (64
 // bytes, zeroed).
 bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r);
 

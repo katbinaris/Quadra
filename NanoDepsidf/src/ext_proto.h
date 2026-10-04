@@ -2,13 +2,15 @@
 
 // Extensions to the companion protocol (host_proto.h) for this fork. Same framing: 64-byte
 // reports on the vendor HID interface (or over WiFi, net_link.h), no report ID, little-endian. Kept in their own command
-// range (0x20-0x2F, replies and events 0xC0-0xCF) so upstream can grow 0x10-0x1F freely.
+// range (0x20-0x2F, replies and events 0xC0-0xCF) so upstream can grow 0x10-0x1F freely. That
+// range is full: new commands go in 0x30-0x3F (same handler, ext_link.c).
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 10 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+#define EXT_PROTO_VERSION 11 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
                              // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
                              // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi;
-                             // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi)
+                             // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi);
+                             // 11: EXT_CMD_HOME / EXT_TAG_HOME (HOME's lamps)
 
 // --- Host -> device ---
 enum {
@@ -62,12 +64,28 @@ enum {
                            //   -> EXT_TAG_PREFS
     EXT_CMD_PD = 0x2F,     // the USB-PD chip's NVM (pd_status.h pd_nvm_5v), USB only. [1]=0: read and
                            //   check, 1: write 5 V 3 A for good -> EXT_TAG_PD
+    EXT_CMD_HOME = 0x30,   // HOME's lamps (home.h). [1]=EXT_HOME_*; all but STATUS over USB only (tokens):
+                           //   BEGIN: a new list starts -> EXT_TAG_ACK
+                           //   LAMP: [2]=slot [3..6]=miIO device id [7..10]=IPv4 (a.b.c.d)
+                           //     [11..26]=token [27]=HOME_PROTO_* [28]=HOME_CAP_* [29..30]=lowest
+                           //     and [31..32]=highest colour temperature, K [33..36]=MIoT siid of
+                           //     on, brightness, colour temperature, colour (0 = none) [37..40]=their
+                           //     piid [41..60]=name, NUL-padded [61]=HOME_KIND_* (its icon)
+                           //     -> EXT_TAG_ACK
+                           //   COMMIT: [2]=count -- stores the list (NVS), the knob looks for it
+                           //     -> EXT_TAG_ACK (EXT_ST_STORAGE: not stored)
+                           //   STATUS: [2]=slot -> EXT_TAG_HOME
 };
 enum { EXT_INPUT_KEYS = 1, EXT_INPUT_TURN = 2 };
 enum { EXT_CLOCK_FORMAT = 1, EXT_CLOCK_ZONE = 2, EXT_CLOCK_GET = 3 };
 enum { EXT_NET_SSID = 1, EXT_NET_PASS_A = 2, EXT_NET_PASS_B = 3, EXT_NET_APPLY = 4, EXT_NET_STATUS = 5, EXT_NET_KEY = 6,
        EXT_NET_CONTROLS = 7 };
 enum { EXT_COVER_BEGIN = 1, EXT_COVER_DATA = 2, EXT_COVER_END = 3 };
+enum { EXT_HOME_BEGIN = 1, EXT_HOME_LAMP = 2, EXT_HOME_COMMIT = 3, EXT_HOME_STATUS = 4 };
+#define EXT_HOME_ONLINE 0x01 // EXT_TAG_HOME [7]: answered this session
+#define EXT_HOME_KNOWN 0x02  // its state has been read
+#define EXT_HOME_ON 0x04
+#define EXT_HOME_FAILED 0x08 // the last change got no reply
 #define EXT_COVER_CHUNK 58
 #define EXT_TRACK_PLAYING 0x01
 #define EXT_TRACK_NONE 0x80 // nothing playing: back to the normal MUSIC screen
@@ -102,6 +120,9 @@ enum {
     EXT_TAG_KEY = 0xC7,    // [1..32]=the WiFi pairing key (net_link.h) [33..34]=its TCP port
     EXT_TAG_PD = 0xC8,     // [1]=pd_nvm_result_t [2]=sink PDOs in the NVM before [3]=after
                            //   [4..43]=the NVM as read before (5 sectors x 8 bytes)
+    EXT_TAG_HOME = 0xCA,   // [1]=lamps stored [2]=slot [3..6]=device id [7]=EXT_HOME_* flags
+                           // [8]=brightness % [9..10]=colour temperature K [11..13]=the colour it
+                           // shows, RGB [14]=HOME_CAP_* [15..34]=name. A slot past the list: [3..]=0
     EXT_TAG_HID = 0xC9,    // to the EXT_NET_CONTROLS client: the HID report USB would have carried,
                            //   the whole state each time (like HID). [1]=EXT_HID_*:
                            //   KEYBOARD: [2]=modifiers (HID bits) [3..8]=keys held (HID usages)

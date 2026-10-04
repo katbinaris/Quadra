@@ -94,12 +94,14 @@ enum {
 // APP: an application profile (src/app_profiles/) -- F1-F4 become app controls and
 // long-press F4 opens the menu. The enum values are what NVS stores, so never reorder them;
 // the order people see (APP first) is MENU_HID_ORDER below.
-typedef enum { MENU_HID_KEYBOARD = 0, MENU_HID_MOUSE, MENU_HID_MIDI, MENU_HID_APP, MENU_HID_TYPE_COUNT } menu_hid_type_t;
+// HOME: the knob as a remote for the lamps on the network (home.h); F1-F3 are its keys, F4
+// opens the menu.
+typedef enum { MENU_HID_KEYBOARD = 0, MENU_HID_MOUSE, MENU_HID_MIDI, MENU_HID_APP, MENU_HID_HOME, MENU_HID_TYPE_COUNT } menu_hid_type_t;
 
 // Display / rotation order of the HID types. Header-inline so the screens (and the host UI
 // preview, which doesn't link menu.c) can use it.
 static const menu_hid_type_t MENU_HID_ORDER[MENU_HID_TYPE_COUNT] = {
-    MENU_HID_APP, MENU_HID_KEYBOARD, MENU_HID_MOUSE, MENU_HID_MIDI,
+    MENU_HID_APP, MENU_HID_HOME, MENU_HID_KEYBOARD, MENU_HID_MOUSE, MENU_HID_MIDI,
 };
 static inline int menu_hid_type_pos(menu_hid_type_t t) {
     for (int i = 0; i < MENU_HID_TYPE_COUNT; i++) {

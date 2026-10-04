@@ -18,6 +18,9 @@
 #include "media.h"
 #include "net.h"
 #include "clock.h"
+#include "home.h"
+#include <stdlib.h>
+#include "esp_attr.h"
 #include <math.h>
 #include <string.h>
 
@@ -35,6 +38,10 @@ static const char *TAG = "led";
 //             chosen one bright
 //   end stop  a short white flash of the whole ring
 //   keys      a held key lights up at full level
+//   HOME      the ring is the scale (the screen shows the value): the chosen lamp's brightness
+//             fills it clockwise from 12 o'clock in the lamp's colour, 1 % = one LED (dim in the
+//             list, dim to full while turned); its whites with the chosen one brightest; or the hue
+//             wheel with the colour at 12 o'clock. The keys take the lamp's colour.
 //
 // Calm by design: 30 fps, a few hundred float ops a frame, the bits go out by RMT (ring A over
 // DMA). Runs above the display (PRIO_LED) so the display's back-to-back frames can't starve it;
@@ -74,6 +81,7 @@ static const uint8_t KEY_LED[4][2] = {{3, 4}, {2, 5}, {1, 6}, {0, 7}};
 typedef struct { float r, g, b; } rgbf_t;
 static rgbf_t s_ring[NANO_LED_A_NUM], s_keys[NANO_LED_B_NUM];
 static led_strip_handle_t s_ring_h = NULL, s_keys_h = NULL;
+EXT_RAM_BSS_ATTR static home_snapshot_t s_home; // HOME's lamps, copied each frame while it's up
 
 // Brand and cover colours are made for screens. The LEDs are linear and run dim, so a pastel
 // like Claude's coral washes out to pink; a 2.2 gamma brings the hue back.
@@ -223,7 +231,7 @@ static void led_task_fn(void *arg) {
         const bool menu = menu_is_open(), app = menu_get_hid_type() == MENU_HID_APP, idle = ui_state_get_screensaver();
         const app_profile_t *p = app ? app_profiles_get(menu_get_app_profile()) : NULL;
         if (p != acc_for || (int)app != acc_hid) {
-            if (p) app_accents(p->icon48, p->plasma_heat, acc);
+            if (p) app_accents(p->icon48, p->accents, acc);
             else memcpy(acc, AMBERS, sizeof(acc));
             acc_for = p;
             acc_hid = app;
@@ -272,10 +280,45 @@ static void led_task_fn(void *arg) {
         if (walls != last_walls) { wall_at = now; last_walls = walls; }
         int w_ring = 0, w_entry = 0;
         const bool wheel = app && !menu && p && app_mode_wheel(&w_ring, &w_entry) && w_ring < p->ring_count;
+        // HOME: the chosen lamp (its colour lights the ring and the keys).
+        const bool home = menu_get_hid_type() == MENU_HID_HOME && !menu;
+        if (home) home_get_snapshot(&s_home);
+        const bool home_ring = home && s_home.count > 0 && (s_home.phase == HOME_PHASE_LIST || s_home.phase == HOME_PHASE_EDIT);
+        const home_lamp_view_t *hl = home_ring ? &s_home.lamps[s_home.selected] : NULL;
+        const bool hl_on = hl && hl->online && hl->known && hl->on;
+        uint32_t home_pal[3];
+        if (hl_on) {
+            uint32_t c = gamma_rgb(hl->rgb);
+            home_pal[0] = home_pal[1] = home_pal[2] = c;
+            pal = home_pal;
+        }
 
         // Ring: the resting gradient (drifting slowly and dimmer while idle), or the wheel.
         const float drift = idle ? (float)(now % 30000000) / 30000000.0f : 0;
-        if (wheel) {
+        if (home_ring) {
+            // The lamp's brightness fills the ring clockwise from 12 o'clock: 1 % is one LED.
+            const int fill = hl->on ? (hl->bright * NANO_LED_A_NUM + 99) / 100 : 0;
+            for (int i = 0; i < NANO_LED_A_NUM; i++) s_ring[i] = (rgbf_t){0, 0, 0};
+            if (s_home.phase == HOME_PHASE_LIST) {
+                for (int i = 0; i < fill && hl_on && fx != LIGHT_FX_OFF; i++) s_ring[i] = hexf(pal[1], LED_REST);
+            } else if (hl_on) { // a lamp that's off: the ring stays dark
+                if (s_home.option == HOME_OPT_COLOR) { // the wheel: 6 degrees of hue per LED, the colour at 12
+                    for (int i = 0; i < NANO_LED_A_NUM; i++) {
+                        int off = i <= NANO_LED_A_NUM / 2 ? i : i - NANO_LED_A_NUM;
+                        s_ring[i] = hexf(gamma_rgb(home_hue_rgb(hl->hue + off * 6)), i == 0 ? 1.0f : 0.30f);
+                    }
+                } else if (s_home.option == HOME_OPT_BRIGHT) { // fills up, dim to full, in the lamp's colour
+                    for (int i = 0; i < fill; i++) s_ring[i] = hexf(pal[1], 0.15f + 0.85f * (i + 1) / NANO_LED_A_NUM);
+                } else { // the lamp's whites, warm to cool, the chosen one brightest
+                    const int span = hl->ct_max > hl->ct_min ? hl->ct_max - hl->ct_min : 1;
+                    const int at = (int)lroundf((hl->ct - hl->ct_min) / (float)span * (NANO_LED_A_NUM - 1));
+                    for (int i = 0; i < NANO_LED_A_NUM; i++) {
+                        uint32_t k = gamma_rgb(home_kelvin_rgb(hl->ct_min + span * i / (NANO_LED_A_NUM - 1)));
+                        s_ring[i] = hexf(k, i == at ? 1.0f : abs(i - at) == 1 ? 0.45f : 0.22f);
+                    }
+                }
+            }
+        } else if (wheel) {
             const int n = p->rings[w_ring].count + 1; // + cancel
             for (int i = 0; i < NANO_LED_A_NUM; i++) {
                 int seg = i * n / NANO_LED_A_NUM;

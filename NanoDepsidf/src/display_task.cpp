@@ -37,6 +37,7 @@ extern "C" {
 #include "esp_heap_caps.h"
 #include "user_prefs.h"
 #include "app_colors.h"
+#include "home.h"
 }
 
 static const char *TAG = "display";
@@ -375,7 +376,7 @@ static void draw_clock_view(void) {
     uint8_t f = clock_flags();
     const app_profile_t *p = app_profiles_get(menu_get_app_profile());
     uint32_t acc[3];
-    app_accents(p->icon48, p->plasma_heat, acc);
+    app_accents(p->icon48, p->accents, acc);
     ui::draw_clock({valid, tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday, tm.tm_mday, tm.tm_mon, (f & CLOCK_24H) != 0,
                     (f & CLOCK_SECONDS) != 0, (f & CLOCK_DATE) != 0, label, off, s_clock_zone, n, acc[1]});
 }
@@ -393,7 +394,7 @@ static uint32_t lights_swatch(void) {
     uint32_t acc[3] = {ui::AMBER, ui::AMBER, ui::AMBER};
     if (menu_get_hid_type() == MENU_HID_APP) {
         const app_profile_t *p = app_profiles_get(menu_get_app_profile());
-        app_accents(p->icon48, p->plasma_heat, acc);
+        app_accents(p->icon48, p->accents, acc);
     }
     return acc[1];
 }
@@ -442,6 +443,32 @@ static int64_t s_slide_start_us = -(1LL << 40);
 static int32_t s_last_profile = 0;
 static int s_profile_slide_dir = 0;
 static int64_t s_profile_slide_start_us = -(1LL << 40);
+// HOME (home.h): its snapshot, taken once per tick, and the lamp carousel's slide.
+EXT_RAM_BSS_ATTR static home_snapshot_t s_home;
+static int s_home_slide_dir = 0;
+static int64_t s_home_slide_start_us = -(1LL << 40);
+#define HOME_SLIDE_PX 64
+// HOME's idle-screen icon: the lamp changed last (or the chosen one), drawn once per change into
+// one of two images -- fx_attract() notices new colours by the pointer, so a change flips to the
+// other one. 2 x 4.6 KB in PSRAM.
+EXT_RAM_BSS_ATTR static uint8_t s_home_icon[2][48 * 48 * 2];
+static uint32_t s_home_acc[2][3];
+static int s_home_icon_at = 0;
+static home_lamp_view_t s_home_icon_of;
+static bool s_home_icon_ok = false;
+static const uint8_t *home_idle(const uint32_t **heat) {
+    if (s_home.count <= 0) return nullptr;
+    int i = s_home.last >= 0 && s_home.last < s_home.count ? s_home.last : s_home.selected;
+    const home_lamp_view_t &l = s_home.lamps[i];
+    if (!s_home_icon_ok || memcmp(&l, &s_home_icon_of, sizeof(l)) != 0) {
+        s_home_icon_at ^= 1;
+        ui::home_idle_icon(l, s_home_icon[s_home_icon_at], s_home_acc[s_home_icon_at]);
+        s_home_icon_of = l;
+        s_home_icon_ok = true;
+    }
+    *heat = s_home_acc[s_home_icon_at];
+    return s_home_icon[s_home_icon_at];
+}
 
 // Top-level list scroll -- same model as before: one animated scroll value that centers the
 // selected row, jumping (not sliding) whenever the list is (re)entered.
@@ -843,6 +870,11 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             break;
         }
         case V_MAIN: {
+            if (menu_get_hid_type() == MENU_HID_HOME) {
+                float k = ease_out3((now - s_home_slide_start_us) / (HID_SLIDE_MS * 1000.0f));
+                ui::draw_home({&s_home, (uint32_t)(now / 1000), (1 - k) * s_home_slide_dir * HOME_SLIDE_PX, ui_state_get_buttons()});
+                break;
+            }
             bool app = menu_get_hid_type() == MENU_HID_APP;
             if (profile_is("clock")) {
                 draw_clock_view();
@@ -989,7 +1021,9 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             if (menu_get_hid_type() == MENU_HID_APP) {
                 const app_profile_t *p = app_profiles_get(menu_get_app_profile());
                 icon = p->icon48;
-                if (p->plasma_heat[0] | p->plasma_heat[1] | p->plasma_heat[2]) heat = p->plasma_heat;
+                if (p->accents[0] | p->accents[1] | p->accents[2]) heat = p->accents;
+            } else if (menu_get_hid_type() == MENU_HID_HOME) {
+                icon = home_idle(&heat); // the lamp changed last, lit in its colour
             }
             ui::fx_attract((uint32_t)((now - s_attract_start_us) / 1000), icon, heat, s_attract_seed);
             break;
@@ -1141,6 +1175,22 @@ static Pace update_ui(void) {
     static bool s_np_overlay_was = false;
     bool np_overlay_ended = s_np_overlay_was && !np_overlay; // one more frame, or its last faint one stays up
     s_np_overlay_was = np_overlay;
+    // HOME: a new snapshot redraws; scanning animates and keeps the screen awake.
+    static uint32_t s_home_seen = 0;
+    static int s_home_selected = 0;
+    bool home_on = hid == MENU_HID_HOME && !snap.open;
+    bool home_changed = false;
+    if (home_on) {
+        home_changed = home_version() != s_home_seen;
+        s_home_seen = home_version();
+        home_get_snapshot(&s_home);
+        if (s_home.selected != s_home_selected) {
+            s_home_slide_dir = s_home.selected > s_home_selected ? 1 : -1;
+            s_home_slide_start_us = now;
+            s_home_selected = s_home.selected;
+        }
+    }
+    bool home_scan = home_on && (s_home.phase == HOME_PHASE_SCAN || s_home.phase == HOME_PHASE_OFF);
     bool board_live = false; // a row is animating (WORKING dots, ASKING blink)
     if (profile_is("agents")) {
         agent_row_t rows[AGENT_BOARD_MAX];
@@ -1158,8 +1208,8 @@ static Pace update_ui(void) {
     // track, and a new mode or profile. While music plays, its cover stays up instead of the
     // idle animation.
     bool activity = snapshot_changed || buttons_changed || detent != s_last_detent || icon_changed || notice_changed
-                 || mode_changed || (music_on && media_changed);
-    if (activity || notice || music_playing || clock_on) s_last_activity_us = now; // a clock isn't screensaved
+                 || mode_changed || (music_on && media_changed) || home_changed;
+    if (activity || notice || music_playing || clock_on || home_scan) s_last_activity_us = now; // a clock isn't screensaved
 
     if (snap.save_count != s_last_save_count) {
         s_last_save_count = snap.save_count;
@@ -1244,7 +1294,8 @@ static Pace update_ui(void) {
     s_last_sysmon = sys.version;
     bool redraw = first || snapshot_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
                || rotation_changed || (sys_changed && s_view == V_SYSINFO) || text_changed || notice_changed
-               || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed);
+               || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed)
+               || home_changed;
     // The spinning record: on its own pace, not every tick (now playing polls every tick, PACE_TICK).
     static int64_t s_vinyl_frame_us = 0;
     static bool s_vinyl_was_live = false;
@@ -1275,11 +1326,13 @@ static Pace update_ui(void) {
              || (s_view == V_HID && now - s_slide_start_us < HID_SLIDE_MS * 1000LL)
              || (s_view == V_APP_PROFILE && now - s_profile_slide_start_us < HID_SLIDE_MS * 1000LL)
              || (s_view == V_MAIN && shape_live)
-             || (s_view == V_MAIN && now - s_wheel_slide_us < WHEEL_SLIDE_MS * 1000LL);
+             || (s_view == V_MAIN && now - s_wheel_slide_us < WHEEL_SLIDE_MS * 1000LL)
+             || (s_view == V_MAIN && home_on && now - s_home_slide_start_us < HID_SLIDE_MS * 1000LL);
     bool looping = s_booting || s_view == V_ATTRACT || s_view == V_NOTIFY // the notification breathes
                 || s_view == V_LIGHTS // the rim mirrors the animated LED ring
                 || (s_view == V_MAIN && ((np_overlay && !vinyl_paced) || board_live)) // volume ring / key glyph, board dots
                 || (s_view == V_MAIN && (wheel_live || param_live)) // card animations, value dial
+                || (s_view == V_MAIN && home_scan) // HOME's rings
                 || (s_view == V_HAPTIC
                     && (snap.selected == MENU_HAPTIC_ROW_FEEL || snap.selected == MENU_HAPTIC_ROW_SHAPE
                         || snap.selected == MENU_HAPTIC_ROW_STEPS));

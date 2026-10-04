@@ -23,7 +23,8 @@ typedef struct {
     haptic_tune_t tune[HAPTIC_PROFILE_COUNT][HAPTIC_TYPE_COUNT];
 } haptic_profiles_cfg_t;
 
-// Which haptic profile each HID type uses, indexed by menu.h's menu_hid_type_t.
+// Which haptic profile each HID type uses, indexed by menu.h's menu_hid_type_t -- the first four
+// only: HOME (4) has no setting of its own, and the blob kept its size (menu.c MODE_HAPTIC_STORED).
 typedef struct {
     int32_t profile[4];
 } mode_haptic_cfg_t;

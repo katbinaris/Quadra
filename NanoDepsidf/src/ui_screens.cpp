@@ -24,6 +24,7 @@ static const Sprite &mode_icon(menu_hid_type_t m) {
         case MENU_HID_KEYBOARD: return SPR_KBD;
         case MENU_HID_MOUSE: return SPR_MOUSE;
         case MENU_HID_APP: return SPR_CUBE;
+        case MENU_HID_HOME: return SPR_BULB;
         default: return SPR_NOTE;
     }
 }
@@ -33,6 +34,7 @@ static const Sprite &mode_icon_m(menu_hid_type_t m) {
         case MENU_HID_KEYBOARD: return SPR_KBD_M;
         case MENU_HID_MOUSE: return SPR_MOUSE_M;
         case MENU_HID_APP: return SPR_CUBE_M;
+        case MENU_HID_HOME: return SPR_BULB_M;
         default: return SPR_NOTE_M;
     }
 }
@@ -42,6 +44,7 @@ static const char *mode_name(menu_hid_type_t m) {
         case MENU_HID_KEYBOARD: return "KEYBOARD";
         case MENU_HID_MOUSE: return "MOUSE";
         case MENU_HID_APP: return "APP";
+        case MENU_HID_HOME: return "HOME";
         default: return "MIDI";
     }
 }

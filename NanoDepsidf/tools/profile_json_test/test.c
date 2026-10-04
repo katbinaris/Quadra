@@ -40,7 +40,7 @@ static void compare(const app_profile_t *a, const app_profile_t *b) {
     CHECK((a->icon48 == NULL) == (b->icon48 == NULL) && (!a->icon48 || memcmp(a->icon48, b->icon48, 4608) == 0), "icon48");
     CHECK((a->icon24 == NULL) == (b->icon24 == NULL) && (!a->icon24 || memcmp(a->icon24, b->icon24, 1152) == 0), "icon24");
     CHECK(a->visual == b->visual && a->shape == b->shape && a->shape_style == b->shape_style && a->shape_stepped == b->shape_stepped, "visual");
-    CHECK(memcmp(a->plasma_heat, b->plasma_heat, sizeof(a->plasma_heat)) == 0, "plasma");
+    CHECK(memcmp(a->accents, b->accents, sizeof(a->accents)) == 0, "accents");
     for (int i = 0; i < APP_SLOT_COUNT; i++) {
         const app_action_t *x = &a->slot[i], *y = &b->slot[i];
         CHECK(x->kind == y->kind && str_eq(x->label, y->label) && x->buttons == y->buttons && x->modifier == y->modifier

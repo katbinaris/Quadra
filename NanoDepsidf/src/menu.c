@@ -79,8 +79,11 @@ static _Atomic int32_t s_hp_amp[HAPTIC_PROFILE_COUNT][HAPTIC_TYPE_COUNT];
 static _Atomic float s_hp_pitch[HAPTIC_PROFILE_COUNT][HAPTIC_TYPE_COUNT];
 // Each profile's detents per turn, copied to RAM for the control loop (the table is in flash).
 static uint8_t s_hp_detents[HAPTIC_PROFILE_COUNT];
-// The haptic profile each HID type uses (APP: for inputs that don't name their own).
+// The haptic profile each HID type uses (APP: for inputs that don't name their own). HOME's
+// isn't a setting (home.h picks the feel: the list, or a value), and the NVS blob holds the four
+// before it -- MODE_HAPTIC_STORED -- so it kept its size.
 static _Atomic int32_t s_mode_hp[MENU_HID_TYPE_COUNT];
+#define MODE_HAPTIC_STORED ((int)(sizeof(((mode_haptic_cfg_t *)0)->profile) / sizeof(int32_t)))
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -138,6 +141,7 @@ static const char *ph_hid_type_name(menu_hid_type_t t) {
         case MENU_HID_MOUSE: return "MOUSE";
         case MENU_HID_MIDI: return "MIDI";
         case MENU_HID_APP: return "APP";
+        case MENU_HID_HOME: return "HOME";
         default: return "?";
     }
 }
@@ -331,7 +335,7 @@ static void action_save_hid(void) {
     config_store_save_hid(&cfg);
     config_store_save_app_profile(app_profiles_get(atomic_load_explicit(&s_ph_app_profile, memory_order_relaxed))->id);
     mode_haptic_cfg_t mcfg;
-    for (int i = 0; i < MENU_HID_TYPE_COUNT; i++) mcfg.profile[i] = LD(s_mode_hp[i]);
+    for (int i = 0; i < MODE_HAPTIC_STORED; i++) mcfg.profile[i] = LD(s_mode_hp[i]);
     config_store_save_mode_haptic(&mcfg);
 }
 
@@ -796,7 +800,7 @@ void menu_init(void) {
     }
     mode_haptic_cfg_t mcfg;
     if (config_store_load_mode_haptic(&mcfg)) {
-        for (int i = 0; i < MENU_HID_TYPE_COUNT; i++) ST(s_mode_hp[i], mcfg.profile[i]);
+        for (int i = 0; i < MODE_HAPTIC_STORED; i++) ST(s_mode_hp[i], mcfg.profile[i]);
     }
     ST(s_hp_active, hp_edit());
     hid_cfg_t icfg;
