@@ -63,9 +63,12 @@ export const ClockOp = { FORMAT: 1, ZONE: 2, GET: 3 } as const;
 export const ClockFlag = { H24: 0x01, SECONDS: 0x02, DATE: 0x04, LED: 0x08 } as const; // clock.h CLOCK_*
 export const CLOCK_SLOTS = 5; // 0 = LOCAL (the Mac service sends it), 1-4 the user's
 export const EXT_NET_VERSION = 4; // WiFi (EXT_CMD_NET) from this extensions version on
-export const NetOp = { SSID: 1, PASS_A: 2, PASS_B: 3, APPLY: 4, STATUS: 5, KEY: 6 } as const;
+export const NetOp = { SSID: 1, PASS_A: 2, PASS_B: 3, APPLY: 4, STATUS: 5, KEY: 6, CONTROLS: 7 } as const;
 // The companion over WiFi (net_link.h): paired over USB with the knob's key (NetOp.KEY).
 export const EXT_WIFI_LINK_VERSION = 7;
+// The knob's controls over WiFi (NetOp.CONTROLS; the reports, EXT_TAG_HID, are handled in Rust:
+// src-tauri/src/input.rs) from this extensions version on.
+export const EXT_CONTROLS_VERSION = 10;
 export const NET_STATE = ["OFF", "CONNECTING", "CONNECTED", "NETWORK NOT FOUND", "WRONG PASSWORD"] as const; // net_state_t
 export const NetState = { OFF: 0, CONNECTING: 1, CONNECTED: 2 } as const;
 export const ExtStatus = { OK: 0, BAD_PARAM: 1, UNKNOWN: 2, STORAGE: 3, USB_ONLY: 4 } as const;
@@ -410,6 +413,13 @@ export const encode = {
     const r = report(ExtCmd.NET);
     r[1] = NetOp.KEY;
     r[2] = fresh ? 1 : 0;
+    return r;
+  },
+  // WiFi only: this app types and scrolls for the knob while no USB host has it.
+  netControls: (on: boolean) => {
+    const r = report(ExtCmd.NET);
+    r[1] = NetOp.CONTROLS;
+    r[2] = on ? 1 : 0;
     return r;
   },
   extPrefs: () => report(ExtCmd.PREFS),

@@ -9,14 +9,17 @@ use hidapi::{HidApi, HidDevice};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
+
+#[cfg(target_os = "macos")]
+mod input;
 
 const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 const VENDOR_USAGE: u16 = 0x01;
@@ -134,6 +137,12 @@ const NET_IO: Duration = Duration::from_secs(3);
 // The app polls the knob every second (device.ts), so it always hears back: this long without a
 // word, it's gone.
 const NET_SILENCE: Duration = Duration::from_secs(10);
+// The reader wakes this often to look at the time (a read that times out loses nothing: frames
+// are put together in its own buffer).
+const NET_TICK: Duration = Duration::from_millis(250);
+// A key or button held (the controls over WiFi, input.rs) and the knob this quiet: let go, so a
+// lost link can't leave Cmd down on this Mac.
+const INPUT_HOLD: Duration = Duration::from_millis(1500);
 
 #[derive(Default)]
 struct Net {
@@ -251,7 +260,7 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
         s.set_read_timeout(Some(NET_IO)).map_err(|e| e.to_string())?;
         s.set_write_timeout(Some(NET_IO)).map_err(|e| e.to_string())?;
         let c = handshake(&mut s, &key)?;
-        s.set_read_timeout(Some(NET_SILENCE)).map_err(|e| e.to_string())?;
+        s.set_read_timeout(Some(NET_TICK)).map_err(|e| e.to_string())?;
         Ok::<_, String>((s, c))
     })
     .await
@@ -282,22 +291,56 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
 
     let generation = net.generation.clone();
     thread::spawn(move || {
+        #[cfg(target_os = "macos")]
+        let mut input = input::Input::new();
         let mut seq = 0u64;
-        let mut frame = [0u8; WIRE];
-        let why = loop {
-            if let Err(e) = rd.read_exact(&mut frame) {
-                break e.to_string();
+        let mut buf: Vec<u8> = Vec::with_capacity(WIRE * 16);
+        let mut chunk = [0u8; 2048];
+        let mut heard = Instant::now();
+        let why = 'read: loop {
+            match rd.read(&mut chunk) {
+                Ok(0) => break "closed by the knob".to_string(),
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    heard = Instant::now();
+                }
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(e) => break e.to_string(),
             }
-            let (body, tag) = frame.split_at_mut(REPORT_SIZE);
-            if cipher.decrypt_in_place_detached(Nonce::from_slice(&nonce(b'K', seq)), b"", body, Tag::from_slice(tag)).is_err() {
-                break "a frame from the knob didn't verify".into();
+            let mut at = 0;
+            while buf.len() - at >= WIRE {
+                let mut frame = [0u8; WIRE];
+                frame.copy_from_slice(&buf[at..at + WIRE]);
+                at += WIRE;
+                let (body, tag) = frame.split_at_mut(REPORT_SIZE);
+                if cipher.decrypt_in_place_detached(Nonce::from_slice(&nonce(b'K', seq)), b"", body, Tag::from_slice(tag)).is_err() {
+                    break 'read "a frame from the knob didn't verify".into();
+                }
+                seq += 1;
+                if generation.load(Ordering::SeqCst) != gen {
+                    #[cfg(target_os = "macos")]
+                    input.release_all();
+                    return;
+                }
+                #[cfg(target_os = "macos")]
+                if body[0] == input::TAG_HID {
+                    input.report(body);
+                    continue;
+                }
+                let _ = app.emit("net-report", body.to_vec());
             }
-            seq += 1;
-            if generation.load(Ordering::SeqCst) != gen {
-                return;
+            buf.drain(..at);
+            let quiet = heard.elapsed();
+            #[cfg(target_os = "macos")]
+            if quiet > INPUT_HOLD && input.holding() {
+                input.release_all();
             }
-            let _ = app.emit("net-report", body.to_vec());
+            if quiet > NET_SILENCE {
+                break "no word from the knob".into();
+            }
         };
+        #[cfg(target_os = "macos")]
+        input.release_all();
         let _ = rd.shutdown(Shutdown::Both);
         if generation.load(Ordering::SeqCst) == gen {
             let _ = app.emit("net-closed", why);
@@ -320,12 +363,25 @@ fn net_close(net: State<Net>) {
     net.close();
 }
 
+// The controls over WiFi need Accessibility permission (input.rs). `prompt`: macOS asks, and
+// lists the app in System Settings.
+#[tauri::command]
+fn input_trusted(prompt: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    return input::trusted(prompt);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = prompt;
+        false
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Link::default())
         .manage(Net::default())
-        .invoke_handler(tauri::generate_handler![hid_list, hid_open, hid_write, hid_close, net_open, net_write, net_close])
+        .invoke_handler(tauri::generate_handler![hid_list, hid_open, hid_write, hid_close, net_open, net_write, net_close, input_trusted])
         .run(tauri::generate_context!())
         .expect("error while running the Quadra companion");
 }

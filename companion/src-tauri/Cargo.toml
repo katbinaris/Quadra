@@ -23,6 +23,14 @@ sha2 = "0.10"
 getrandom = "0.3"
 libc = "0.2"
 
+# The knob's controls over WiFi (src/input.rs): CGEvent for keys, the mouse and the wheel; NSEvent
+# for media keys; Accessibility's trust check.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-graphics = { version = "0.3", features = ["CGEvent", "CGEventTypes", "CGEventSource", "CGRemoteOperation"] }
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSGraphicsContext", "objc2-core-graphics"] }
+core-foundation = "0.10"
+
 
 [profile.release]
 codegen-units = 1

@@ -1,7 +1,7 @@
 // One knob, as the UI sees it: connection, the latest settings / state / SYS INFO, the app
 // profiles with their icons, and a short history for the charts. Views subscribe and redraw.
 
-import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lights, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SysA, type SysB } from "./proto";
+import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_CONTROLS_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lights, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SysA, type SysB } from "./proto";
 import { rgb565ToImage, tidy, type ProfileJson } from "./profile";
 import { loadPairing, savePairing, type Pairing, type Transport } from "./transport";
 
@@ -51,6 +51,9 @@ export class Device {
   prefs: Prefs | null = null;
   net: Net | null = null; // WiFi, from extensions v4
   paired: Pairing | null = loadPairing(); // this app over WiFi, from extensions v7
+  // The knob's controls over WiFi (extensions v10): this app types and scrolls for it. null: not
+  // here (USB, WebHID, older firmware); "needs-permission": macOS Accessibility isn't allowed yet.
+  controls: "on" | "needs-permission" | null = null;
   private keyAsked = false; // every HID client sees the knob's key reply: only take one asked for
   clockSlots: (ClockSlot | null)[] = []; // the CLOCK app, from extensions v5: slot 0 has the format too
   error: string | null = null;
@@ -137,6 +140,7 @@ export class Device {
   private async start() {
     this.status = "connected";
     this.error = null;
+    this.controls = null;
     this.profiles = [];
     this.staleIcons = null;
     this.icon = null;
@@ -161,6 +165,7 @@ export class Device {
     this.status = "searching";
     this.hello = this.settings = this.state = this.sysA = this.sysB = null;
     this.ext = this.prefs = this.net = null;
+    this.controls = null;
     this.clockSlots = [];
     window.clearInterval(this.prefsTimer);
     window.clearInterval(this.listTimer);
@@ -219,6 +224,24 @@ export class Device {
     if ((this.ext ?? 0) < EXT_WIFI_LINK_VERSION || this.kind !== "tauri") return Promise.resolve();
     this.keyAsked = true;
     return this.send(encode.netKey(fresh));
+  }
+  // Over WiFi: once macOS allows it (Accessibility), the knob's controls come here. Asked again
+  // every second (the poll) until they do -- allowing it in System Settings needs no restart.
+  private async checkControls(prompt = false) {
+    if (this.kind !== "wifi" || (this.ext ?? 0) < EXT_CONTROLS_VERSION || (this.controls === "on" && !prompt)) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    const ok = await invoke<boolean>("input_trusted", { prompt });
+    const was = this.controls;
+    if (ok) await this.send(encode.netControls(true));
+    this.controls = ok ? "on" : "needs-permission";
+    if (this.controls !== was) this.changed("net");
+  }
+  // From a click, over USB too (allowed before the cable comes out): macOS asks for
+  // Accessibility, and lists the app in System Settings.
+  async allowControls() {
+    if (this.kind === "wifi") return this.checkControls(true);
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke<boolean>("input_trusted", { prompt: true });
   }
   forgetWifi() {
     savePairing((this.paired = null));
@@ -408,6 +431,7 @@ export class Device {
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION && tick++ % 5 === 4) for (let s = 1; s < CLOCK_SLOTS; s++) void this.send(encode.clockGet(s));
             if ((this.ext ?? 0) >= EXT_NET_VERSION) void this.send(encode.net(NetOp.STATUS));
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION) void this.send(encode.clockGet(0));
+            void this.checkControls();
           };
           this.prefsTimer = window.setInterval(poll, PREFS_MS);
           poll();

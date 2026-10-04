@@ -662,7 +662,11 @@ Once connected:
 - **Time:** it sets its clock from `pool.ntp.org`. This is the only connection it makes
   outside your network.
 - **Companion:** the app reaches it without a cable. Pair it once over USB (**Device ›
-  Wi-Fi › Pair this app**): the knob gives the app a random 256-bit key.
+  Wi-Fi › Pair this app**): the knob gives the app a random 256-bit key. The Mac service
+  pairs by itself whenever it sees the knob on USB. The knob serves both at once.
+- **Controls:** with no cable in (the knob on a charger), turning it and pressing F1–F4 type
+  and scroll on the Mac through the companion app, once macOS allows it under Accessibility
+  (**Device › Wi-Fi › Allow**). With a cable in, they go over USB as always.
 
 **The encrypted link.** It runs on TCP port 3333:
 - Each connection proves both sides hold the key, and every message is encrypted, so

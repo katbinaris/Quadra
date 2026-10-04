@@ -3,7 +3,7 @@
 
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
-import { Boot, EXT_NET_VERSION, EXT_WIFI_LINK_VERSION, Host, NET_STATE, NetState, Set } from "../proto";
+import { Boot, EXT_CONTROLS_VERSION, EXT_NET_VERSION, EXT_WIFI_LINK_VERSION, Host, NET_STATE, NetState, Set } from "../proto";
 import { device, use } from "../store";
 import { Box, Card, Confirm, PageHead, Row, SubTabs, Text } from "../ui/controls";
 import { titleCase } from "../ui/shell";
@@ -152,6 +152,21 @@ function WifiTab() {
             </button>
           </div>
           <span class="hint">{overWifi ? "Connected over Wi-Fi. The network and the key change over USB." : "Once paired, this app reaches the knob over Wi-Fi when no cable is in. A new key unpairs every other computer."}</span>
+          {(device.ext ?? 0) >= EXT_CONTROLS_VERSION && (
+            <>
+              <div class="line">
+                <b>The knob's controls</b>
+                {device.controls === "on" ? <span class="badge ok">On</span> : device.controls === "needs-permission" ? <span class="badge">Needs permission</span> : <span class="badge">Over USB now</span>}
+                <span class="spacer" />
+                {device.controls !== "on" && (
+                  <button class="btn" onClick={() => void device.allowControls()}>
+                    Allow
+                  </button>
+                )}
+              </div>
+              <span class="hint">With no cable in, turning the knob and pressing F1–F4 type and scroll on this Mac over Wi-Fi. macOS asks once to allow Quadra under Accessibility.</span>
+            </>
+          )}
         </Box>
       )}
     </>
