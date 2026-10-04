@@ -16,7 +16,7 @@ All paths below are relative to `NanoDepsidf/`.
 5. [Timing and code placement](#5-timing-and-code-placement)
 6. [How the parts talk to each other](#6-how-the-parts-talk-to-each-other)
 7. [Menu and settings](#7-menu-and-settings)
-8. [APP mode and profiles](#8-app-mode-and-profiles)
+8. [APP mode and profiles](#8-app-mode-and-profiles) (and [HOME](#84-home-mode-xiaomi-lamps))
 9. [USB](#9-usb)
 10. [The companion protocol](#10-the-companion-protocol)
 11. [Audio](#11-audio)
@@ -100,6 +100,7 @@ Priorities and core assignments are in `src/tasks_common.h`.
 | `display` | 1 | 9 | `display_task.cpp` | Draws frames and pushes them to the LCD |
 | `net_link` | 1 | 10 | `net_link.c` | The companion over WiFi: socket, handshake, AES-GCM (section 10.2) |
 | `net` | 1 | 5 | `net.c` | WiFi: connecting, reconnecting with a growing pause, RSSI; starts SNTP and mDNS |
+| `home` | 1 | 5 | `home.c` | HOME (section 8.4): the lamps over miIO; wakes every 10 ms. Stack in PSRAM |
 
 Why the priorities are what they are:
 
@@ -345,6 +346,8 @@ word, written on one side and read on the other.
 | APP mode: key taps | Single-producer, single-consumer ring of 64 | control → usb |
 | Loop timing | Plain statics on Core 0, handed over every 1000 ticks under a spinlock | control → sysmon |
 | F2 save request | FreeRTOS queue, 4 deep, never blocks | control → menu_save |
+| HOME: turns and F1-F3 | Single-producer, single-consumer ring of 32 bytes (`home.c`) | control → home |
+| HOME: end stops and the feel | Atomics in `home.c` | home → control |
 | Active profile | Atomic pointer per registry slot | usb → control |
 
 **State, not events.** In APP mode the control task does not queue "press" and "release". It
@@ -370,7 +373,8 @@ Every setting has three copies:
 
 F2 hands the save to the `menu_save` task. `config_store.c` writes one blob per settings group,
 each in its own NVS namespace: `hprof_cfg` (the haptic profiles: each one's feel and its
-tuning per feel, versioned), `hmode_cfg` (the haptic profile per HID type), `hid_cfg`,
+tuning per feel, versioned), `hmode_cfg` (the haptic profile per HID type -- the first four;
+HOME has none, so the blob kept its size), `hid_cfg`,
 `boot_cfg`, `disp_cfg`, `bind_cfg`. On load, a blob with the wrong size or an out-of-range
 value is rejected and the compiled-in default is kept; haptic values are also clamped into
 their profile's limits. (`haptic_cfg`, the single global tuning from before haptic
@@ -445,6 +449,67 @@ every tick) is in internal RAM, and the larger parts (rings, macros, text, icons
 `tools/profile_json_test/run.sh` builds this code on the host and checks that every built-in
 survives a round trip unchanged and that bad input is refused with a reason.
 
+### 8.4 HOME mode (Xiaomi lamps)
+
+HOME (`MENU_HID_HOME`, value 4, second in the PROFILES carousel) makes the knob a remote for
+Xiaomi lamps on the local network. `home.c` speaks miIO to them directly; no cloud, no computer.
+
+**Three sides.** The control loop only pushes turns and F1-F3 presses into a 32-byte lock-free
+ring (`home_input_*`, `CONTROL_HOT`, internal RAM) and reads two atomics: the end-stop flags
+(`home_at_end`: the ends of the list, brightness 1 / 100, the colour-temperature range; hue
+wraps) and the haptic profile (`home_haptic_profile`: COARSE in the list, FINE while a value
+turns). The `home` task owns everything else and publishes a snapshot (`home_get_snapshot`,
+under a mutex) that the display copies once a tick and draws (`ui_extras.cpp` `draw_home`).
+
+**miIO.** UDP port 54321. A 32-byte hello (all 0xFF after the magic) makes any miIO device
+answer with its id and clock. A request is a 32-byte header (magic 0x2131, length, device id,
+the device's clock plus our elapsed seconds, MD5 over header + token + body) and a JSON body
+under AES-128-CBC with PKCS#7, key MD5(token), IV MD5(key + token). The AES is the chip's
+(`esp_aes_*`) and MD5 is ROM's (`esp_rom_md5_*`); the packet buffers are internal RAM because
+the AES driver may DMA them. Two dialects:
+- **MIoT:** `get_properties` / `set_properties` by siid / piid, which come from each model's
+  spec at import time, so the firmware has no table of models.
+- **Legacy:** `get_prop` / `set_power` / `set_bright` / `set_ct_abx` / `set_rgb`, one property
+  per request (the Yeelight-made `yeelink.light.lamp4` answers nothing else).
+
+A lamp that answers hello but not two queries is tried in the other dialect.
+
+**Finding the lamps.** On entering HOME (or F3, or after a minute away): hellos at 0, 0.5 and
+1.2 s, each a broadcast plus one to every lamp's stored address (a broadcast doesn't cross a
+router). After the first round, the subnets of the lamps still missing (not the knob's own: the
+broadcast covers it, and 254 unicasts there would each need an ARP lookup) are swept: a hello to
+each of their 254 addresses, 32 per 10 ms pass. F1 on an offline lamp sweeps its subnet too. A
+hello reply is matched by device id, and one from a new address updates it for the session (the
+import, which sweeps the same way, stores it). In the list, lamps that haven't answered
+get a hello every 10 s, and the others are read again every 30 s; a read that gets no answer
+marks the lamp offline.
+
+**Changes.** A turn changes the wanted value at once (on screen); each lamp is sent its newest
+values at most every 150 ms. A change without a reply in 1.5 s shows NO REPLY and sends a new
+hello (the lamp may have restarted with a new clock). A refresh never overwrites a change still
+on its way. Turning a value on a lamp that is off switches it on.
+
+**Import.** `quadra.py home import` (USB only: the tokens) sends `EXT_CMD_HOME` BEGIN, one LAMP
+per lamp (id, address, token, dialect, capabilities, colour-temperature range, siid / piid,
+name) and COMMIT. The usb task stores the list in NVS (`home` / `lamps`, one blob of up to 12,
+written from internal RAM) and the home task picks it up and scans. `STATUS` (any link) reports
+what the knob sees of a lamp, never its token.
+
+**The screens, the LEDs, the idle screen.** `ui_extras.cpp` draws each lamp from shapes after
+the real device (`HOME_KIND_*`: the import sends one per lamp from its model name; a lamp stored
+before that has 0, a bulb, until it is imported again), the Mi badge in the header, and while a
+lamp changes the value. The scale is the LED ring's (`led_task.c`): brightness fills it
+clockwise from 12 o'clock, ceil(b × 60 / 100) LEDs so 1 % is one, at the resting level in the
+list and dim to full while turned; the white scale runs over all 60 with the chosen one
+brightest; the hue wheel has 6° per LED with the colour at 12 o'clock. A lamp that's off leaves the ring dark. The idle screen's icon is the lamp changed last
+(`home_snapshot_t.last`), drawn once per change into a 48×48 image (`ui::home_idle_icon` through
+`ui::target`, 2 × 4.6 KB of PSRAM) and handed to `fx_attract` like an app's icon: the same cost
+as APP mode's idle screen.
+
+**Memory.** About 2 KB of internal RAM (packet buffers, the ring), the 5 KB stack and the lamp
+table in PSRAM, one UDP socket (the socket closes a minute after HOME is left), about 16 KB of
+flash.
+
 ## 9. USB
 
 `usb_task.c` installs one composite TinyUSB device:
@@ -508,7 +573,7 @@ held in RAM and lost on restart.
 
 ### 10.1 Extensions
 
-`ext_proto.h` and `ext_link.c` add commands 0x20 to 0x2F (replies and events 0xC0 to 0xCF),
+`ext_proto.h` and `ext_link.c` add commands 0x20 to 0x3F (replies and events 0xC0 to 0xCF),
 mirrored in `proto.ts` as `ExtCmd` / `ExtTag`. `EXT_CMD_HELLO` returns the extensions version,
 and the companion shows a feature only from the version that has it:
 
@@ -522,6 +587,7 @@ and the companion shows a feature only from the version that has it:
 | 8 | `MUSIC`: the now-playing cover style (`PREFS` reports it, and how many styles there are) |
 | 9 | `PD`: the USB-PD chip's NVM, read and checked, or written to 5 V 3 A only (USB only, `quadra.py pd`). Also two WiFi clients at once, and `COVER` over WiFi |
 | 10 | `NET CONTROLS` and `EXT_TAG_HID`: with no USB host, the HID reports go to the WiFi client that asked (the companion app types and scrolls for the knob) |
+| 11 | `HOME` and `EXT_TAG_HOME`: HOME's lamps, imported over USB, their state over any link (section 8.4). The first command of the second range, 0x30-0x3F: 0x20-0x2F is full |
 
 Work that touches NVS or decodes images runs in the usb task (`ext_link_poll`), not in
 TinyUSB's callback. Keys from `INPUT` are OR-ed into the real ones in the control loop and let
@@ -544,7 +610,8 @@ come from the same computer.
 - **Strangers:** handshakes run side by side, one slot per peer address, with a 2 s
   deadline. A peer that stalls or floods never holds up the companion that's in
   (`net_pend.h`, `tools/net_pend_test`).
-- **USB only:** the WiFi network and password, the key, SERIAL boot, and icon uploads
+- **USB only:** the WiFi network and password, the key, SERIAL boot, HOME's lamps (their
+  tokens), and icon uploads
   (`tools/send_icon.py`). The cover comes over either; its acknowledgement goes to the link
   that began it.
 
@@ -662,9 +729,10 @@ did the same things.
 | `spiffs` | 640 KiB | LittleFS: stored profiles |
 | `coredump` | 64 KB | Crash dumps |
 
-The firmware image is about 1.29 MB (76% of a slot), most of the growth being WiFi. NVS also
-holds the namespaces `user_prefs` (idle word, LIGHTS, cover style), `clock` and `net` (WiFi network,
-password and pairing key, in plain text: flash encryption is off).
+The firmware image is about 1.32 MB (78% of a slot), most of the growth being WiFi. NVS also
+holds the namespaces `user_prefs` (idle word, LIGHTS, cover style), `clock`, `home` (HOME's lamps
+and their tokens) and `net` (WiFi network,
+password and pairing key), in plain text: flash encryption is off.
 
 The slots grew from 1.25 MB, and the profile store moved and shrank from 1.4 MB, when WiFi
 came in. A device flashed before then needs the new table; `tools/quadra.py flash

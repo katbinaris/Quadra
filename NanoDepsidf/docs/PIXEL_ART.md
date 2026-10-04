@@ -63,10 +63,10 @@ The keycap sprite has its own shading (`KEY_FACE`, `KEY_SIDE`, `KEY_OFF_FACE`,
 `KEY_OFF_SIDE`). Those belong to the keycap only.
 
 Each app also has three **accent colours**, used by the idle screen and the LEDs: the
-profile's `plasma_heat`, or failing that the three most common colours of its 48×48 icon
+profile's `accents`, or failing that the three most common colours of its 48×48 icon
 (`src/app_colors.c`). Accents never appear in menus or general UI.
 
-**Fixed exceptions** (`src/ui_extras.cpp`). These came in with MUSIC, AGENTS and LIGHTS, and
+**Fixed exceptions** (`src/ui_extras.cpp`). These came in with MUSIC, AGENTS, LIGHTS and HOME, and
 each is limited to its own screen:
 - **Agent requests:** the agent's colour (badge, rim, ring arcs); `ALLOW_GREEN` for the F1
   hold arc and the ALLOW label; `DENY_RED` for the DENY label; a near-black `PANEL` behind the
@@ -80,6 +80,11 @@ each is limited to its own screen:
   cover's colours.
 - **LIGHTS:** the colour swatch, and the rim that mirrors the LED ring, in the LEDs' own
   colours.
+- **HOME:** a lamp's own colour (its colour, or its white as RGB from the colour temperature),
+  dimmed with its brightness, for the part of its icon that gives light (glass, light bar, LEDs)
+  and the light it throws (a 4×4 ordered-dither cone or glow, whole pixels); and Xiaomi's orange `#FF6900` for the 9×9 Mi
+  badge in the header, only there. A lamp that's off or unplugged keeps to the palette. The
+  scale being turned is on the LED ring, not the screen.
 
 Everything else on those screens stays in the palette and in whole pixels.
 
@@ -159,7 +164,7 @@ screen). They are the only full-colour art.
    `src/app_profiles/icons/`. It does not resample: what you drew is what the device shows.
    Pixels under 50% alpha become black, which the display treats as transparent.
 3. The 48×48 icon also sets the app's **accent colours** unless the profile names its own
-   `plasma_heat`. Check the idle screen and the LEDs after changing an icon.
+   `accents`. Check the idle screen and the LEDs after changing an icon.
 
 Uploaded icons (the companion's Import image, `tools/send_icon.py`) are the exception to
 "hand-drawn": they are fitted from any picture. Built-in profiles always use drawn icons.

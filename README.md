@@ -112,6 +112,9 @@ shows, at 2× scale.
   shows which sessions are working or waiting, and a command wheel types their commands.
 - **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
   the internet over WiFi.
+- **HOME.** The knob as a remote for Xiaomi lamps on your network: pick a lamp, turn its
+  brightness, white or colour, switch it on and off. It talks to the lamps itself over WiFi
+  (miIO), with keys imported once from your Xiaomi account.
 - **WiFi.** The knob can join a network and work without a cable, over an encrypted link
   paired over USB. The companion app and the Mac service connect at the same time, and on a
   charger the knob's controls type and scroll on the Mac through the app.
@@ -212,7 +215,8 @@ The screen always shows what each key does, on the key legend at the bottom.
 | F4 | Open the menu | Close the menu |
 
 In APP mode the keys belong to the application (see below), and **holding F4 for 0.7 s
-opens the menu** instead.
+opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
+[HOME](#home-xiaomi-lamps)); F4 opens the menu as usual.
 
 ### The settings menu
 
@@ -222,6 +226,7 @@ opens the menu** instead.
   <img src="NanoDepsidf/docs/images/haptics-feel.png" width="180" alt="Haptics screen editing FEEL">
   <img src="NanoDepsidf/docs/images/haptics-smooth.png" width="180" alt="Haptics screen on SMOOTH: SNAP and SHAPE muted">
   <img src="NanoDepsidf/docs/images/hid-app.png" width="180" alt="PROFILES carousel on APP">
+  <img src="NanoDepsidf/docs/images/hid-home.png" width="180" alt="PROFILES carousel on HOME">
   <img src="NanoDepsidf/docs/images/hid-mouse.png" width="180" alt="PROFILES on MOUSE: the mode's haptic profile">
   <img src="NanoDepsidf/docs/images/profile-figma.png" width="180" alt="App profile carousel on FIGMA">
   <img src="NanoDepsidf/docs/images/display-rotation.png" width="180" alt="Display rotation at 90 degrees">
@@ -233,7 +238,7 @@ opens the menu** instead.
 
 | Screen | Settings |
 |---|---|
-| **PROFILES** | APP, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel. |
+| **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel. |
 | **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
 | **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°. The screen turns live while you turn the knob. |
 | **LIGHTS** | The LED look. COLOR: APP (the profile's colours, or the album cover's while music plays) or CUSTOM, with HUE and SAT. EFFECT at rest: GRADIENT, SOLID, BREATHE, SPIN, RAINBOW or OFF, with SPEED for the moving ones. LEVEL: brightness, 10–200% of the standard level. The screen's rim mirrors the ring while you tune. |
@@ -474,6 +479,59 @@ the local zone every few minutes, or from the internet when [WiFi](#wifi) is on.
 the format are set in the companion app (**Look › Clock**) or with `quadra.py clock`. LED
 SECONDS turns the ring into a seconds hand. The clock never goes to the idle screen.
 
+### HOME (Xiaomi lamps)
+
+<p>
+  <img src="NanoDepsidf/docs/images/home-list.png" width="180" alt="HOME list: the lightstrip, on, its LEDs and brightness meter in its blue">
+  <img src="NanoDepsidf/docs/images/home-edit.png" width="180" alt="HOME changing Desk Lamp 2's brightness, 64%: the value in amber, its light cone below">
+  <img src="NanoDepsidf/docs/images/home-white.png" width="180" alt="HOME changing Desk Lamp 2's white, 4300 K, NEUTRAL">
+  <img src="NanoDepsidf/docs/images/home-color.png" width="180" alt="HOME changing the lightstrip's colour, hue 200">
+</p>
+
+Pick **HOME** in PROFILES and the knob looks for your lamps on the network, then lists them.
+It talks to them itself over WiFi with Xiaomi's local protocol (miIO, UDP port 54321): no
+cloud, no computer, no hub.
+
+| Input | In the list | Changing a lamp |
+|---|---|---|
+| Knob | Next / previous lamp | Its brightness, white (colour temperature) or colour, live |
+| F1 | Change this lamp | Next setting |
+| F2 | On / off | On / off |
+| F3 | Look again | Back to the list |
+| F4 | Menu | Menu |
+
+Every change goes to the lamp as you turn; there is nothing to save. Turning a value up on a
+lamp that is off switches it on.
+
+**What you see.** Each lamp is drawn after the real device (a desk lamp, the 1S with its slim
+arm, the strip, a bulb), lit in its own colour and dimmed with its brightness; desk lamps throw
+a dithered cone of light. The Mi badge at the top marks Xiaomi's lamps. The screen shows the
+value; the LED ring shows the scale. The lamp's brightness fills the ring clockwise from
+12 o'clock in its colour (1 % is one LED): dim in the list, dim to full while you turn it. White
+runs round the ring from the lamp's warmest to its coolest with the chosen one brightest, and
+colour is a hue wheel that turns so the chosen colour sits at 12 o'clock. With the lamp off,
+the ring is dark. On the idle screen the lamp you changed last jumps. A lamp shows OFFLINE when it doesn't answer, and NO REPLY
+when a change got no answer. The knob reads the lamps again every 30 seconds while the list
+is up, so a change made on the phone shows there too.
+
+**Setting it up, once.** Each lamp has a key (its token) that only your Xiaomi account knows:
+1. Get the tokens with [Xiaomi-cloud-tokens-extractor](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor)
+   (it logs in to your Xiaomi account; the account the Xiaomi Home app uses for the lamps):
+   `python token_extractor.py -o ~/.quadra/xiaomi-devices.json`.
+2. With the knob on USB: `quadra.py home import`. It takes every Xiaomi light from that file,
+   looks up what each model can do in its public spec ([miot-spec.org](https://miot-spec.org)),
+   asks each lamp which protocol it answers (the newer MIoT, or the older commands some
+   Yeelight-made lamps keep to), and stores up to 12 lamps on the knob. `quadra.py home list`
+   shows what the knob sees.
+
+The tokens are stored on the knob in plain text, like the WiFi password, and only travel over
+USB. Lamps on another subnet are found by their last known address; if one doesn't answer
+there (the router gave it a new one), the knob says hello to every address in that subnet and
+finds it by its id. The import does the same, and stores the new address.
+
+HOME is built and checked on the computer, and the protocol against real lamps from the Mac;
+**not yet tested on the knob itself.**
+
 ### The Mac service
 
 `NanoDepsidf/tools/mac/` is an optional background service for macOS. It powers MUSIC's now
@@ -584,32 +642,25 @@ The two ways the value reaches Onshape:
 
 <p>
   <img src="NanoDepsidf/docs/images/idle-jump.gif" width="240" alt="JUMP, animated: the Onshape icon hops, makes a big jump, lands with dust and debris, hops sideways and spins">
-  <img src="NanoDepsidf/docs/images/idle-boom.gif" width="240" alt="BOOM, animated: a pixel explosion, the Figma icon pops out, bobs with sparkles and implodes">
   <img src="NanoDepsidf/docs/images/idle-quadra.gif" width="240" alt="JUMP with the QUADRA wordmark, animated">
 </p>
 
-These animations are recorded from the firmware's own drawing code (JUMP with Onshape, BOOM
-with Figma, JUMP with the QUADRA wordmark), at 20 fps; the device runs them at its full frame
-rate.
+These animations are recorded from the firmware's own drawing code (JUMP with Onshape, JUMP
+with the QUADRA wordmark), at 20 fps; the device runs them at its full frame rate.
 
 After 5 s without input the screen goes into an arcade-style attract mode: the active app's
-48×48 icon, or the QUADRA wordmark outside APP mode, performs a routine. While music plays
-(MUSIC) or the clock is up (CLOCK), those stay on screen instead. The first is picked
-at random every time the device goes idle, and when it finishes, a different one follows.
+48×48 icon, or the QUADRA wordmark outside APP mode, performs **Jump**. It never leaves the
+screen: two small hops, a crouch and a big jump with afterimages, a hard landing (squash,
+screen shake, dust, debris), a gleam, hops left and right, a spinning jump, then it breathes
+with sparkles around it. While music plays (MUSIC) or the clock is up (CLOCK), those stay on
+screen instead. In HOME the icon is the lamp you changed last, lit in its colour.
 
-- **Jump.** Never leaves the screen: two small hops, a crouch and a big jump with
-  afterimages, a hard landing (squash, screen shake, dust, debris), a gleam, hops left and
-  right, a spinning jump, then it breathes with sparkles around it.
-- **Boom.** A fuse blinks, a pixel explosion goes off (white core, a ring in the app's
-  colours, smoke, debris, a hard shake), the icon pops out with a springy overshoot, bobs
-  over its shadow with sparkles, then implodes into a flash.
-
-A third routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
+A second routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
 built but switched off. Set `ROUTINE_ON[ATTRACT_BOUNCE]` to `true` in `src/ui_fx.cpp` to put
-it back into the rotation.
+it back; the two then take turns. (Boom, an explosion, was removed in October 2026.)
 
 Everything is whole pixels; squash and stretch scale the icon nearest-neighbour. Accents
-(sparks, the explosion ring, sparkles) use the app's colours: Figma's purple, blue and
+(sparks, sparkles) use the app's colours: Figma's purple, blue and
 green, Onshape's teal, green and lime, and for other profiles the three most common colours
 of the icon. QUADRA uses amber. Any input wakes the device, and the waking key press is
 swallowed.
@@ -736,6 +787,7 @@ input mapping. Core 1 runs everything that can tolerate latency:
 | `menu_save` | 1 | 10 | Runs F2's save to flash, so it never happens inside a control-loop tick |
 | `net_link` | 1 | 10 | The companion over WiFi: its socket, handshake and encryption |
 | `net` | 1 | 5 | WiFi housekeeping: connecting, reconnecting, signal strength. The radio, lwIP and mDNS also run on Core 1 |
+| `home` | 1 | 5 | HOME: finds the lamps, sends the knob's changes (miIO: AES-128 over UDP), reads their state |
 
 The ESP-IDF timer task and its interrupt are moved to Core 1 too (`sdkconfig.defaults`).
 With WiFi in modem sleep they fire at every beacon, and on Core 0 they cost the control loop
@@ -840,7 +892,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | `tools/send_icon.py` | Uploads a 48×48 image to the device over the vendor HID interface (`icon.png`, `--test-pattern`, `--clear`, `--list`, `--dry-run --preview out.png`). |
 | `tools/gen_icon_c.py` | Converts a PNG into an RGB565 C array for a profile icon (24×24 status bar, 48×48 profile screen and idle screen). |
 | `tools/gen_silkscreen_font.py` | Regenerates the pixel fonts in `src/fonts/` from Silkscreen. |
-| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
+| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob), `home import` / `home list` (HOME's lamps, see [HOME](#home-xiaomi-lamps)) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
 | `tools/mac/` | The optional [Mac service](#the-mac-service): now playing, agent requests, the local time. |
 | `tools/tz_test/`, `tools/net_pend_test/` | Host checks for CLOCK's time-zone rules (against Python's zoneinfo) and for how the WiFi link queues handshakes. |
 
@@ -849,7 +901,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 ## Desktop companion
 
 <p>
-  <img src="companion/docs/app-mode.png" width="440" alt="Companion app: Mode, with App, Mouse, Keys and MIDI, and the profile in use">
+  <img src="companion/docs/app-mode.png" width="440" alt="Companion app: Mode, with App, Home, Mouse, Keys and MIDI, and the profile in use">
   <img src="companion/docs/app-editor-keys.png" width="440" alt="Companion app: a profile's Knob & keys tab, F1 set to Keys with the Coarse haptic profile">
   <img src="companion/docs/app-haptics.png" width="440" alt="Companion app: Haptics, with the five haptic profiles, the feel and the tuning sliders">
   <img src="companion/docs/app-sys-info.png" width="440" alt="Companion app: System info, with power, heat, CPU and system tiles and the last minute">
@@ -858,7 +910,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 `companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings and app
 profiles from the computer:
 
-- **Mode:** what the knob sends (App, Mouse, Keys, MIDI), and the profile in use.
+- **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use.
 - **Haptics:** the five haptic profiles, and each one's feel and Snap, Damp, Shape, Click
   volume and Click pitch, with a reset to factory.
 - **App profiles:** one page each, built-ins included: name, icon, key labels, what the knob
@@ -963,6 +1015,7 @@ NanoDepsidf/                   the firmware (PlatformIO project)
 │   ├── host_link.c, host_proto.h            the desktop companion's protocol (same interface)
 │   ├── ext_link.c, ext_proto.h              its extensions: LOOK, WiFi setup, CLOCK, the remote
 │   ├── net.c, net_link.c      WiFi (station, SNTP, mDNS) and the encrypted companion link
+│   ├── home.c                 HOME: Xiaomi lamps over miIO (scan, state, live changes)
 │   ├── notify.c, agent_board.c              agent requests and the AGENTS dashboard
 │   ├── media.c                MUSIC's now playing: cover, track, volume
 │   ├── clock.c, tzrule.c      CLOCK: zones and their daylight-saving rules
@@ -1014,6 +1067,9 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - WiFi and the companion over WiFi.
 - LIGHTS, the idle word, and the companion's Look page.
 - The Mac service, and flashing with `quadra.py flash`.
+
+**Built, not yet tested on hardware:**
+- HOME: Xiaomi lamps over WiFi (list, brightness, white, colour, on / off).
 
 **Next:**
 - Safe SNAP and DAMP limits for each haptic profile and feel (today they are the full
