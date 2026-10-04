@@ -83,6 +83,12 @@ them after a UI change.
 
 The WiFi link with the cable in (the cable is what powers the knob): pair the app over USB,
 then start it with USB hidden, `QUADRA_NO_USB=1 Quadra.app/Contents/MacOS/quadra-companion`.
+The Mac service takes the same variable (`QUADRA_NO_USB=1 python3 tools/mac/quadrad.py`).
+
+The knob's controls over WiFi (no USB host) arrive as `EXT_TAG_HID` reports and are posted
+as macOS events by `src-tauri/src/input.rs`, in the WiFi reader thread. They need the app
+allowed under **Privacy & Security › Accessibility**. An ad-hoc build is a new app to macOS
+each time: after rebuilding, remove Quadra from that list and allow it again.
 
 ## Building
 

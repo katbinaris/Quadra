@@ -112,8 +112,9 @@ shows, at 2× scale.
   shows which sessions are working or waiting, and a command wheel types their commands.
 - **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
   the internet over WiFi.
-- **WiFi.** The knob can join a network and talk to the companion app without a cable, over
-  an encrypted link that is paired over USB.
+- **WiFi.** The knob can join a network and work without a cable, over an encrypted link
+  paired over USB. The companion app and the Mac service connect at the same time, and on a
+  charger the knob's controls type and scroll on the Mac through the app.
 - **Command wheel.** Hold a key, turn to pick a command, release to run it. Each command has
   a small animated illustration of what it does.
 - **Parameter mode.** After a modelling command starts, the knob sets its value: fine clicks,
