@@ -1150,10 +1150,15 @@ static Pace update_ui(void) {
 
     bool snapshot_changed = memcmp(&snap, &s_last_snap, sizeof(snap)) != 0;
     bool buttons_changed = buttons != s_last_buttons;
+    // The mode or the app profile, changed from the companion or the CLI with the menu closed:
+    // the snapshot doesn't carry them, so without this the Main Screen kept the old profile
+    // until the next turn or press.
+    bool mode_changed = hid != s_last_hid || menu_get_app_profile() != s_last_profile;
     // A new icon counts as activity so an upload wakes the screen and shows it; so does a new
-    // track. While music plays, its cover stays up instead of the idle animation.
+    // track, and a new mode or profile. While music plays, its cover stays up instead of the
+    // idle animation.
     bool activity = snapshot_changed || buttons_changed || detent != s_last_detent || icon_changed || notice_changed
-                 || (music_on && media_changed);
+                 || mode_changed || (music_on && media_changed);
     if (activity || notice || music_playing || clock_on) s_last_activity_us = now; // a clock isn't screensaved
 
     if (snap.save_count != s_last_save_count) {
@@ -1237,7 +1242,7 @@ static Pace update_ui(void) {
     bool sys_changed = memcmp(&power, &s_last_power, sizeof(power)) != 0 || sys.version != s_last_sysmon;
     s_last_power = power;
     s_last_sysmon = sys.version;
-    bool redraw = first || snapshot_changed || buttons_changed || icon_changed || app_slot_changed || wheel_changed
+    bool redraw = first || snapshot_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
                || rotation_changed || (sys_changed && s_view == V_SYSINFO) || text_changed || notice_changed
                || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed);
     // The spinning record: on its own pace, not every tick (now playing polls every tick, PACE_TICK).
