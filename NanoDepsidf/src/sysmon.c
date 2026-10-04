@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
+#include "esp_memory_utils.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -136,6 +137,30 @@ static uint8_t pct(uint32_t part, uint32_t whole) {
     return p > 100 ? 100 : (uint8_t)p;
 }
 
+// Where the internal RAM goes: each heap's free / lowest / largest block, and every task's
+// unused stack (its high-water mark) and where the stack lives. The SYS INFO "heap" is the
+// internal line. The task table is allocated in PSRAM, not on this small stack.
+static void memory_report(void) {
+    static const struct {
+        const char *name;
+        uint32_t caps;
+    } heaps[] = {{"internal", MALLOC_CAP_INTERNAL}, {"internal dma", MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA}, {"psram", MALLOC_CAP_SPIRAM}};
+    for (size_t i = 0; i < sizeof(heaps) / sizeof(heaps[0]); i++) {
+        ESP_LOGI(TAG, "memory %-12s free %7u  lowest %7u  largest block %7u", heaps[i].name,
+                 (unsigned)heap_caps_get_free_size(heaps[i].caps), (unsigned)heap_caps_get_minimum_free_size(heaps[i].caps),
+                 (unsigned)heap_caps_get_largest_free_block(heaps[i].caps));
+    }
+    UBaseType_t n = uxTaskGetNumberOfTasks() + 4;
+    TaskStatus_t *t = heap_caps_malloc(n * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM);
+    if (t == NULL) return;
+    n = uxTaskGetSystemState(t, n, NULL);
+    for (UBaseType_t i = 0; i < n; i++) {
+        ESP_LOGI(TAG, "task %-16s stack unused %5u B  in %s", t[i].pcTaskName, (unsigned)t[i].usStackHighWaterMark,
+                 esp_ptr_external_ram(t[i].pxStackBase) ? "psram" : "internal");
+    }
+    heap_caps_free(t);
+}
+
 static void sysmon_task_fn(void *arg) {
     temperature_sensor_handle_t tsens = NULL;
     temperature_sensor_config_t tcfg = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
@@ -252,11 +277,21 @@ static void sysmon_task_fn(void *arg) {
         if (n + 1 == 20) {
             ESP_LOGI(TAG, "interrupt allocation:");
             esp_intr_dump(NULL);
+            memory_report();
 #if SYSMON_QUIET_AFTER_BOOT
             // From here on only warnings and errors reach the console: nobody reads it in
             // normal use, and a console write with no reader can block the writing task.
             ESP_LOGI(TAG, "boot done, console quiet from now on (warnings and errors only)");
             esp_log_level_set("*", ESP_LOG_WARN);
+#endif
+        }
+        // Again a minute in, with WiFi (and a companion, if one's in) up: this one past the
+        // quiet console, for this tag only.
+        if (n + 1 == 120) {
+            esp_log_level_set(TAG, ESP_LOG_INFO);
+            memory_report();
+#if SYSMON_QUIET_AFTER_BOOT
+            esp_log_level_set(TAG, ESP_LOG_WARN);
 #endif
         }
         if (++n % SYSMON_LOG_EVERY == 0) {
@@ -276,5 +311,6 @@ static void sysmon_task_fn(void *arg) {
 }
 
 void sysmon_start(void) {
-    xTaskCreatePinnedToCore(sysmon_task_fn, "sysmon", 3072, NULL, PRIO_SYSMON, NULL, CORE_IO);
+    // Stack in PSRAM (tasks_common.h: PSRAM stacks)
+    xTaskCreatePinnedToCoreWithCaps(sysmon_task_fn, "sysmon", 3072, NULL, PRIO_SYSMON, NULL, CORE_IO, MALLOC_CAP_SPIRAM);
 }

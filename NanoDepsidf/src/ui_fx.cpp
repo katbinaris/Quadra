@@ -1,6 +1,7 @@
 #include "ui_fx.hpp"
 #include "ui_gfx.hpp"
 #include "app_colors.h"
+#include "esp_attr.h"
 #include <math.h>
 #include <string.h>
 
@@ -21,13 +22,15 @@ static inline bool in_circle(float x, float y, float r) {
 
 // "QUADRA" at scale 3 is ~130 blocks; a 12-character word (fx_set_word) at scale 2 fits too.
 #define LOGO_MAX_BLOCKS 512
-static int16_t s_logo[LOGO_MAX_BLOCKS][2];
+// The block lists live in PSRAM (EXT_RAM_BSS_ATTR): a few hundred entries a frame, which the
+// cache keeps; internal RAM is short since the frame sprite moved there.
+EXT_RAM_BSS_ATTR static int16_t s_logo[LOGO_MAX_BLOCKS][2];
 static int s_logo_n = 0;
 static int s_logo_scale = 3; // the block size: the largest scale at which the word fits
 // Per-block scatter point and return delay, fixed at init (same hash as the mockup).
-static int16_t s_logo_scatter[LOGO_MAX_BLOCKS][2];
-static uint16_t s_logo_delay_ms[LOGO_MAX_BLOCKS];
-static uint8_t s_logo_tint[LOGO_MAX_BLOCKS]; // 0 amber, 1 grey, 2 white while in flight
+EXT_RAM_BSS_ATTR static int16_t s_logo_scatter[LOGO_MAX_BLOCKS][2];
+EXT_RAM_BSS_ATTR static uint16_t s_logo_delay_ms[LOGO_MAX_BLOCKS];
+EXT_RAM_BSS_ATTR static uint8_t s_logo_tint[LOGO_MAX_BLOCKS]; // 0 amber, 1 grey, 2 white while in flight
 
 static const float SPARK_X = 120, SPARK_Y = 110;
 
@@ -134,7 +137,7 @@ static void dotted_ring(float cx, float cy, float r, uint32_t c, int step) {
 // Widest wordmark (1x px) still drawn at 2x: JUMP's +-34 px hops with a 1.38x squash need the
 // sprite under ~119 px to stay inside the glass.
 #define WORD_2X_MAX_W 56
-static uint8_t s_word[WORD_MAX_W * WORD_MAX_H];
+EXT_RAM_BSS_ATTR static uint8_t s_word[WORD_MAX_W * WORD_MAX_H];
 static int s_word_w = 0, s_word_h = 0, s_word_scale = 2;
 static bool s_word_custom = false; // fx_set_word() got the user's own text
 struct Spr {
@@ -566,7 +569,7 @@ void fx_set_word(const char *text) {
     }
 
     // The idle wordmark: the word's pixels at 1x, as a mask (drawn at 2x when it fits, squashable).
-    static int16_t word[LOGO_MAX_BLOCKS][2]; // scratch, kept off the task stack
+    EXT_RAM_BSS_ATTR static int16_t word[LOGO_MAX_BLOCKS][2]; // scratch, kept off the task stack
     int nw = text_blocks(w, 0, 0, 1, word, LOGO_MAX_BLOCKS);
     int x0 = 1 << 15, y0 = 1 << 15, x1 = -(1 << 15), y1 = -(1 << 15);
     for (int k = 0; k < nw; k++) {

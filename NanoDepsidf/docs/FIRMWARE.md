@@ -282,6 +282,19 @@ IRAM and the heap come out of the same internal RAM. IRAM code is about 94 KB; e
 moved there is a kilobyte less heap. SYS INFO's SYSTEM page shows the free heap and its lowest
 point.
 
+The biggest single user of internal RAM is the screen's frame sprite (115 KB), kept there for
+frame rate. What can live in the 2 MB of PSRAM does:
+- Statics marked `EXT_RAM_BSS_ATTR` (icon_store's buffers, the idle word's blocks), and with
+  that option ESP-IDF also puts the WiFi driver's and lwIP's statics there.
+- The stacks of the LED and sysmon tasks (`tasks_common.h`, "PSRAM stacks", says which tasks
+  may).
+- mbedTLS / PSA allocations, and any plain `malloc()` of 4 KB or more.
+- Our own large buffers ask for PSRAM by name (`heap_caps_malloc`).
+
+The WiFi radio's buffers must stay internal (DMA), so they are kept few (`sdkconfig.defaults`).
+The console prints each heap and every task's unused stack 10 s and 60 s after boot (`sys`
+lines, `memory_report()` in sysmon.c).
+
 ### 5.2 Measured timing
 
 On hardware, with peaks reset and the knob in use (2026-10-02):

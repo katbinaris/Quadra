@@ -1,6 +1,7 @@
 #include "icon_store.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -9,8 +10,9 @@ static const char *TAG = "icon";
 // Two buffers: the transfer assembles into s_staging (only ever touched from the TinyUSB
 // task), and only a length+CRC-verified image is copied into s_committed under the mutex --
 // the display can never see a half-received icon.
-static uint8_t s_staging[ICON_BYTES];
-static uint8_t s_committed[ICON_BYTES];
+// In PSRAM (EXT_RAM_BSS_ATTR): touched only on an upload and an icon copy, never per pixel.
+EXT_RAM_BSS_ATTR static uint8_t s_staging[ICON_BYTES];
+EXT_RAM_BSS_ATTR static uint8_t s_committed[ICON_BYTES];
 static bool s_has_icon = false;
 static volatile uint32_t s_version = 0;
 static SemaphoreHandle_t s_lock = NULL;

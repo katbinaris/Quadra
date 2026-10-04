@@ -410,5 +410,6 @@ static void led_task_fn(void *arg) {
 }
 
 void led_task_start(void) {
-    xTaskCreatePinnedToCore(led_task_fn, "led", 4096, NULL, PRIO_LED, NULL, CORE_IO);
+    // Stack in PSRAM (tasks_common.h: PSRAM stacks); led_strip owns the pixel buffer it DMAs
+    xTaskCreatePinnedToCoreWithCaps(led_task_fn, "led", 4096, NULL, PRIO_LED, NULL, CORE_IO, MALLOC_CAP_SPIRAM);
 }

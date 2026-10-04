@@ -15,6 +15,14 @@
 #define CORE_CONTROL 0
 #define CORE_IO      1
 
+// PSRAM stacks: internal RAM is short since the 115 KB frame sprite moved there (display_task.cpp
+// frame_init), so the tasks that can, keep their stacks in PSRAM (xTaskCreatePinnedToCoreWithCaps,
+// MALLOC_CAP_SPIRAM): LED and sysmon. A task qualifies only if it never writes flash (NVS,
+// LittleFS -- a write turns the PSRAM cache off, and a task whose stack lives there can't run),
+// never hands a stack buffer to DMA, and never ends itself (vTaskDeleteWithCaps from another
+// task only; the one-shot PD task frees its internal stack by ending). Not the control task, USB (profile saves), menu_save,
+// net / net_link (NVS, crypto), I2S (audio DMA) or the display (LCD DMA, frame rate).
+
 // Priorities within Core 1. Core 0's control task sits above all of them since it's the
 // one task that must never be starved.
 //
