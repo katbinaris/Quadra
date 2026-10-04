@@ -482,37 +482,67 @@ SECONDS turns the ring into a seconds hand. The clock never goes to the idle scr
 ### HOME (Xiaomi lamps)
 
 <p>
-  <img src="NanoDepsidf/docs/images/home-list.png" width="180" alt="HOME list: the lightstrip, on, its LEDs and brightness meter in its blue">
-  <img src="NanoDepsidf/docs/images/home-edit.png" width="180" alt="HOME changing Desk Lamp 2's brightness, 64%: the value in amber, its light cone below">
-  <img src="NanoDepsidf/docs/images/home-white.png" width="180" alt="HOME changing Desk Lamp 2's white, 4300 K, NEUTRAL">
-  <img src="NanoDepsidf/docs/images/home-color.png" width="180" alt="HOME changing the lightstrip's colour, hue 200">
+  <img src="NanoDepsidf/docs/images/home-list.png" width="225" alt="HOME list: the lightstrip, on at 76%; the LED ring filled three quarters of the way round in its blue">
+  <img src="NanoDepsidf/docs/images/home-edit.png" width="225" alt="HOME changing Desk Lamp 2's brightness, 64%: the ring fills clockwise from 12 o'clock, dim to full in its warm white">
+</p>
+<p>
+  <img src="NanoDepsidf/docs/images/home-white.png" width="225" alt="HOME changing Desk Lamp 2's white, 4300 K, NEUTRAL: the ring runs the lamp's whites, warm to cool, the chosen one brightest">
+  <img src="NanoDepsidf/docs/images/home-color.png" width="225" alt="HOME changing the lightstrip's colour, hue 200: the ring is a hue wheel with the chosen colour at 12 o'clock">
 </p>
 
-Pick **HOME** in PROFILES and the knob looks for your lamps on the network, then lists them.
-It talks to them itself over WiFi with Xiaomi's local protocol (miIO, UDP port 54321): no
-cloud, no computer, no hub.
+Pick **HOME** in PROFILES and the knob becomes a remote for the Xiaomi lamps on your network:
+it finds them, lists them, and changes them live as you turn. It talks to the lamps itself
+over WiFi with Xiaomi's local protocol (miIO, UDP port 54321): no cloud, no computer, no hub.
+Desk lamps, light strips and bulbs work (tested with the Xiaomi LED Desk Lamp 2, Mi Desk Lamp
+1S and the Xiaomi Smart Lightstrip); each lamp offers what it has of brightness, white (colour
+temperature) and colour.
 
 | Input | In the list | Changing a lamp |
 |---|---|---|
-| Knob | Next / previous lamp | Its brightness, white (colour temperature) or colour, live |
-| F1 | Change this lamp | Next setting |
+| Knob | Next / previous lamp | Its brightness, white or colour, live |
+| F1 | Change this lamp (RETRY on an offline one) | Next setting |
 | F2 | On / off | On / off |
-| F3 | Look again | Back to the list |
+| F3 | Look again (SCAN) | Back to the list |
 | F4 | Menu | Menu |
 
 Every change goes to the lamp as you turn; there is nothing to save. Turning a value up on a
-lamp that is off switches it on.
+lamp that is off switches it on. The knob's feel is coarse in the list and fine while you
+change a lamp.
 
-**What you see.** Each lamp is drawn after the real device (a desk lamp, the 1S with its slim
-arm, the strip, a bulb), lit in its own colour and dimmed with its brightness; desk lamps throw
-a dithered cone of light. The Mi badge at the top marks Xiaomi's lamps. The screen shows the
-value; the LED ring shows the scale. The lamp's brightness fills the ring clockwise from
-12 o'clock in its colour (1 % is one LED): dim in the list, dim to full while you turn it. White
-runs round the ring from the lamp's warmest to its coolest with the chosen one brightest, and
-colour is a hue wheel that turns so the chosen colour sits at 12 o'clock. With the lamp off,
-the ring is dark. On the idle screen the lamp you changed last jumps. A lamp shows OFFLINE when it doesn't answer, and NO REPLY
-when a change got no answer. The knob reads the lamps again every 30 seconds while the list
-is up, so a change made on the phone shows there too.
+**The screens.**
+
+<p>
+  <img src="NanoDepsidf/docs/images/home-scan.png" width="180" alt="HOME scanning: rings go out from a bulb, SEARCHING, 2 OF 4">
+  <img src="NanoDepsidf/docs/images/home-desk.png" width="180" alt="HOME list: LED Desk Lamp 2, on, its light cone and brightness meter in warm white">
+  <img src="NanoDepsidf/docs/images/home-off.png" width="180" alt="HOME list: the Desk Lamp (1S) switched off with F2, drawn in grey">
+  <img src="NanoDepsidf/docs/images/home-offline.png" width="180" alt="HOME list: a bulb that doesn't answer, OFFLINE, F1 RETRY">
+</p>
+
+- **Searching:** on entering HOME (or F3, or after a minute away) the knob says hello to the
+  lamps and counts the ones that answer. It takes a second or two.
+- **The list:** each lamp is drawn after the real device (a desk lamp, the 1S with its slim
+  arm, the strip, a bulb), lit in its own colour and dimmed with its brightness; desk lamps
+  throw a dithered cone of light. Under its name: ON with a brightness meter, OFF, OFFLINE
+  (it doesn't answer) or NO REPLY (a change got no answer). The Mi badge at the top marks
+  Xiaomi's lamps. While the list is up the knob reads the lamps again every 30 seconds, so a
+  change made on the phone shows there too.
+- **Changing a lamp:** the settings it has along the top (the one being turned in amber), the
+  value, WARM / NEUTRAL / COOL for white, and the lamp itself, lit as it is now.
+
+**The LED ring is the scale.** The screen shows the value; the ring round the knob shows where
+it sits, in the lamp's own light:
+- **Brightness** fills the ring clockwise from 12 o'clock in the lamp's colour, so 1 % is one
+  LED and 100 % all 60: dim in the list, dim to full while you turn it.
+- **White** runs round the ring from the lamp's warmest white to its coolest, the chosen one
+  brightest.
+- **Colour** is a hue wheel that turns as you do, the chosen colour at 12 o'clock.
+- With the lamp off, the ring is dark. The keys light in the lamp's colour.
+
+<p>
+  <img src="NanoDepsidf/docs/images/home-idle.png" width="180" alt="HOME idle screen: the lightstrip as the jumping icon, lit in its blue">
+</p>
+
+**Idle.** On the idle screen the lamp you changed last jumps, lit in its colour.
 
 **Setting it up, once.** Each lamp has a key (its token) that only your Xiaomi account knows:
 1. Get the tokens with [Xiaomi-cloud-tokens-extractor](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor)
@@ -520,17 +550,14 @@ is up, so a change made on the phone shows there too.
    `python token_extractor.py -o ~/.quadra/xiaomi-devices.json`.
 2. With the knob on USB: `quadra.py home import`. It takes every Xiaomi light from that file,
    looks up what each model can do in its public spec ([miot-spec.org](https://miot-spec.org)),
-   asks each lamp which protocol it answers (the newer MIoT, or the older commands some
-   Yeelight-made lamps keep to), and stores up to 12 lamps on the knob. `quadra.py home list`
-   shows what the knob sees.
+   finds where each lamp is on the network now, asks it which protocol it answers (the newer
+   MIoT, or the older commands some Yeelight-made lamps keep to) and stores up to 12 lamps on
+   the knob, each with its icon. `quadra.py home list` shows what the knob sees.
 
-The tokens are stored on the knob in plain text, like the WiFi password, and only travel over
-USB. Lamps on another subnet are found by their last known address; if one doesn't answer
-there (the router gave it a new one), the knob says hello to every address in that subnet and
-finds it by its id. The import does the same, and stores the new address.
-
-HOME is built and checked on the computer, and the protocol against real lamps from the Mac;
-**not yet tested on the knob itself.**
+Run the import again after adding a lamp in the Xiaomi Home app. The tokens are stored on the
+knob in plain text, like the WiFi password, and only travel over USB. Lamps on another subnet
+are found by their last known address; if one doesn't answer there (the router gave it a new
+one), the knob says hello to every address in that subnet and finds it by its id.
 
 ### The Mac service
 
