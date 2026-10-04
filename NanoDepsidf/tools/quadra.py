@@ -432,6 +432,44 @@ def reboot(serial: bool) -> bool:
     return True
 
 
+EXT_PD, EXT_TAG_PD = 0x2F, 0xC8
+PD_RESULT = {0: "ok", 1: "already 5 V 3 A only: nothing written", 2: "busy (the boot read): try again in a few seconds",
+             3: "no PD chip found", 4: "couldn't read the NVM",
+             5: "the NVM doesn't match the chip's working copy: nothing written",
+             6: "written but the read-back differs (twice): don't unplug, and tell the maintainer"}
+
+
+def cmd_pd(args):
+    """The USB-PD chip's NVM (STUSB4500, src/pd_status.h): check it, or with --write-5v make it ask
+    for 5 V 3 A only, for good. Saves the NVM as read to ~/.quadra/ first."""
+    q = Quadra()
+    try:
+        r = q.request(bytes([EXT_PD, 1 if args.write_5v else 0]), (EXT_TAG_PD, EXT_TAG_ACK), 5.0)
+    finally:
+        q.close()
+    if not r or r[0] != EXT_TAG_PD:
+        raise SystemExit("no answer (firmware before extensions v9, or not over USB)")
+    nvm = r[4:44]
+    if any(nvm):
+        os.makedirs(os.path.expanduser("~/.quadra"), exist_ok=True)
+        base = os.path.expanduser(time.strftime("~/.quadra/stusb4500-nvm-%Y%m%d-%H%M%S"))
+        path, n = base + ".bin", 1
+        while os.path.exists(path):  # never over an earlier copy (it may be the only original)
+            path, n = f"{base}-{n}.bin", n + 1
+        with open(path, "wb") as f:
+            f.write(nvm)
+        print("NVM as read:", " ".join(nvm[i:i + 8].hex() for i in range(0, 40, 8)), f"(saved to {path})")
+    print(f"sink PDOs in the NVM: {r[2]}" + (f" -> {r[3]}" if args.write_5v and r[1] == 0 else ""))
+    if r[1] == 0 and not args.write_5v:
+        print("check ok: --write-5v makes it 5 V 3 A only (PDO1), from the next power-up")
+    elif r[1] == 0:
+        print("written and verified: 5 V 3 A only from the next power-up (unplug and plug in again)")
+    elif r[1] == 1:
+        print(PD_RESULT[1])
+    else:
+        raise SystemExit(PD_RESULT.get(r[1], f"result {r[1]}"))
+
+
 def cmd_reboot(args):
     if not reboot(args.serial):
         raise SystemExit("this firmware has no reboot command (stock?)")
@@ -814,6 +852,9 @@ def main():
     p.add_argument("--label", help="its name on the knob (default: the city)")
     p.add_argument("--sync", action="store_true", help="send the time and this computer's zone now")
     p.set_defaults(fn=cmd_clock)
+    p = sub.add_parser("pd", help="the USB-PD chip's NVM: check it; --write-5v: 5 V 3 A only, for good")
+    p.add_argument("--write-5v", action="store_true")
+    p.set_defaults(fn=cmd_pd)
     p = sub.add_parser("reboot")
     p.add_argument("--serial", action="store_true", help="one boot as USB-Serial-JTAG (for flashing)")
     p.set_defaults(fn=cmd_reboot)

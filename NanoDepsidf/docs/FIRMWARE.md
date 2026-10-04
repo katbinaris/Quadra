@@ -520,6 +520,7 @@ and the companion shows a feature only from the version that has it:
 | 6 | `SCREEN` (the live screen: changed 16×16 tiles, RLE when shorter) and `INPUT` (keys and turns from a host). The companion used them as a live remote until its redesign (2026-10); it asks for neither now |
 | 7 | `NET KEY`: the WiFi pairing key |
 | 8 | `MUSIC`: the now-playing cover style (`PREFS` reports it, and how many styles there are) |
+| 9 | `PD`: the USB-PD chip's NVM, read and checked, or written to 5 V 3 A only (USB only, `quadra.py pd`). Also two WiFi clients at once, and `COVER` over WiFi |
 
 Work that touches NVS or decodes images runs in the usb task (`ext_link_poll`), not in
 TinyUSB's callback. Keys from `INPUT` are OR-ed into the real ones in the control loop and let

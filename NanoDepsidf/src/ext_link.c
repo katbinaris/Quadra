@@ -8,6 +8,7 @@
 #include "agent_board.h"
 #include "net.h"
 #include "net_link.h"
+#include "pd_status.h"
 #include "clock.h"
 #include "screen_stream.h"
 #include "tasks_common.h"
@@ -51,6 +52,8 @@ static _Atomic int s_cover_link = HOST_LINK_USB;
 static uint32_t s_cover_gen;
 static bool s_key_fresh;
 static _Atomic bool s_key_pending = false; // EXT_NET_KEY (USB)
+static bool s_pd_write;
+static _Atomic bool s_pd_pending = false; // EXT_CMD_PD (USB): I2C and NVM, in the usb task
 // WiFi setup, staged until APPLY (EXT_CMD_NET). The password is wiped once it's stored.
 static char s_net_ssid[NET_SSID_MAX + 1], s_net_pass[64];
 static bool s_net_have_ssid, s_net_have_pass, s_net_on;
@@ -319,6 +322,14 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
                 if ((d > 0 && now < VTURN_BACKLOG) || (d < 0 && now > -VTURN_BACKLOG)) atomic_fetch_add(&s_vturns, d);
             }
             return false;
+        case EXT_CMD_PD:
+            if (link != HOST_LINK_USB) { // writes a chip's NVM: someone with the knob in hand
+                ack(r, in[0], EXT_ST_USB_ONLY);
+                return true;
+            }
+            s_pd_write = in[1] == 1;
+            atomic_store(&s_pd_pending, true);
+            return false;
         case EXT_CMD_NET:
             // The network's name and password, the radio, the pairing key: someone with the knob
             // on a cable. Over WiFi they could only cut the link they came over, or hand it on.
@@ -413,6 +424,16 @@ void ext_link_poll(void) {
         host_link_queue(r);
         memset(r, 0, sizeof(r));
         atomic_store(&s_key_pending, false);
+    }
+    if (atomic_load(&s_pd_pending)) {
+        uint8_t before = 0, after = 0;
+        memset(r, 0, sizeof(r));
+        r[0] = EXT_TAG_PD;
+        r[1] = (uint8_t)pd_nvm_5v(s_pd_write, r + 4, &before, &after);
+        r[2] = before;
+        r[3] = after;
+        host_link_queue(r);
+        atomic_store(&s_pd_pending, false);
     }
     clock_poll();      // stores a changed format / zone
     user_prefs_poll(); // and MUSIC's cover style

@@ -29,3 +29,21 @@ void pd_status_start(void);
 
 // Any core, any time: the last result (PD_SRC_READING until the boot read is done).
 pd_status_t pd_status_get(void);
+
+// The chip's NVM, for good: sink PDO1 only (5 V 3 A), so even before the firmware runs (and in
+// the ROM bootloader) it never asks for more. One-time, from quadra.py pd --write-5v
+// (EXT_CMD_PD, USB only); the usb task, ~100 ms. Reads the NVM into `before`, checks its layout
+// against the chip's working copy, and only then (with `write`) erases, writes it back with the
+// PDO count 1 and reads it back to compare (twice at most). `write` false: read and check only.
+#define PD_NVM_SECTORS 5
+#define PD_NVM_BYTES (PD_NVM_SECTORS * 8)
+typedef enum {
+    PD_NVM_OK = 0,          // written and verified (or, read only: it would write)
+    PD_NVM_ALREADY,         // already PDO1 only: nothing written
+    PD_NVM_BUSY,            // the boot read still has the bus: try again in a few seconds
+    PD_NVM_NO_CHIP,
+    PD_NVM_READ_FAILED,
+    PD_NVM_UNEXPECTED,      // its contents don't match the working copy: nothing written
+    PD_NVM_VERIFY_FAILED,   // written twice, read back different both times
+} pd_nvm_result_t;
+pd_nvm_result_t pd_nvm_5v(bool write, uint8_t before[PD_NVM_BYTES], uint8_t *pdos_before, uint8_t *pdos_after);

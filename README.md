@@ -683,7 +683,7 @@ All of WiFi runs on Core 1, so the control loop keeps its timing.
 | Audio | MAX98357A I²S amplifier driving a transducer |
 | Keys | 4 (F1–F4), active low |
 | LEDs | WS2811: a 60-LED ring around the knob (RGB order) and 8 under the keys, two per key (GRB order), driven over RMT |
-| USB power | Asks the host for 500 mA, the USB 2.0 maximum; an STUSB4500 (I2C 0x28 on GPIO 12 / 13) negotiates USB-C / PD power on its own. The firmware reads it once at boot and shows the result under DEVICE → SYS INFO. The board runs at 5 V: if a PD charger gave more (the chip's stored settings also accept 9 V), the firmware asks for 5 V 3 A again, so the LEDs light and the haptics feel the same on any charger. The chip's stored settings aren't changed |
+| USB power | Asks the host for 500 mA, the USB 2.0 maximum; an STUSB4500 (I2C 0x28 on GPIO 12 / 13) negotiates USB-C / PD power on its own. The firmware reads it once at boot and shows the result under DEVICE → SYS INFO. The board runs at 5 V: if a PD charger gave more (the chip's stored settings also accept 9 V), the firmware asks for 5 V 3 A again, so the LEDs light and the haptics feel the same on any charger. `quadra.py pd --write-5v` makes the chip's stored settings 5 V 3 A only, so it never asks for more, even before the firmware runs |
 | USB | USB-C, native USB OTG (TinyUSB) |
 | WiFi | The ESP32-S3's 2.4 GHz radio, station only, at 11 dBm (full power upset the LED timing) |
 
@@ -832,7 +832,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | `tools/send_icon.py` | Uploads a 48×48 image to the device over the vendor HID interface (`icon.png`, `--test-pattern`, `--clear`, `--list`, `--dry-run --preview out.png`). |
 | `tools/gen_icon_c.py` | Converts a PNG into an RGB565 C array for a profile icon (24×24 status bar, 48×48 profile screen and idle screen). |
 | `tools/gen_silkscreen_font.py` | Regenerates the pixel fonts in `src/fonts/` from Silkscreen. |
-| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health) and `wifi-check` (tests the WiFi link's security against this knob). |
+| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
 | `tools/mac/` | The optional [Mac service](#the-mac-service): now playing, agent requests, the local time. |
 | `tools/tz_test/`, `tools/net_pend_test/` | Host checks for CLOCK's time-zone rules (against Python's zoneinfo) and for how the WiFi link queues handshakes. |
 

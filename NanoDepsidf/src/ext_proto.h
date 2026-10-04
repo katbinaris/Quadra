@@ -5,8 +5,9 @@
 // range (0x20-0x2F, replies and events 0xC0-0xCF) so upstream can grow 0x10-0x1F freely.
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 8 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
-                            // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC
+#define EXT_PROTO_VERSION 9 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+                            // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
+                            // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi
 
 // --- Host -> device ---
 enum {
@@ -55,6 +56,8 @@ enum {
                            //   TURN: [2]=detents (int8, + = clockwise), as if the knob had turned
     EXT_CMD_MUSIC = 0x2E,  // [1]=the cover style (user_prefs.h cover_style_t), 0xFF = keep. Stored.
                            //   -> EXT_TAG_PREFS
+    EXT_CMD_PD = 0x2F,     // the USB-PD chip's NVM (pd_status.h pd_nvm_5v), USB only. [1]=0: read and
+                           //   check, 1: write 5 V 3 A for good -> EXT_TAG_PD
 };
 enum { EXT_INPUT_KEYS = 1, EXT_INPUT_TURN = 2 };
 enum { EXT_CLOCK_FORMAT = 1, EXT_CLOCK_ZONE = 2, EXT_CLOCK_GET = 3 };
@@ -92,6 +95,8 @@ enum {
     EXT_TAG_SCREEN = 0xC6, // [1]=frame number [2]=1: a frame's first report, 2: its last
                            // [3]=bytes [4..63]=the stream (screen_stream.h)
     EXT_TAG_KEY = 0xC7,    // [1..32]=the WiFi pairing key (net_link.h) [33..34]=its TCP port
+    EXT_TAG_PD = 0xC8,     // [1]=pd_nvm_result_t [2]=sink PDOs in the NVM before [3]=after
+                           //   [4..43]=the NVM as read before (5 sectors x 8 bytes)
 };
 
 enum {
