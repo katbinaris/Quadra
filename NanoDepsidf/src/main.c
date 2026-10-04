@@ -165,6 +165,6 @@ void app_main(void) {
     i2s_task_start();
     display_task_start();
     led_task_start();
-    pd_status_start(); // one-shot, read-only STUSB4500 read (SYS INFO shows it)
+    pd_status_start(); // one-shot STUSB4500 read (SYS INFO shows it); a 9 V contract is asked again for 5 V
     sysmon_start();    // SYS INFO: load, loop timing, heat, estimated power
 }

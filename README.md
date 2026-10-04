@@ -683,7 +683,7 @@ All of WiFi runs on Core 1, so the control loop keeps its timing.
 | Audio | MAX98357A I²S amplifier driving a transducer |
 | Keys | 4 (F1–F4), active low |
 | LEDs | WS2811: a 60-LED ring around the knob (RGB order) and 8 under the keys, two per key (GRB order), driven over RMT |
-| USB power | Asks the host for 500 mA, the USB 2.0 maximum; an STUSB4500 (I2C 0x28 on GPIO 12 / 13) negotiates USB-C / PD power on its own. The firmware only reads it, once at boot, and shows the result under DEVICE → SYS INFO |
+| USB power | Asks the host for 500 mA, the USB 2.0 maximum; an STUSB4500 (I2C 0x28 on GPIO 12 / 13) negotiates USB-C / PD power on its own. The firmware reads it once at boot and shows the result under DEVICE → SYS INFO. The board runs at 5 V: if a PD charger gave more (the chip's stored settings also accept 9 V), the firmware asks for 5 V 3 A again, so the LEDs light and the haptics feel the same on any charger. The chip's stored settings aren't changed |
 | USB | USB-C, native USB OTG (TinyUSB) |
 | WiFi | The ESP32-S3's 2.4 GHz radio, station only, at 11 dBm (full power upset the LED timing) |
 
@@ -723,7 +723,7 @@ input mapping. Core 1 runs everything that can tolerate latency:
 | `i2s` | 1 | 9 | Click synthesis and audio output |
 | `display` | 1 | 9 | Renders frames into a full-screen sprite and pushes them over SPI |
 | `led` | 1 | 10 | LED ring and key LEDs at 30 fps; above the display so its animations can't stall it, asleep between frames |
-| `pd` | 1 | 10 | One-shot at boot: reads the STUSB4500's contract over I2C (read-only), then exits |
+| `pd` | 1 | 10 | One-shot at boot: reads the STUSB4500's contract over I2C (and asks for 5 V again if it's above), then exits |
 | `sysmon` | 1 | 10 | SYS INFO: samples load, loop timing, temperature and the power estimate twice a second; logs a line every 5 s |
 | `menu_save` | 1 | 10 | Runs F2's save to flash, so it never happens inside a control-loop tick |
 | `net_link` | 1 | 10 | The companion over WiFi: its socket, handshake and encryption |

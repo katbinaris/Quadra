@@ -4,8 +4,9 @@
 #include <stdint.h>
 
 // USB power, as the STUSB4500 (the board's USB-C / PD sink, I2C 0x28 on SDA 12 / SCL 13)
-// negotiated it on its own. Read once, briefly, at boot -- read-only: nothing is ever written
-// to the chip, so its NVM config and whatever contract it made stay exactly as they are.
+// negotiated it on its own. Read once, briefly, at boot. One write: a contract above 5 V (a PD
+// charger, from the NVM's 9 V PDO) is asked again for 5 V only -- the chip's working copy, then a
+// soft reset (pd_status.c, PD_5V_TRIES). Its NVM is never written.
 
 typedef enum {
     PD_SRC_READING = 0, // boot read not finished yet
