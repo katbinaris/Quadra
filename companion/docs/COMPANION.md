@@ -1,7 +1,7 @@
 # Quadra companion: user guide
 
-The companion is the desktop app for the Quadra knob. It changes the knob's settings and app
-profiles from the computer. This guide is for someone using the app. For building it, see the
+The companion is the desktop app for the Quadra knob. It changes the knob's settings, app
+profiles, HOME's lamps and MIDI's synths from the computer. This guide is for someone using the app. For building it, see the
 [companion README](../README.md); for the protocol and the firmware side, see
 [FIRMWARE.md](../../NanoDepsidf/docs/FIRMWARE.md) §10.
 
@@ -47,8 +47,9 @@ a few seconds. Pairing hands the app the knob's key: nothing else on the network
 forge or replay what goes between them. The network, the password and the key itself change
 over USB only.
 
-Wi-Fi carries what this app does: settings, haptics, the lights and the profiles (the list
-takes a few seconds to fill). With a cable in, the knob's controls (turning it, F1–F4) type
+Wi-Fi carries what this app does: settings, haptics, the lights, the profiles (the list
+takes a few seconds to fill), the lamps and the synths. Only the lamp import needs the cable,
+since it carries the lamps' keys. With a cable in, the knob's controls (turning it, F1–F4) type
 and scroll over USB on the computer the cable goes to. With no cable (the knob on a charger),
 they come to this app over Wi-Fi and it types and scrolls on this Mac, once you allow Quadra
 under **System Settings › Privacy & Security › Accessibility** (**Device › Wi-Fi › Allow**
@@ -76,12 +77,13 @@ Until a knob answers, the page says what to do, and the knob's picture in the si
 1. **Your knob:** its picture, with what its main screen shows now (the profile in use, or the
    mode), its name and how it's connected (USB or Wi-Fi, and the firmware version).
 2. **The pages,** in three groups:
-   - **Knob:** **Mode** (what the knob sends) and **Haptics** (how it feels).
+   - **Knob:** **Mode** (what the knob sends), **Haptics** (how it feels), **Lamps** (HOME's
+     lamps) and **Synths** (MIDI's synth profiles).
    - **App profiles:** one entry per profile on the knob, and **New profile**. A green ring round
      an icon marks the profile in use.
    - **Setup:** **Look**, **Device** and **System info**.
 3. **Where you are.**
-4. **One save** for everything: settings, the lights and app profiles. See
+4. **One save** for everything: settings, the lights, app profiles and synths. See
    [Live and saved](#3-live-and-saved).
 5. **The page.** Some pages have tabs. Amber marks the choice that's on; a small amber dot marks
    a change that's live on the knob but not saved yet (on a card, and on its page in the sidebar).

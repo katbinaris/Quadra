@@ -101,7 +101,7 @@ shows, at 2× scale.
   - a CDC serial console.
 
   Nothing has to be installed: the computer sees a keyboard and a mouse, or a MIDI device. The optional
-  [desktop companion](#desktop-companion) edits settings and profiles.
+  [desktop companion](#desktop-companion) edits settings, profiles, HOME's lamps and MIDI's synths.
 - **APP mode with app profiles.** Each supported application is one data file describing
   what the knob and keys send, how the knob feels while doing it, and what the screen shows.
   MUSIC, AGENTS, CLOCK, Figma, Plasticity and Onshape ship today. Any profile can be edited,
@@ -882,7 +882,7 @@ All of WiFi runs on Core 1, so the control loop keeps its timing.
 | Keys F1 / F2 / F3 / F4 | 41 / 40 / 45 / 46 |
 | LED ring A / B | 38 / 42 |
 | I²C SDA / SCL | 12 / 13 |
-| UART2 RX / TX | 44 / 43 |
+| MIDI TRS jacks: UART1 RX / TX | 44 / 43 |
 
 </details>
 
@@ -911,6 +911,7 @@ input mapping. Core 1 runs everything that can tolerate latency:
 | `net_link` | 1 | 10 | The companion over WiFi: its socket, handshake and encryption |
 | `net` | 1 | 5 | WiFi housekeeping: connecting, reconnecting, signal strength. The radio, lwIP and mDNS also run on Core 1 |
 | `home` | 1 | 5 | HOME: finds the lamps, sends the knob's changes (miIO: AES-128 over UDP), reads their state |
+| `midi` | 1 | 10 | MIDI mode: sends the knob's turns and program changes to USB MIDI and the TRS jacks, reads what the synth sends back |
 
 The ESP-IDF timer task and its interrupt are moved to Core 1 too (`sdkconfig.defaults`).
 With WiFi in modem sleep they fire at every beacon, and on Core 0 they cost the control loop
@@ -973,8 +974,9 @@ pio run -t upload --upload-port <port>         # flash
 pio device monitor                             # serial console, 115200 baud
 ```
 
-In normal operation the device enumerates as a composite HID + CDC device, and uploads use
-the CDC port's 1200-baud reset. If an upload can't find the device:
+In normal operation the device enumerates as a composite HID + CDC device (in MIDI mode,
+CDC + vendor HID + USB MIDI), and uploads use the CDC port's 1200-baud reset. If an upload
+can't find the device:
 
 - **Hold F3 + F4 while powering on.** For that boot, the device skips the HID device and
   stays in the ESP32-S3's plain USB serial/JTAG mode, which the uploader can always reach.
@@ -985,7 +987,7 @@ the CDC port's 1200-baud reset. If an upload can't find the device:
 
 The board definition is `NanoDepsidf/boards/nanofoc_d.json`, and the partition table
 `boards/nano_partitions.csv` has two OTA slots of 1.625 MiB each, NVS and a 640 KiB data
-partition that holds stored profiles.
+partition (LittleFS) that holds stored app profiles and synths.
 
 > ⚠️ **Updating from firmware before WiFi.** The partition table changed: the app slots
 > grew and the profile store moved and shrank. Flash the new table along with the firmware.
@@ -1032,8 +1034,8 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
   <img src="companion/docs/app-sys-info.png" width="440" alt="Companion app: System info, with power, heat, CPU and system tiles and the last minute">
 </p>
 
-`companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings and app
-profiles from the computer:
+`companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings, app
+profiles, lamps and synths from the computer:
 
 - **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use (for
   MIDI, the synth and channel).
@@ -1051,7 +1053,7 @@ profiles from the computer:
 - **Device:** Mac or PC, the start mode, Wi-Fi and pairing, and the firmware version.
 - **System info:** power, heat, CPU and system, with a minute of history.
 
-Changes are live on the knob; **Save to knob** stores them all (settings, lights and profiles),
+Changes are live on the knob; **Save to knob** stores them all (settings, lights, profiles and synths),
 just as F2 stores the settings. The same UI also runs as a web page in Chrome or Edge over
 WebHID. It talks to the vendor HID interface with the small protocol in `src/host_proto.h` and
 its extensions in `src/ext_proto.h`, so it needs no driver. Once paired, the app also reaches
@@ -1143,15 +1145,17 @@ NanoDepsidf/                   the firmware (PlatformIO project)
 │   ├── usb_task.c             TinyUSB composite device, HID state sync
 │   ├── icon_store.c           vendor-HID icon upload protocol
 │   ├── host_link.c, host_proto.h            the desktop companion's protocol (same interface)
-│   ├── ext_link.c, ext_proto.h              its extensions: LOOK, WiFi setup, CLOCK, the remote
+│   ├── ext_link.c, ext_proto.h              its extensions: LOOK, WiFi setup, CLOCK, the remote, HOME's lamps, synths
 │   ├── net.c, net_link.c      WiFi (station, SNTP, mDNS) and the encrypted companion link
-│   ├── home.c                 HOME: Xiaomi lamps over miIO (scan, state, live changes)
+│   ├── home.c                 HOME: Xiaomi lamps over miIO (scan, state, live changes, edits)
+│   ├── midi.c, midi_synths.c  MIDI mode (USB MIDI, the TRS jacks) and the synth profiles (built-in + JSON)
 │   ├── notify.c, agent_board.c              agent requests and the AGENTS dashboard
 │   ├── media.c                MUSIC's now playing: cover, track, volume
 │   ├── clock.c, tzrule.c      CLOCK: zones and their daylight-saving rules
 │   ├── screen_stream.c        the live screen for a host (changed tiles only)
 │   ├── user_prefs.c           the idle word, LIGHTS and MUSIC's cover style
 │   ├── sysmon.c               SYS INFO: load, loop timing, heat, estimated power
+│   ├── led_task.c, pd_status.c              the LED ring and key LEDs; the USB-PD contract
 │   ├── i2s_task.c, audio_trigger.c          click synthesis
 │   ├── menu.c, config_store.c               settings menu + NVS persistence
 │   ├── haptic_params.h        the haptic profiles: factory values and limits
