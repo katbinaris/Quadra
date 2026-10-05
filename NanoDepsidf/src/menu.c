@@ -4,6 +4,7 @@
 #include "app_profiles/app_profiles.h"
 #include "sysmon.h"
 #include "host_proto.h"
+#include "midi.h"
 #include "tasks_common.h"
 #include "user_prefs.h"
 #include "freertos/FreeRTOS.h"
@@ -147,6 +148,7 @@ static const char *ph_hid_type_name(menu_hid_type_t t) {
 }
 
 static _Atomic int32_t s_ph_midi_channel = 1; // 1-16
+static _Atomic int32_t s_ph_midi_synth = 0;   // midi_synth_get() index; NVS stores the id
 static _Atomic int32_t s_ph_app_profile = 0;  // app_profiles_get() index; NVS stores the id
 
 // boot_usb_mode_t itself now lives in boot_mode.h (Phase 8 step 6) -- main.c reads it
@@ -307,6 +309,18 @@ static void CONTROL_HOT rotate_midi_mapping(int8_t dir) {
     if (v > 16) v = 16;
     atomic_store_explicit(&s_ph_midi_channel, v, memory_order_relaxed);
 }
+// MIDI: which synth profile (midi_synths.c) the knob plays. A list with ends, like PROFILE.
+static void fmt_midi_synth(char *buf, size_t n) {
+    snprintf(buf, n, "%s", midi_synth_get(atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed))->name);
+}
+static bool CONTROL_HOT midi_synth_at_end(int8_t dir) {
+    int v = (int)atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed);
+    return dir > 0 ? v >= midi_synth_count() - 1 : v <= 0;
+}
+static void CONTROL_HOT rotate_midi_synth(int8_t dir) {
+    int v = (int)atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed) + dir;
+    atomic_store_explicit(&s_ph_midi_synth, clampi(v, 0, midi_synth_count() - 1), memory_order_relaxed);
+}
 
 static bool app_profile_enabled(void) {
     return atomic_load_explicit(&s_ph_hid_type, memory_order_relaxed) == MENU_HID_APP;
@@ -334,6 +348,7 @@ static void action_save_hid(void) {
     };
     config_store_save_hid(&cfg);
     config_store_save_app_profile(app_profiles_get(atomic_load_explicit(&s_ph_app_profile, memory_order_relaxed))->id);
+    config_store_save_midi_synth(midi_synth_get(atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed))->id);
     mode_haptic_cfg_t mcfg;
     for (int i = 0; i < MODE_HAPTIC_STORED; i++) mcfg.profile[i] = LD(s_mode_hp[i]);
     config_store_save_mode_haptic(&mcfg);
@@ -449,6 +464,7 @@ static const menu_item_t s_hid_items[] = {
     { .label = "PROFILES", .kind = MENU_ITEM_VALUE,   .format_value = fmt_hid_type,     .on_rotate = rotate_hid_type },
     { .label = "HAPTIC",   .kind = MENU_ITEM_VALUE,   .format_value = fmt_mode_haptic,  .on_rotate = rotate_mode_haptic,  .is_enabled = mode_haptic_enabled },
     { .label = "CHANNEL",  .kind = MENU_ITEM_VALUE,   .format_value = fmt_midi_mapping, .on_rotate = rotate_midi_mapping, .is_enabled = midi_mapping_enabled },
+    { .label = "SYNTH",    .kind = MENU_ITEM_VALUE,   .format_value = fmt_midi_synth,   .on_rotate = rotate_midi_synth,   .is_enabled = midi_mapping_enabled, .at_end = midi_synth_at_end },
     { .label = "PROFILE",  .kind = MENU_ITEM_SUBMENU, .submenu = &s_app_profile_screen, .format_value = fmt_app_profile, .is_enabled = app_profile_enabled },
 };
 static const menu_screen_t s_hid_screen = {
@@ -618,6 +634,7 @@ typedef struct {
     audio_click_timbre_t sound;
     menu_hid_type_t hid_type;
     int32_t midi_channel;
+    int32_t midi_synth;
     int32_t app_profile;
     boot_usb_mode_t boot_mode;
     int32_t rotation;
@@ -640,6 +657,7 @@ static void settings_capture(settings_t *s) {
     s->sound = atomic_load_explicit(&s_ph_sound, memory_order_relaxed);
     s->hid_type = atomic_load_explicit(&s_ph_hid_type, memory_order_relaxed);
     s->midi_channel = atomic_load_explicit(&s_ph_midi_channel, memory_order_relaxed);
+    s->midi_synth = atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed);
     s->app_profile = atomic_load_explicit(&s_ph_app_profile, memory_order_relaxed);
     s->boot_mode = atomic_load_explicit(&s_ph_boot_mode, memory_order_relaxed);
     s->rotation = atomic_load_explicit(&s_ph_rotation, memory_order_relaxed);
@@ -657,6 +675,7 @@ static void settings_restore(const settings_t *s) {
     atomic_store_explicit(&s_ph_sound, s->sound, memory_order_relaxed);
     atomic_store_explicit(&s_ph_hid_type, s->hid_type, memory_order_relaxed);
     atomic_store_explicit(&s_ph_midi_channel, s->midi_channel, memory_order_relaxed);
+    atomic_store_explicit(&s_ph_midi_synth, s->midi_synth, memory_order_relaxed);
     atomic_store_explicit(&s_ph_app_profile, s->app_profile, memory_order_relaxed);
     atomic_store_explicit(&s_ph_boot_mode, s->boot_mode, memory_order_relaxed);
     atomic_store_explicit(&s_ph_rotation, s->rotation, memory_order_relaxed);
@@ -676,6 +695,7 @@ static void settings_copy_group(settings_t *dst, const settings_t *src, menu_scr
         case MENU_SCREEN_HID:
             dst->hid_type = src->hid_type;
             dst->midi_channel = src->midi_channel;
+            dst->midi_synth = src->midi_synth;
             memcpy(dst->mode_hp, src->mode_hp, sizeof(dst->mode_hp));
             dst->app_profile = src->app_profile;
             break;
@@ -706,7 +726,7 @@ static bool settings_group_differs(const settings_t *a, const settings_t *b, men
             return memcmp(a->hp_feel, b->hp_feel, sizeof(a->hp_feel)) != 0
                 || memcmp(a->hp_tune, b->hp_tune, sizeof(a->hp_tune)) != 0 || a->sound != b->sound;
         case MENU_SCREEN_HID:
-            return a->hid_type != b->hid_type || a->midi_channel != b->midi_channel
+            return a->hid_type != b->hid_type || a->midi_channel != b->midi_channel || a->midi_synth != b->midi_synth
                 || a->app_profile != b->app_profile || memcmp(a->mode_hp, b->mode_hp, sizeof(a->mode_hp)) != 0;
         case MENU_SCREEN_APP_PROFILE:
             return a->app_profile != b->app_profile;
@@ -812,6 +832,11 @@ void menu_init(void) {
     if (config_store_load_app_profile(app_id, sizeof(app_id))) {
         int idx = app_profiles_find(app_id);
         if (idx >= 0) atomic_store_explicit(&s_ph_app_profile, idx, memory_order_relaxed);
+    }
+    char synth_id[24];
+    if (config_store_load_midi_synth(synth_id, sizeof(synth_id))) {
+        int idx = midi_synth_find(synth_id);
+        if (idx >= 0) atomic_store_explicit(&s_ph_midi_synth, idx, memory_order_relaxed);
     }
     boot_cfg_t bcfg;
     if (config_store_load_boot(&bcfg)) {
@@ -1200,6 +1225,9 @@ menu_hid_type_t CONTROL_HOT menu_get_hid_type(void) {
     return atomic_load_explicit(&s_ph_hid_type, memory_order_relaxed);
 }
 
+int32_t menu_get_midi_channel(void) { return atomic_load_explicit(&s_ph_midi_channel, memory_order_relaxed); }
+int32_t menu_get_midi_synth(void) { return atomic_load_explicit(&s_ph_midi_synth, memory_order_relaxed); }
+
 // --- Companion app (host_link.c, Core 1) ---
 // Same atomics, same clamps as the rotate_*() callbacks; s_saved only under s_state_mux, like
 // everywhere else in this file.
@@ -1235,12 +1263,13 @@ void menu_remote_get(menu_remote_settings_t *out) {
     out->hid_type = cur.hid_type;
     out->mode_haptic = cur.mode_hp[cur.hid_type];
     out->midi_channel = cur.midi_channel;
+    out->midi_synth = cur.midi_synth;
     out->profile = cur.app_profile;
     out->boot_mode = cur.boot_mode;
     out->rotation = cur.rotation;
     out->host = cur.host;
 
-    uint16_t d = 0;
+    uint32_t d = 0;
     if (t->kp != st->kp) d |= 1u << HOST_SET_KP;
     if (t->kd != st->kd) d |= 1u << HOST_SET_KD;
     if (t->shape != st->shape) d |= 1u << HOST_SET_SHAPE;
@@ -1260,6 +1289,7 @@ void menu_remote_get(menu_remote_settings_t *out) {
     if (cur.hid_type != saved.hid_type) d |= 1u << HOST_SET_HID_TYPE;
     if (memcmp(cur.mode_hp, saved.mode_hp, sizeof(cur.mode_hp)) != 0) d |= 1u << HOST_SET_MODE_HAPTIC;
     if (cur.midi_channel != saved.midi_channel) d |= 1u << HOST_SET_MIDI_CH;
+    if (cur.midi_synth != saved.midi_synth) d |= 1u << HOST_SET_MIDI_SYNTH;
     if (cur.app_profile != saved.app_profile) d |= 1u << HOST_SET_PROFILE;
     if (cur.boot_mode != saved.boot_mode) d |= 1u << HOST_SET_BOOT;
     if (cur.rotation != saved.rotation) d |= 1u << HOST_SET_ROTATION;
@@ -1294,6 +1324,7 @@ bool menu_remote_set(int id, int32_t ival, float fval) {
             atomic_store(&s_ph_hid_type, (menu_hid_type_t)clampi(ival, 0, MENU_HID_TYPE_COUNT - 1));
             break;
         case HOST_SET_MIDI_CH: atomic_store(&s_ph_midi_channel, clampi(ival, 1, 16)); break;
+        case HOST_SET_MIDI_SYNTH: atomic_store(&s_ph_midi_synth, clampi(ival, 0, midi_synth_count() - 1)); break;
         case HOST_SET_PROFILE: atomic_store(&s_ph_app_profile, clampi(ival, 0, app_profiles_count() - 1)); break;
         case HOST_SET_BOOT:
             atomic_store(&s_ph_boot_mode, (boot_usb_mode_t)clampi(ival, 0, BOOT_USB_MODE_COUNT - 1));

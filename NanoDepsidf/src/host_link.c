@@ -10,6 +10,7 @@
 #include "ui_state.h"
 #include "app_mode.h"
 #include "led_task.h"
+#include "midi.h"
 #include "app_profiles/app_profiles.h"
 #include "app_profiles/profile_json.h"
 #include "esp_heap_caps.h"
@@ -36,7 +37,7 @@ static const char *TAG = "host";
 #define NET_BATCH 32 // reports handed to the network per usb-task pass (USB: one, then completions)
 static QueueHandle_t s_replies[HOST_LINK_COUNT];
 static SemaphoreHandle_t s_rx_lock;
-static uint8_t s_instance;
+static volatile uint8_t s_instance; // the vendor HID's TinyUSB instance: 1, or 0 in the MIDI personality
 
 static _Atomic int s_screen_link = HOST_LINK_USB; // the screen's (host_link_screen; s_tx_lock)
 // Each link's host, by generation: host_link_stop_link moves it on (with s_tx_lock held), so work
@@ -150,7 +151,8 @@ static void build_settings(uint8_t *r) {
     menu_remote_settings_t s;
     menu_remote_get(&s);
     r[0] = HOST_TAG_SETTINGS;
-    put_u16(r + 1, s.dirty);
+    put_u16(r + 1, (uint16_t)s.dirty);
+    r[3] = (uint8_t)(s.dirty >> 16);
     put_i32(r + 4, s.detents);
     put_f32(r + 8, s.kp);
     put_f32(r + 12, s.kd);
@@ -169,6 +171,8 @@ static void build_settings(uint8_t *r) {
     r[31] = (uint8_t)s.feels;
     r[32] = (uint8_t)s.amp_max;
     r[33] = (uint8_t)s.mode_haptic;
+    r[34] = (uint8_t)s.midi_synth;
+    r[35] = (uint8_t)midi_synth_count();
     put_f32(r + 36, s.kp_min);
     put_f32(r + 40, s.kp_max);
     put_f32(r + 44, s.kd_min);
@@ -337,6 +341,8 @@ static bool handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             return true;
     }
 }
+
+void host_link_set_instance(uint8_t vendor_instance) { s_instance = vendor_instance; }
 
 void host_link_init(uint8_t vendor_instance) {
     s_instance = vendor_instance;

@@ -13,6 +13,8 @@
 typedef enum { HOST_LINK_USB = 0, HOST_LINK_NET = 1, HOST_LINK_NET2 = 2, HOST_LINK_COUNT } host_link_t;
 
 void host_link_init(uint8_t vendor_instance);
+// The USB personality changed (usb_task.c): MIDI has no keyboard interface before the vendor one.
+void host_link_set_instance(uint8_t vendor_instance);
 
 // One report from the host on `link` (TinyUSB task / net_link task). Builds the reply (if any)
 // and queues it for that link.

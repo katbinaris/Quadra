@@ -6,6 +6,7 @@
 extern "C" {
 #include "menu.h"
 #include "home.h"
+#include "midi.h"
 }
 
 namespace ui {
@@ -92,5 +93,14 @@ void draw_home(const HomeInputs &in);
 // HOME's idle-screen icon: lamp `l` drawn into a 48x48 RGB565 BE image (black = see-through),
 // and its three accent colours for the idle effects and LEDs.
 void home_idle_icon(const home_lamp_view_t &l, uint8_t *icon48, uint32_t accents[3]);
+
+// MIDI (midi.h): the whole Main Screen -- the synth, the parameter being turned and its value,
+// the ports, and F1-F4. With F1 held, the parameter list instead. Palette only.
+struct MidiInputs {
+    const midi_snapshot_t *snap;
+    uint32_t t_ms;   // ms since boot: a program change shows for a moment (snap->prog_ms)
+    uint8_t buttons; // held keys (UI_BTN_*)
+};
+void draw_midi(const MidiInputs &in);
 
 } // namespace ui

@@ -132,13 +132,15 @@ EXT_RAM_BSS_ATTR static uint8_t s_word[WORD_MAX_W * WORD_MAX_H];
 static int s_word_w = 0, s_word_h = 0, s_word_scale = 2;
 static bool s_word_custom = false; // fx_set_word() got the user's own text
 struct Spr {
-    const uint8_t *icon; // nullptr = the wordmark
+    const uint8_t *icon; // nullptr = the wordmark (or `mark`)
     int w, h, scale;
+    const Sprite *mark = nullptr; // MIDI: the synth maker's logo, a 1-bit sprite in white
 };
 // The user's word is lit with a sheen: white at the top into the app's accent at the bottom
 // (fx_attract sets it per frame); the stock QUADRA stays plain white.
 static uint32_t s_word_sheen = WHITE;
 static inline uint32_t spr_px(const Spr &sp, int i, int j) {
+    if (sp.mark != nullptr) return sp.mark->rows[j * sp.mark->w + i] == '#' ? WHITE : 0;
     if (sp.icon == nullptr) {
         if (!s_word[j * WORD_MAX_W + i]) return 0;
         if (!s_word_custom || s_word_h < 2) return WHITE;
@@ -467,7 +469,7 @@ static struct {
     int routine;
 } s_seq = {0, UINT32_MAX, 0, 0, -1};
 
-void fx_attract(uint32_t t_ms, const uint8_t *icon48, const uint32_t *heat, uint32_t seed, int only) {
+void fx_attract(uint32_t t_ms, const uint8_t *icon48, const uint32_t *heat, uint32_t seed, int only, const Sprite *mark) {
     // A new idle session (time went back, or a new seed): start a fresh random sequence.
     bool restart = false;
     if (t_ms < s_seq.last_t || seed != s_seq.seed || s_seq.routine < 0) {
@@ -488,8 +490,12 @@ void fx_attract(uint32_t t_ms, const uint8_t *icon48, const uint32_t *heat, uint
 
     // The user's own word takes turns with the app's icon, one routine each (the word first);
     // the stock QUADRA wordmark only shows without an icon, as before.
-    bool word = icon48 == nullptr || (s_word_custom && (s_seq.n & 1) == 0);
-    Spr sp = word ? Spr{nullptr, s_word_w, s_word_h, s_word_scale} : Spr{icon48, ATTRACT_ICON, ATTRACT_ICON, 1};
+    // A maker's logo (MIDI) stands where an icon would: 3x when that stays under the ~119 px
+    // JUMP allows with its 1.38x squash (27 px logos: 81 px, 112 squashed), else like the wordmark.
+    bool word = (icon48 == nullptr && mark == nullptr) || (s_word_custom && (s_seq.n & 1) == 0);
+    Spr sp = word   ? Spr{nullptr, s_word_w, s_word_h, s_word_scale}
+             : mark ? Spr{nullptr, mark->w, mark->h, mark->w <= 28 ? 3 : mark->w <= WORD_2X_MAX_W ? 2 : 1, mark}
+                    : Spr{icon48, ATTRACT_ICON, ATTRACT_ICON, 1};
     if (icon48 != s_acc_icon || heat != s_acc_heat || s_acc_icon == nullptr) {
         app_accents(icon48, heat, s_accents); // AMBER x3 without an icon (QUADRA)
         s_acc_icon = icon48;

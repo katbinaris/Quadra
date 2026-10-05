@@ -19,6 +19,7 @@
 #include "net.h"
 #include "clock.h"
 #include "home.h"
+#include "midi.h"
 #include <stdlib.h>
 #include "esp_attr.h"
 #include <math.h>
@@ -42,6 +43,10 @@ static const char *TAG = "led";
 //             fills it clockwise from 12 o'clock in the lamp's colour, 1 % = one LED (dim in the
 //             list, dim to full while turned); its whites with the chosen one brightest; or the hue
 //             wheel with the colour at 12 o'clock. The keys take the lamp's colour.
+//   MIDI      the ring is the parameter's value: it fills clockwise from 12 o'clock, dim to full
+//             (a centred one from 12 o'clock either way); a switch shows one segment per option,
+//             the chosen one bright. Dark while the value isn't known. F1 held: one dim dot per
+//             parameter, the one under the knob bright.
 //
 // Calm by design: 30 fps, a few hundred float ops a frame, the bits go out by RMT (ring A over
 // DMA). Runs above the display (PRIO_LED) so the display's back-to-back frames can't starve it;
@@ -82,6 +87,7 @@ typedef struct { float r, g, b; } rgbf_t;
 static rgbf_t s_ring[NANO_LED_A_NUM], s_keys[NANO_LED_B_NUM];
 static led_strip_handle_t s_ring_h = NULL, s_keys_h = NULL;
 EXT_RAM_BSS_ATTR static home_snapshot_t s_home; // HOME's lamps, copied each frame while it's up
+static midi_snapshot_t s_midi;                  // MIDI's parameter, likewise
 
 // Brand and cover colours are made for screens. The LEDs are linear and run dim, so a pastel
 // like Claude's coral washes out to pink; a 2.2 gamma brings the hue back.
@@ -293,9 +299,39 @@ static void led_task_fn(void *arg) {
             pal = home_pal;
         }
 
+        // MIDI: the parameter being turned.
+        const bool midi = menu_get_hid_type() == MENU_HID_MIDI && !menu;
+        if (midi) midi_get_snapshot(&s_midi);
+        const midi_synth_t *msy = midi ? midi_synth_get(s_midi.synth) : NULL;
+        const midi_param_t *mp = msy && s_midi.param < msy->n_params ? &msy->params[s_midi.param] : NULL;
+
         // Ring: the resting gradient (drifting slowly and dimmer while idle), or the wheel.
         const float drift = idle ? (float)(now % 30000000) / 30000000.0f : 0;
-        if (home_ring) {
+        if (mp && fx != LIGHT_FX_OFF) {
+            const int N = NANO_LED_A_NUM;
+            for (int i = 0; i < N; i++) s_ring[i] = (rgbf_t){0, 0, 0};
+            const int v = s_midi.value, max = midi_param_max(mp);
+            if (s_midi.browsing) {
+                for (int k = 0; k < msy->n_params; k++) s_ring[k * N / msy->n_params] = hexf(pal[1], 0.12f);
+                s_ring[s_midi.param * N / msy->n_params] = hexf(pal[2], 1.0f);
+            } else if (v >= 0 && mp->n_opts > 1) {
+                const int n = mp->n_opts;
+                for (int i = 0; i < N; i++) {
+                    int seg = i * n / N;
+                    bool gap = (i * n) % N < n; // the first LED of each segment stays dark
+                    s_ring[i] = gap ? (rgbf_t){0, 0, 0} : hexf(seg == v ? pal[2] : pal[1], seg == v ? 1.0f : 0.15f);
+                }
+            } else if (v >= 0 && mp->bipolar) {
+                const int c = (max + 1) / 2, half = N / 2;
+                const int d = (int)lroundf((float)(v - c) / c * half);
+                for (int k = 0; k <= abs(d) && k < half; k++) {
+                    s_ring[d >= 0 ? k : (N - k) % N] = hexf(pal[1], 0.15f + 0.85f * (k + 1) / half);
+                }
+            } else if (v >= 0) {
+                const int fill = (v * N + max - 1) / max; // 0 dark, anything above it one LED or more
+                for (int i = 0; i < fill && i < N; i++) s_ring[i] = hexf(pal[1], 0.15f + 0.85f * (i + 1) / N);
+            }
+        } else if (home_ring) {
             // The lamp's brightness fills the ring clockwise from 12 o'clock: 1 % is one LED.
             const int fill = hl->on ? (hl->bright * NANO_LED_A_NUM + 99) / 100 : 0;
             for (int i = 0; i < NANO_LED_A_NUM; i++) s_ring[i] = (rgbf_t){0, 0, 0};

@@ -6,6 +6,8 @@
 
 namespace ui {
 
+struct Sprite; // ui_gfx.hpp
+
 void fx_init(); // one-time tables (logo particles, the jump's choreography)
 
 // The word the loading screen assembles and the idle screen animates: the user's own
@@ -22,9 +24,10 @@ void fx_boot(uint32_t elapsed_ms);
 // none, the QUADRA wordmark -- in a routine (JUMP; BOUNCE is kept but off). `t_ms` counts from
 // the start of the idle session; `seed` picks the random sequence of routines (a new seed or
 // time going back starts a new one). `heat`: 3 accent colours (RGB888), nullptr = sampled from
-// the icon, AMBER without one. `only` >= 0 pins one routine (the host preview).
+// the icon, AMBER without one. `only` >= 0 pins one routine (the host preview). `mark`: a 1-bit
+// logo shown instead of the icon (MIDI: the synth maker's), in white with AMBER effects.
 enum { ATTRACT_JUMP = 0, ATTRACT_BOUNCE, ATTRACT_ROUTINES };
 void fx_attract(uint32_t t_ms, const uint8_t *icon48 = nullptr, const uint32_t *heat = nullptr, uint32_t seed = 0,
-                int only = -1);
+                int only = -1, const Sprite *mark = nullptr);
 
 } // namespace ui

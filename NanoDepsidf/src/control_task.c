@@ -24,6 +24,7 @@
 #include "esp_system.h"
 #include "driver/gpio.h"
 #include "home.h"
+#include "midi.h"
 #include "driver/gptimer.h"
 #include <math.h>
 #include <stdbool.h>
@@ -385,7 +386,7 @@ static float CONTROL_HOT raw_to_rad(int32_t raw) {
 }
 
 // One detent's worth of turning, wherever it goes: the menu (list navigation, or a value while
-// editing -- never a wheel event then), APP mode, HOME (home.h), or the mouse wheel. The knob's own crossings
+// editing -- never a wheel event then), APP mode, HOME (home.h), MIDI (midi.h), or the mouse wheel. The knob's own crossings
 // and the companion's turns (EXT_CMD_INPUT) both come through here.
 static void CONTROL_HOT dispatch_turn(int8_t dir, bool app_on) {
     ui_state_note_turn(dir);
@@ -395,6 +396,8 @@ static void CONTROL_HOT dispatch_turn(int8_t dir, bool app_on) {
         app_mode_detent(dir, esp_timer_get_time());
     } else if (menu_get_hid_type() == MENU_HID_HOME) {
         home_input_rotate(dir);
+    } else if (menu_get_hid_type() == MENU_HID_MIDI) {
+        midi_input_rotate(dir);
     } else {
         // Phase 3: knob -> mouse scroll wheel. Non-blocking -- a full queue just drops this
         // event (counted for SYS INFO).
@@ -881,6 +884,9 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 app_mode_update(app_active, esp_timer_get_time(), raw_keys & ~s_notice_keys, swallow);
                 // HOME with the menu closed: F1-F3 are its keys (home.h), F4 still opens the menu.
                 bool home_keys = menu_get_hid_type() == MENU_HID_HOME && !menu_is_open();
+                // MIDI likewise (midi.h); F1 also reports its release (a hold picks a parameter).
+                bool midi_keys = menu_get_hid_type() == MENU_HID_MIDI && !menu_is_open();
+                if (midi_keys && !btn_a_pressed && s_menu_prev_btn_a_pressed) midi_input_key(UI_BTN_F1, false);
 
                 if (!app_active && !swallow && !notice && iterations >= s_menu_btn_cooldown_until_iter) {
                     if (btn_d_pressed && !s_menu_prev_btn_d_pressed) {
@@ -888,15 +894,18 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                         s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
                     } else if (btn_c_pressed && !s_menu_prev_btn_c_pressed) {
                         if (home_keys) home_input_key(UI_BTN_F3);
+                        else if (midi_keys) midi_input_key(UI_BTN_F3, true);
                         else menu_input_back(); // F3
                         s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
                     } else if (btn_a_pressed && !s_menu_prev_btn_a_pressed) {
                         if (home_keys) home_input_key(UI_BTN_F1);
+                        else if (midi_keys) midi_input_key(UI_BTN_F1, true);
                         else menu_input_select(); // F1
                         s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
                     } else if (btn_b_pressed && !s_menu_prev_btn_b_pressed) {
-                        if (home_keys) {
-                            home_input_key(UI_BTN_F2);
+                        if (home_keys || midi_keys) {
+                            if (home_keys) home_input_key(UI_BTN_F2);
+                            else midi_input_key(UI_BTN_F2, true);
                             s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
                         } else if (menu_current_screen() == MENU_SCREEN_HAPTIC) {
                             // Haptics: F2 saves on release; held 1.5 s it puts the shown
@@ -965,9 +974,11 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 // read once for this tick.
                 bool app_on = menu_get_hid_type() == MENU_HID_APP && !menu_is_open();
                 bool home_on = menu_get_hid_type() == MENU_HID_HOME && !menu_is_open();
+                bool midi_on = menu_get_hid_type() == MENU_HID_MIDI && !menu_is_open();
                 int haptic_profile = menu_haptic_profile();
                 if (app_on) app_mode_haptics(&haptic_profile);
                 else if (home_on) haptic_profile = home_haptic_profile(); // the list, or a value
+                else if (midi_on) haptic_profile = midi_haptic_profile(); // the parameter's, or the list
                 menu_haptic_set_active(haptic_profile);
                 uint32_t num_detents = menu_get_haptic_num_detents();
                 float kp = menu_get_haptic_kp();
@@ -1013,7 +1024,8 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 if (s_haptic_prev_detent_index_valid && detent_index != s_haptic_prev_detent_index) {
                     float past = wrap_pi(rel - (float)s_haptic_prev_detent_index * detent_spacing);
                     int8_t dir = (past > 0 ? 1 : -1) * KNOB_DIRECTION; // same sense as the dispatch below
-                    bool end = menu_is_open() ? menu_at_end(dir) : app_on ? app_mode_at_end(dir) : (home_on && home_at_end(dir));
+                    bool end = menu_is_open() ? menu_at_end(dir) : app_on ? app_mode_at_end(dir)
+                             : home_on ? home_at_end(dir) : (midi_on && midi_at_end(dir));
                     if (end) {
                         detent_index = s_haptic_prev_detent_index;
                         at_wall = true;
@@ -1075,7 +1087,8 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                     if (haptic_type == HAPTIC_TYPE_SINE && fabsf(error) > sine_peak_at) {
                         int8_t push_dir = (error < 0.0f ? 1 : -1) * KNOB_DIRECTION; // away from the committed step
                         sine_wall = at_wall || (menu_is_open() ? menu_at_end(push_dir)
-                                                  : app_on ? app_mode_at_end(push_dir) : (home_on && home_at_end(push_dir)));
+                                                  : app_on ? app_mode_at_end(push_dir)
+                                                  : home_on ? home_at_end(push_dir) : (midi_on && midi_at_end(push_dir)));
                     }
                     if (sine_wall) {
                         float push = kp * (1.0f + HAPTIC_WALL_GAIN * (fabsf(error) - sine_peak_at));

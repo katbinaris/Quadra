@@ -72,7 +72,8 @@ int main() {
                                &ui::SPR_PITCH, &ui::SPR_USB_M, &ui::SPR_SPK_M, &ui::SPR_KBD_M, &ui::SPR_MOUSE_M,
                                &ui::SPR_NOTE_M, &ui::SPR_TERM_M, &ui::SPR_TRI_L_M, &ui::SPR_TRI_R_M,
                                &ui::SPR_STEPS_M, &ui::SPR_SNAP_M, &ui::SPR_DAMP_M, &ui::SPR_SHAPE_M, &ui::SPR_PITCH_M,
-                               &ui::SPR_BULB, &ui::SPR_BULB_LIT, &ui::SPR_BULB_M, &ui::SPR_BULB_LIT_M};
+                               &ui::SPR_BULB, &ui::SPR_BULB_LIT, &ui::SPR_BULB_M, &ui::SPR_BULB_LIT_M,
+                               &ui::SPR_LOGO_KORG, &ui::SPR_LOGO_ROLAND};
     for (const ui::Sprite *s : all) {
         if (strlen(s->rows) != (size_t)s->w * s->h) {
             fprintf(stderr, "sprite %dx%d has %zu chars\n", s->w, s->h, strlen(s->rows));
@@ -274,6 +275,13 @@ int main() {
         ui::fx_attract(2300, icon, acc, 1, ui::ATTRACT_JUMP);
         keep("home: idle, lightstrip");
     }
+    // The idle screen in MIDI: the synth maker's logo jumps (KORG for the minilogue xd, Roland).
+    for (const ui::Sprite *m : {&ui::SPR_LOGO_KORG, &ui::SPR_LOGO_ROLAND}) {
+        ui::fx_attract(0, nullptr, nullptr, 1, ui::ATTRACT_JUMP, m);
+        for (uint32_t t = 33; t < 2300; t += 33) ui::fx_attract(t, nullptr, nullptr, 1, ui::ATTRACT_JUMP, m), g.clear();
+        ui::fx_attract(2300, nullptr, nullptr, 1, ui::ATTRACT_JUMP, m);
+        keep(m == &ui::SPR_LOGO_KORG ? "midi: idle, KORG" : "midi: idle, Roland");
+    }
 
     // The built-ins in the firmware's order (app_profiles.c).
     static const ui::ProfileItem profiles[8] = {
@@ -309,13 +317,66 @@ int main() {
     prof.rows[0] = row("PROFILE", "", "MUSIC", true);
     ui::draw_app_profile(prof, {profiles, 8, 0, 0, true});
     keep("profile MUSIC, saved");
+    hid.selected = 0;
+    hid.dirty = false;
+    hid.rows[0] = row("PROFILES", "", "MIDI", true);
+    hid.rows[1] = row("CHANNEL", "", "01", false);
+    hid.rows[2] = row("SYNTH", "", "MINILOGUE X", false);
+    hid.row_count = 3;
+    ui::draw_hid(hid, {MENU_HID_MIDI, 0, true, nullptr, nullptr, "MINILOGUE XD", "KORG"});
+    keep("hid MIDI");
     hid.selected = 1;
     hid.dirty = true;
-    hid.rows[0] = row("PROFILES", "", "MIDI", false);
+    hid.rows[0].selected = false;
     hid.rows[1] = row("CHANNEL", "", "01", true);
-    hid.row_count = 2;
-    ui::draw_hid(hid, {MENU_HID_MIDI, 0, true});
+    ui::draw_hid(hid, {MENU_HID_MIDI, 0, true, nullptr, nullptr, "MINILOGUE XD", "KORG"});
     keep("hid MIDI channel");
+    hid.selected = 2;
+    hid.rows[1].selected = false;
+    hid.rows[2] = row("SYNTH", "", "TR-8S", true);
+    ui::draw_hid(hid, {MENU_HID_MIDI, 0, true, nullptr, nullptr, "TR-8S", "ROLAND"});
+    keep("hid MIDI synth");
+
+    // MIDI (midi.h): the Main Screen with the built-in synth profiles (midi_synths.c).
+    {
+        midi_snapshot_t ms = {};
+        ms.active = true;
+        ms.synth = 1; // minilogue xd
+        ms.param = 17; // FILTER CUTOFF (10-bit)
+        ms.value = 712;
+        ms.channel = 1;
+        ms.usb = true;
+        ms.trs = true;
+        ms.prog = -1;
+        ui::draw_midi({&ms, 100000, 0});
+        keep("midi: minilogue xd cutoff");
+        ms.param = 4; // VCO 1 WAVE
+        ms.value = 2;
+        ui::draw_midi({&ms, 100000, 0});
+        keep("midi: switch (VCO 1 WAVE)");
+        ms.param = 17;
+        ms.value = -1;
+        ms.usb = false;
+        ui::draw_midi({&ms, 100000, 0});
+        keep("midi: value unknown, TRS only");
+        ms.prog = 41;
+        ms.prog_ms = 99500;
+        ui::draw_midi({&ms, 100000, UI_BTN_F3});
+        keep("midi: program sent, F3 held");
+        ms.prog = -1;
+        ms.browsing = true;
+        ms.param = 18;
+        ui::draw_midi({&ms, 100000, UI_BTN_F1});
+        keep("midi: F1 held, picking");
+        ms.browsing = false;
+        ms.synth = 3; // TR-8S
+        ms.channel = 10;
+        ms.usb = true;
+        ms.param = 0; // BD TUNE, centred
+        ms.value = 52;
+        ui::draw_midi({&ms, 100000, 0});
+        keep("midi: tr-8s BD tune");
+    }
 
     menu_render_snapshot_t boot = {};
     boot.open = true;

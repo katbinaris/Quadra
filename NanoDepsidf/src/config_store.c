@@ -107,6 +107,7 @@ void config_store_save_hid(const hid_cfg_t *cfg) {
 }
 
 #define KEY_APP_PROFILE "app"
+#define KEY_MIDI_SYNTH "midi_synth"
 
 bool config_store_load_app_profile(char *id, size_t len) {
     nvs_handle_t h;
@@ -186,4 +187,30 @@ bool config_store_load_bindings(bind_cfg_t *out) {
 
 void config_store_save_bindings(const bind_cfg_t *cfg) {
     nvs_save_blob(NS_BINDINGS, cfg, sizeof(*cfg), "bind_cfg");
+}
+
+bool config_store_load_midi_synth(char *id, size_t len) {
+    nvs_handle_t h;
+    if (nvs_open(NS_HID, NVS_READONLY, &h) != ESP_OK) {
+        return false;
+    }
+    size_t n = len;
+    esp_err_t err = nvs_get_str(h, KEY_MIDI_SYNTH, id, &n);
+    nvs_close(h);
+    if (err != ESP_OK) return false;
+    ESP_LOGI(TAG, "loaded MIDI synth from NVS: %s", id);
+    return true;
+}
+
+void config_store_save_midi_synth(const char *id) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS_HID, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_str(h, KEY_MIDI_SYNTH, id);
+        if (err == ESP_OK) err = nvs_commit(h);
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "failed to save MIDI synth to NVS: %s", esp_err_to_name(err));
+    }
 }

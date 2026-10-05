@@ -210,6 +210,9 @@ boot_usb_mode_t menu_get_boot_mode(void);
 menu_hid_type_t menu_get_hid_type(void);
 // APP mode's profile: an index into app_profiles_get() (app_profiles/app_profiles.h).
 int32_t menu_get_app_profile(void);
+// MIDI mode: the channel (1-16) and the synth profile, an index into midi_synth_get() (midi.h).
+int32_t menu_get_midi_channel(void);
+int32_t menu_get_midi_synth(void);
 // The app profile at `index` was removed and the ones after it moved up one: keeps the live,
 // saved and undo choices on the same profiles (the removed one falls back to the first).
 void menu_profile_removed(int index);
@@ -223,12 +226,13 @@ menu_host_t menu_get_host(void);
 // exactly like turning the knob), and shows as unsaved on the device's own screens until
 // saved -- from the app or with F2.
 typedef struct {
-    uint16_t dirty; // 1 << HOST_SET_* (host_proto.h) for each value that differs from NVS
+    uint32_t dirty; // 1 << HOST_SET_* (host_proto.h) for each value that differs from NVS
     int32_t detents;
     float kp, kd;
     int32_t feel, amp;
     float pitch;
     int32_t sound, hid_type, midi_channel, profile, boot_mode, rotation, host;
+    int32_t midi_synth;
     int32_t shape;
     // The haptic values above are those of `haptic_profile` (the one the Haptics screen
     // shows) in its feel; these are its limits there, and the feels it allows.

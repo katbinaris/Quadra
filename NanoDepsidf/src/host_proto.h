@@ -69,6 +69,7 @@ enum {
     HOST_SET_SHAPE = 13,    // i32 percent, HAPTIC_SHAPE_MIN..MAX
     HOST_SET_HAPTIC_PROFILE = 14, // i32 haptic_profile_id_t: the profile the haptic values are of
     HOST_SET_MODE_HAPTIC = 15,    // i32 haptic_profile_id_t: the profile the current HID type uses
+    HOST_SET_MIDI_SYNTH = 16,     // i32 MIDI synth profile index (midi.h)
     HOST_SET_COUNT
 };
 
@@ -78,7 +79,8 @@ enum {
     // [1]=HOST_PROTO_VERSION [2]=profile count [3]=boot mode running (0 HID, 1 SERIAL)
     // [4..35]=firmware version, NUL-terminated [36..51]=build date, NUL-terminated
     HOST_TAG_SETTINGS = 0xB1,
-    // [1..2]=dirty bits (1 << HOST_SET_*: live differs from NVS)
+    // [1..3]=dirty bits (1 << HOST_SET_*: live differs from NVS), 24 bits ([3] was 0 before
+    // HOST_SET_MIDI_SYNTH)
     // [4..7]=detents i32 [8..11]=kp f32 [12..15]=kd f32 [16]=feel [17]=amp % [18..21]=pitch f32
     // [22]=sound [23]=hid type [24]=midi ch [25]=profile [26]=boot [27]=rotation [28]=host
     // [29]=shape % (0 from firmware before SHAPE existed)
@@ -87,6 +89,7 @@ enum {
     // [30]=haptic profile shown [31]=feels it allows (1 << haptic_type_t) [32]=amp max %
     // [33]=the HID type's haptic profile [36..39]=kp min [40..43]=kp max [44..47]=kd min
     // [48..51]=kd max [52..55]=pitch min [56..59]=pitch max (f32)
+    // [34]=MIDI synth profile [35]=how many there are (0 from firmware before MIDI synths)
     HOST_TAG_PROFILE = 0xB2,
     // [1]=index [2]=count [3]=flags: bit0 has icon48, bit1 built-in, bit2 stored, bit3 live
     // edit (APP_PROFILE_* << 1) [4..15]=id [16..31]=name [32..63]=legend: 4 x 8 bytes

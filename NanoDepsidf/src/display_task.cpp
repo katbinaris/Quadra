@@ -38,6 +38,7 @@ extern "C" {
 #include "user_prefs.h"
 #include "app_colors.h"
 #include "home.h"
+#include "midi.h"
 }
 
 static const char *TAG = "display";
@@ -443,6 +444,8 @@ static int64_t s_slide_start_us = -(1LL << 40);
 static int32_t s_last_profile = 0;
 static int s_profile_slide_dir = 0;
 static int64_t s_profile_slide_start_us = -(1LL << 40);
+// MIDI (midi.h): its snapshot, taken once per tick.
+static midi_snapshot_t s_midi;
 // HOME (home.h): its snapshot, taken once per tick, and the lamp carousel's slide.
 EXT_RAM_BSS_ATTR static home_snapshot_t s_home;
 static int s_home_slide_dir = 0;
@@ -870,6 +873,10 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             break;
         }
         case V_MAIN: {
+            if (menu_get_hid_type() == MENU_HID_MIDI) {
+                ui::draw_midi({&s_midi, (uint32_t)(now / 1000), ui_state_get_buttons()});
+                break;
+            }
             if (menu_get_hid_type() == MENU_HID_HOME) {
                 float k = ease_out3((now - s_home_slide_start_us) / (HID_SLIDE_MS * 1000.0f));
                 ui::draw_home({&s_home, (uint32_t)(now / 1000), (1 - k) * s_home_slide_dir * HOME_SLIDE_PX, ui_state_get_buttons()});
@@ -956,7 +963,8 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
         case V_HID: {
             float k = ease_out3((now - s_slide_start_us) / (HID_SLIDE_MS * 1000.0f));
             const app_profile_t *p = app_profiles_get(menu_get_app_profile());
-            ui::HidInputs in = {menu_get_hid_type(), (1 - k) * s_slide_dir * HID_SLIDE_PX, blink_on, p->name, p->icon24};
+            ui::HidInputs in = {menu_get_hid_type(), (1 - k) * s_slide_dir * HID_SLIDE_PX, blink_on, p->name, p->icon24,
+                                midi_synth_get(menu_get_midi_synth())->name, midi_synth_get(menu_get_midi_synth())->maker};
             ui::draw_hid(snap, in);
             break;
         }
@@ -1016,16 +1024,20 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
         }
         case V_ATTRACT: {
             // APP mode: the active profile's icon (and colours) instead of the QUADRA wordmark.
+            // MIDI: the synth maker's logo (KORG, Roland), if it has one.
             const uint8_t *icon = nullptr;
             const uint32_t *heat = nullptr;
+            const ui::Sprite *mark = nullptr;
             if (menu_get_hid_type() == MENU_HID_APP) {
                 const app_profile_t *p = app_profiles_get(menu_get_app_profile());
                 icon = p->icon48;
                 if (p->accents[0] | p->accents[1] | p->accents[2]) heat = p->accents;
             } else if (menu_get_hid_type() == MENU_HID_HOME) {
                 icon = home_idle(&heat); // the lamp changed last, lit in its colour
+            } else if (menu_get_hid_type() == MENU_HID_MIDI) {
+                mark = ui::maker_logo(midi_synth_get(menu_get_midi_synth())->maker);
             }
-            ui::fx_attract((uint32_t)((now - s_attract_start_us) / 1000), icon, heat, s_attract_seed);
+            ui::fx_attract((uint32_t)((now - s_attract_start_us) / 1000), icon, heat, s_attract_seed, -1, mark);
             break;
         }
     }
@@ -1191,6 +1203,19 @@ static Pace update_ui(void) {
         }
     }
     bool home_scan = home_on && (s_home.phase == HOME_PHASE_SCAN || s_home.phase == HOME_PHASE_OFF);
+    // MIDI: a new snapshot redraws; a program just sent shows for a moment (one more frame after).
+    static uint32_t s_midi_seen = 0;
+    bool midi_on = hid == MENU_HID_MIDI && !snap.open;
+    bool midi_changed = false;
+    if (midi_on) {
+        midi_changed = midi_version() != s_midi_seen;
+        s_midi_seen = midi_version();
+        midi_get_snapshot(&s_midi);
+    }
+    bool midi_prog = midi_on && s_midi.prog >= 0 && (uint32_t)(now / 1000) - s_midi.prog_ms < 1600;
+    static bool s_midi_prog_was = false;
+    bool midi_prog_ended = s_midi_prog_was && !midi_prog;
+    s_midi_prog_was = midi_prog;
     bool board_live = false; // a row is animating (WORKING dots, ASKING blink)
     if (profile_is("agents")) {
         agent_row_t rows[AGENT_BOARD_MAX];
@@ -1208,7 +1233,7 @@ static Pace update_ui(void) {
     // track, and a new mode or profile. While music plays, its cover stays up instead of the
     // idle animation.
     bool activity = snapshot_changed || buttons_changed || detent != s_last_detent || icon_changed || notice_changed
-                 || mode_changed || (music_on && media_changed) || home_changed;
+                 || mode_changed || (music_on && media_changed) || home_changed || midi_changed;
     if (activity || notice || music_playing || clock_on || home_scan) s_last_activity_us = now; // a clock isn't screensaved
 
     if (snap.save_count != s_last_save_count) {
@@ -1295,7 +1320,7 @@ static Pace update_ui(void) {
     bool redraw = first || snapshot_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
                || rotation_changed || (sys_changed && s_view == V_SYSINFO) || text_changed || notice_changed
                || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed)
-               || home_changed;
+               || home_changed || midi_changed || midi_prog_ended;
     // The spinning record: on its own pace, not every tick (now playing polls every tick, PACE_TICK).
     static int64_t s_vinyl_frame_us = 0;
     static bool s_vinyl_was_live = false;
@@ -1333,6 +1358,7 @@ static Pace update_ui(void) {
                 || (s_view == V_MAIN && ((np_overlay && !vinyl_paced) || board_live)) // volume ring / key glyph, board dots
                 || (s_view == V_MAIN && (wheel_live || param_live)) // card animations, value dial
                 || (s_view == V_MAIN && home_scan) // HOME's rings
+                || (s_view == V_MAIN && midi_prog) // MIDI's program badge, until it goes
                 || (s_view == V_HAPTIC
                     && (snap.selected == MENU_HAPTIC_ROW_FEEL || snap.selected == MENU_HAPTIC_ROW_SHAPE
                         || snap.selected == MENU_HAPTIC_ROW_STEPS));

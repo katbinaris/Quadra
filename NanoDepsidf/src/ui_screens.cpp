@@ -356,12 +356,23 @@ void draw_hid(const menu_render_snapshot_t &snap, const HidInputs &in) {
         int w = text(snap.rows[1].value, CX, 146, hp_focus ? AMBER : WHITE, 2, CENTER);
         if (hp_focus) edit_arrows(CX, 146, w, cap_height(2), AMBER);
         text(hp_focus ? "F1 TYPE" : "F1 HAPTIC", CX, 190, GREY, 1, CENTER);
-    } else if (in.type == MENU_HID_MIDI && snap.row_count > 1) {
-        bool ch_focus = snap.selected == 1;
-        text("CHANNEL", CX, 132, GREY, 1, CENTER);
-        int w = text(snap.rows[1].value, CX, 146, ch_focus ? AMBER : WHITE, 2, CENTER);
-        if (ch_focus) edit_arrows(CX, 146, w, cap_height(2), AMBER);
-        text(ch_focus ? "F1 TYPE" : "F1 CHANNEL", CX, 190, GREY, 1, CENTER);
+    } else if (in.type == MENU_HID_MIDI && snap.row_count > 2) {
+        // The channel and the synth, both at scale 2 so they read from arm's length; the one
+        // being turned is amber with arrows. The maker's wordmark (1x) sits before the synth.
+        char ch[16];
+        snprintf(ch, sizeof(ch), "CH %s", snap.rows[1].value);
+        const char *sy = in.midi_synth ? in.midi_synth : snap.rows[2].value;
+        const Sprite *logo = in.midi_maker ? maker_logo(in.midi_maker) : nullptr;
+        bool ch_focus = snap.selected == 1, sy_focus = snap.selected == 2;
+        int w = text(ch, CX, 126, ch_focus ? AMBER : WHITE, 2, CENTER);
+        if (ch_focus) edit_arrows(CX, 126, w, cap_height(2), AMBER);
+        const int lw = logo ? logo->w + 7 : 0;
+        const int sc = fit_scale(sy, 180 - lw, 2), tw = text_width(sy, sc), total = lw + tw;
+        const int x0 = (int)lroundf(CX - total / 2.0f), y = 148;
+        if (logo) sprite(*logo, x0, y + (cap_height(sc) - logo->h) / 2, sy_focus ? AMBER : WHITE);
+        text(sy, x0 + lw, y, sy_focus ? AMBER : WHITE, sc);
+        if (sy_focus) edit_arrows(CX, y, total, cap_height(sc), AMBER);
+        text(snap.selected == 0 ? "F1 CHANNEL" : ch_focus ? "F1 SYNTH" : "F1 TYPE", CX, 190, GREY, 1, CENTER);
     } else if (!snap.dirty) {
         text("IN USE", CX, 134, GREY, 1, CENTER);
     }

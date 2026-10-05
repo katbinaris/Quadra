@@ -1,0 +1,496 @@
+<!doctype html>
+<!-- Quadra XD Monitor: open in Chrome, Edge or Firefox (Safari has no Web MIDI). Watches the
+     knob in MIDI mode and decodes the minilogue xd profile; see the README's MIDI section. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quadra XD Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Silkscreen&display=swap">
+<style>
+  /* One look on purpose: a dark instrument panel, like the synth and the knob it tests. */
+  :root {
+    color-scheme: dark;
+    --panel: #121315;
+    --face: #1b1c1f;
+    --face2: #232428;
+    --line: #2e3034;
+    --legend: #e2ded5;
+    --muted: #8c8d91;
+    --faint: #5c5e63;
+    --amber: #ffc94d;
+    --amber-dim: #6b5520;
+    --ok: #74d39a;
+    --warn: #ff8a6b;
+    --sans: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --pixel: "Silkscreen", var(--mono);
+  }
+  html, body { background: var(--panel); color: var(--legend); }
+  body { font: 15px/1.45 var(--sans); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 48px; display: grid; gap: 18px; }
+  h1, h2, h3 { margin: 0; font-weight: 600; text-wrap: balance; }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* top bar */
+  .top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+  .brand { display: grid; gap: 2px; }
+  .brand h1 { font-size: 22px; letter-spacing: .01em; }
+  .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  .field { display: grid; gap: 4px; }
+  .field label, .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+  select, input[type="number"] { background: var(--face); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 0; }
+  select { max-width: 220px; }
+  .btn { background: var(--amber); color: #1a1406; border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--legend); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  .status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; font: 500 12px var(--mono); padding: 4px 9px; border-radius: 999px; background: var(--face); border: 1px solid var(--line); color: var(--muted); }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .chip.on i { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .chip.warn { color: var(--warn); border-color: #5a2f25; }
+  .chip.warn i { background: var(--warn); }
+  .note { margin: 0; padding: 10px 12px; border: 1px solid #5a2f25; background: #24160f; border-radius: 8px; color: #ffd2c4; font-size: 14px; }
+  .note b { color: #fff; }
+
+  /* the last change: like the knob's own screen */
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 18px; }
+  .readout { background: #000; border-radius: 14px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; border: 1px solid var(--line); }
+  .readout .sec { font: 13px var(--pixel); color: var(--muted); letter-spacing: .04em; }
+  .readout .nm { font: 26px var(--pixel); color: #fff; line-height: 1; }
+  .readout .val { font: 54px var(--pixel); color: var(--amber); line-height: 1; font-variant-numeric: tabular-nums; }
+  .readout .val.unknown { color: var(--faint); }
+  .meter { display: grid; grid-template-columns: repeat(31, 1fr); gap: 3px; height: 10px; }
+  .meter span { background: #3a3a3a; }
+  .meter span.lit { background: #fff; }
+  .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .opts span { font: 12px var(--pixel); padding: 4px 8px; background: #2a2a2a; color: var(--muted); }
+  .opts span.on { background: var(--amber); color: #000; }
+  .bytes { font: 13px var(--mono); color: var(--muted); word-break: break-all; }
+  .bytes b { color: var(--legend); font-weight: 500; }
+
+  .side { display: grid; gap: 12px; align-content: start; }
+  .card { background: var(--face); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .stat { display: grid; gap: 2px; }
+  .stat b { font: 500 20px var(--mono); font-variant-numeric: tabular-nums; }
+  .stat b.bad { color: var(--warn); }
+  .prog { font: 22px var(--pixel); color: var(--legend); }
+  .send { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+  .send .row { display: flex; gap: 10px; align-items: center; }
+  input[type="range"] { width: 100%; accent-color: var(--amber); }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+  /* the panel: all 48, by section */
+  .panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .sect { background: var(--face); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; }
+  .sect h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 500; }
+  .p { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 4px 6px; border-radius: 5px; transition: background-color .6s; }
+  .p .pn { font-size: 14px; }
+  .p .pv { font: 13px var(--mono); color: var(--legend); text-align: right; font-variant-numeric: tabular-nums; }
+  .p .pv.unknown { color: var(--faint); }
+  .p .pb { grid-column: 1 / -1; height: 3px; background: var(--face2); }
+  .p .pb i { display: block; height: 100%; width: 0; background: var(--muted); }
+  .p .cc { font: 11px var(--mono); color: var(--faint); }
+  .p.hot { background: var(--amber-dim); transition: none; }
+  .p.last .pb i { background: var(--amber); }
+  .p.last .pn { color: #fff; }
+
+  /* log */
+  .logbox { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--face); }
+  table { width: 100%; border-collapse: collapse; font: 13px var(--mono); }
+  th { position: sticky; top: 0; background: var(--face2); text-align: left; font: 500 11px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 7px 10px; }
+  td { padding: 5px 10px; border-top: 1px solid var(--line); white-space: nowrap; }
+  td.dec { white-space: normal; color: var(--legend); }
+  td.t, td.hex { color: var(--muted); }
+  tr.warn td.dec { color: var(--warn); }
+  tr.example td { opacity: .55; }
+  .loghead { display: flex; justify-content: space-between; align-items: end; gap: 10px; flex-wrap: wrap; }
+
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .readout .val { font-size: 42px; }
+    .send { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .p { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Quadra XD Monitor</h1>
+      <p>Watches the knob's USB MIDI and decodes it with the KORG minilogue xd's map.</p>
+    </div>
+    <div class="controls">
+      <button class="btn" id="connect" type="button">Connect MIDI</button>
+      <div class="field">
+        <label for="inSel">From (knob)</label>
+        <select id="inSel" disabled><option>Not connected</option></select>
+      </div>
+      <div class="field">
+        <label for="outSel">To (knob)</label>
+        <select id="outSel" disabled><option>Not connected</option></select>
+      </div>
+      <div class="field">
+        <label for="chSel">Channel</label>
+        <select id="chSel"></select>
+      </div>
+    </div>
+  </header>
+
+  <div class="status">
+    <span class="chip" id="chipMidi"><i></i><span>MIDI off</span></span>
+    <span class="chip" id="chipKnob"><i></i><span>No Quadra port</span></span>
+    <span class="chip" id="chipRate"><i></i><span>0 msg/s</span></span>
+  </div>
+  <p class="note" id="note" hidden></p>
+
+  <section class="hero" aria-label="Last change">
+    <div class="readout" aria-live="polite">
+      <div class="sec" id="rSec">FILTER · CC 43</div>
+      <div class="nm" id="rName">CUTOFF</div>
+      <div class="val" id="rVal">712</div>
+      <div class="meter" id="rMeter"></div>
+      <div class="opts" id="rOpts" hidden></div>
+      <div class="bytes" id="rBytes">Example: <b>B0 3F 00</b> · <b>B0 2B 59</b></div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div class="stats">
+          <div class="stat"><span class="lbl">Messages</span><b id="sMsgs">0</b></div>
+          <div class="stat"><span class="lbl">10-bit pairs</span><b id="sPairs">0</b></div>
+          <div class="stat"><span class="lbl">Without CC63</span><b id="sNoLsb">0</b></div>
+          <div class="stat"><span class="lbl">Other channel</span><b id="sOther">0</b></div>
+        </div>
+        <div class="stat"><span class="lbl">Program (bank LSB × 100 + PC + 1)</span><span class="prog" id="sProg">---</span></div>
+      </div>
+      <div class="card">
+        <span class="lbl">Send to the knob (tests pick-up: its screen should follow)</span>
+        <div class="send">
+          <div class="row">
+            <select id="sendParam" aria-label="Parameter to send"></select>
+            <span class="bytes" id="sendVal">512</span>
+          </div>
+          <button class="btn ghost" id="sendBtn" type="button" disabled>Send</button>
+          <input type="range" id="sendRange" min="0" max="1023" value="512" aria-label="Value to send">
+        </div>
+        <p class="hint">Needs MIDI mode on the knob with the minilogue xd profile and this channel. A 10-bit value goes as CC 63 then the parameter's CC, as KORG's implementation says.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="The minilogue xd's parameters">
+    <div class="panel" id="panel"></div>
+  </section>
+
+  <section class="card" aria-label="Message log">
+    <div class="loghead">
+      <span class="lbl">Log, newest first</span>
+      <button class="btn ghost" id="clear" type="button">Clear</button>
+    </div>
+    <div class="logbox">
+      <table>
+        <thead><tr><th>Time</th><th>Bytes</th><th>Meaning</th></tr></thead>
+        <tbody id="log"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+// The minilogue xd's parameters, as the knob's firmware has them (midi_synths.c), from KORG's
+// minilogue xd MIDI Implementation 1.01. kind 10 = KORG 10-bit (CC 63 carries the low 3 bits).
+const SW = (sec, name, cc, values, opts) => ({ sec, name, cc, kind: "sw", values, opts });
+const K = (sec, name, cc, bip) => ({ sec, name, cc, kind: 10, bip: !!bip });
+const C7 = (sec, name, cc) => ({ sec, name, cc, kind: 7 });
+const V3 = [0, 64, 127], OCT = [0, 42, 84, 127];
+const PARAMS = [
+  K("VCO 1", "PITCH", 34, 1), K("VCO 1", "SHAPE", 36), K("VCO 1", "LEVEL", 39),
+  SW("VCO 1", "OCTAVE", 48, OCT, ["16'", "8'", "4'", "2'"]), SW("VCO 1", "WAVE", 50, V3, ["SQR", "TRI", "SAW"]),
+  K("VCO 2", "PITCH", 35, 1), K("VCO 2", "SHAPE", 37), K("VCO 2", "LEVEL", 40),
+  SW("VCO 2", "OCTAVE", 49, OCT, ["16'", "8'", "4'", "2'"]), SW("VCO 2", "WAVE", 51, V3, ["SQR", "TRI", "SAW"]),
+  K("VCO 2", "CROSS MOD", 41), SW("VCO 2", "SYNC", 80, [127, 0], ["OFF", "ON"]), SW("VCO 2", "RING", 81, [127, 0], ["OFF", "ON"]),
+  SW("MULTI", "TYPE", 53, V3, ["NOISE", "VPM", "USER"]), K("MULTI", "SHAPE", 54), K("MULTI", "SHIFT SHP", 104), K("MULTI", "LEVEL", 33),
+  K("FILTER", "CUTOFF", 43), K("FILTER", "RESONANCE", 44),
+  SW("FILTER", "DRIVE", 84, V3, ["0%", "50%", "100%"]), SW("FILTER", "KEYTRACK", 83, V3, ["0%", "50%", "100%"]),
+  K("AMP EG", "ATTACK", 16), K("AMP EG", "DECAY", 17), K("AMP EG", "SUSTAIN", 18), K("AMP EG", "RELEASE", 19),
+  K("EG", "ATTACK", 20), K("EG", "DECAY", 21), K("EG", "INT", 22, 1), SW("EG", "TARGET", 23, V3, ["CUTOFF", "PITCH 2", "PITCH"]),
+  SW("LFO", "WAVE", 57, V3, ["SQR", "TRI", "SAW"]), SW("LFO", "MODE", 58, V3, ["1-SHOT", "NORMAL", "BPM"]),
+  K("LFO", "RATE", 24), K("LFO", "INT", 26), SW("LFO", "TARGET", 56, V3, ["CUTOFF", "SHAPE", "PITCH"]),
+  K("VOICE", "MODE DEPTH", 27), C7("VOICE", "PORTAMENTO", 5),
+  SW("MOD FX", "ON", 92, [0, 127], ["OFF", "ON"]), SW("MOD FX", "TYPE", 88, [0, 38, 64, 84, 127], ["CHORUS", "ENSEMBLE", "PHASER", "FLANGER", "USER"]),
+  K("MOD FX", "TIME", 28), K("MOD FX", "DEPTH", 29),
+  SW("DELAY", "ON", 93, [0, 127], ["OFF", "ON"]), K("DELAY", "TIME", 105), K("DELAY", "DEPTH", 106), K("DELAY", "MIX", 107),
+  SW("REVERB", "ON", 94, [0, 127], ["OFF", "ON"]), K("REVERB", "TIME", 108), K("REVERB", "DEPTH", 109), K("REVERB", "MIX", 110),
+];
+const BY_CC = new Map(PARAMS.map((p, i) => [p.cc, i]));
+const max = (p) => (p.kind === "sw" ? p.opts.length - 1 : p.kind === 10 ? 1023 : 127);
+const nearest = (p, v) => p.values.reduce((b, x, i) => (Math.abs(x - v) < Math.abs(p.values[b] - v) ? i : b), 0);
+const fmt = (p, v) => {
+  if (v == null) return "--";
+  if (p.kind === "sw") return p.opts[v];
+  if (p.bip) { const d = v - (max(p) + 1) / 2; return d > 0 ? "+" + d : String(d); }
+  return String(v);
+};
+const hex = (bytes) => bytes.map((b) => b.toString(16).toUpperCase().padStart(2, "0")).join(" ");
+
+// --- state ---
+const vals = new Array(PARAMS.length).fill(null);
+let channel = 1, lsb = null, bankLsb = 0, prog = null, last = -1;
+const counts = { msgs: 0, pairs: 0, noLsb: 0, other: 0 };
+let stamps = [];
+let access = null, input = null, output = null;
+let example = true;
+
+// --- the panel ---
+const $ = (id) => document.getElementById(id);
+const panel = $("panel");
+const rows = [];
+{
+  let sect = null, cur = "";
+  PARAMS.forEach((p, i) => {
+    if (p.sec !== cur) {
+      cur = p.sec;
+      sect = document.createElement("div");
+      sect.className = "sect";
+      sect.innerHTML = `<h3>${p.sec}</h3>`;
+      panel.appendChild(sect);
+    }
+    const el = document.createElement("div");
+    el.className = "p";
+    el.innerHTML = `<span class="pn">${p.name}</span><span class="pv unknown">--</span><span class="cc">CC ${p.cc}${p.kind === 10 ? " · 10-bit" : p.kind === "sw" ? " · " + p.opts.length + " options" : ""}</span><span class="pb"><i></i></span>`;
+    sect.appendChild(el);
+    rows.push(el);
+  });
+}
+for (let c = 1; c <= 16; c++) $("chSel").add(new Option(String(c).padStart(2, "0"), c));
+$("chSel").addEventListener("change", (e) => (channel = +e.target.value));
+for (const [i, p] of PARAMS.entries()) $("sendParam").add(new Option(`${p.sec} ${p.name}`, i));
+$("rMeter").innerHTML = "<span></span>".repeat(31);
+
+function showRow(i) {
+  const p = PARAMS[i], v = vals[i], el = rows[i];
+  const pv = el.querySelector(".pv");
+  pv.textContent = fmt(p, v);
+  pv.classList.toggle("unknown", v == null);
+  el.querySelector(".pb i").style.width = v == null ? "0" : (v / max(p)) * 100 + "%";
+}
+
+function showReadout(i, bytesText) {
+  const p = PARAMS[i], v = vals[i];
+  $("rSec").textContent = `${p.sec} · CC ${p.cc}${p.kind === 10 ? " · 10-BIT" : ""}`;
+  $("rName").textContent = p.name;
+  $("rVal").textContent = fmt(p, v);
+  $("rVal").classList.toggle("unknown", v == null);
+  const isSw = p.kind === "sw";
+  $("rMeter").hidden = isSw;
+  $("rOpts").hidden = !isSw;
+  if (isSw) {
+    $("rOpts").innerHTML = p.opts.map((o, k) => `<span class="${k === v ? "on" : ""}">${o}</span>`).join("");
+  } else {
+    const N = 31, mid = 15, at = v == null ? -1 : Math.round((v / max(p)) * (N - 1));
+    [...$("rMeter").children].forEach((s, k) => {
+      const lit = at >= 0 && (p.bip ? (at >= mid ? k >= mid && k <= at : k >= at && k <= mid) : k <= at);
+      s.className = lit ? "lit" : "";
+    });
+  }
+  $("rBytes").innerHTML = bytesText;
+}
+
+function touch(i, bytesText) {
+  if (last >= 0) rows[last].classList.remove("last");
+  last = i;
+  const el = rows[i];
+  el.classList.add("last", "hot");
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("hot")));
+  showRow(i);
+  showReadout(i, bytesText);
+}
+
+function stats() {
+  $("sMsgs").textContent = counts.msgs;
+  $("sPairs").textContent = counts.pairs;
+  $("sNoLsb").textContent = counts.noLsb;
+  $("sNoLsb").classList.toggle("bad", counts.noLsb > 0);
+  $("sOther").textContent = counts.other;
+  $("sProg").textContent = prog == null ? "---" : String(prog).padStart(3, "0");
+}
+
+// --- log ---
+const logEl = $("log");
+function log(bytes, text, warn) {
+  if (example) { logEl.innerHTML = ""; example = false; }
+  const tr = document.createElement("tr");
+  if (warn) tr.className = "warn";
+  const t = new Date();
+  const ts = t.toTimeString().slice(0, 8) + "." + String(t.getMilliseconds()).padStart(3, "0");
+  tr.innerHTML = `<td class="t">${ts}</td><td class="hex">${hex(bytes)}</td><td class="dec"></td>`;
+  tr.lastChild.textContent = text;
+  logEl.prepend(tr);
+  while (logEl.children.length > 400) logEl.lastChild.remove();
+}
+
+// --- decoding ---
+let pendingLsbBytes = null;
+function onMessage(data) {
+  const b = Array.from(data);
+  const st = b[0];
+  if (st >= 0xf8) return; // clock, active sensing
+  counts.msgs++;
+  stamps.push(performance.now());
+  const kind = st & 0xf0, ch = (st & 0x0f) + 1;
+  if (kind < 0x80 || kind === 0xf0) { log(b, "System message"); stats(); return; }
+  if (ch !== channel) { counts.other++; log(b, `Channel ${ch} (watching ${channel})`, true); stats(); return; }
+  if (kind === 0xb0) {
+    const cc = b[1], v = b[2];
+    if (cc === 63) { lsb = v; pendingLsbBytes = b; log(b, `CC 63 low bits = ${v}${v > 7 ? " (more than 3 bits!)" : ""}`, v > 7); stats(); return; }
+    if (cc === 0) { log(b, `Bank select MSB ${v}`); stats(); return; }
+    if (cc === 32) { bankLsb = v; log(b, `Bank select LSB ${v} (programs ${v * 100 + 1}-${v * 100 + 100})`); stats(); return; }
+    const i = BY_CC.get(cc);
+    if (i == null) { log(b, `CC ${cc} = ${v} (not a minilogue xd parameter)`, true); lsb = null; stats(); return; }
+    const p = PARAMS[i];
+    let text, warn = false, bytesText;
+    if (p.kind === 10) {
+      if (lsb == null) { counts.noLsb++; warn = true; }
+      else counts.pairs++;
+      vals[i] = (v << 3) | (lsb ?? 0);
+      text = `${p.sec} ${p.name} = ${fmt(p, vals[i])}  (${v} << 3 | ${lsb ?? "no CC 63"})`;
+      bytesText = (pendingLsbBytes && lsb != null ? `<b>${hex(pendingLsbBytes)}</b> · ` : "") + `<b>${hex(b)}</b>`;
+    } else if (p.kind === "sw") {
+      vals[i] = nearest(p, v);
+      text = `${p.sec} ${p.name} = ${p.opts[vals[i]]}  (value ${v})`;
+      bytesText = `<b>${hex(b)}</b>`;
+    } else {
+      vals[i] = v;
+      text = `${p.sec} ${p.name} = ${v}`;
+      bytesText = `<b>${hex(b)}</b>`;
+    }
+    lsb = null; pendingLsbBytes = null;
+    log(b, warn ? text + " — 10-bit value without CC 63 first" : text, warn);
+    touch(i, bytesText);
+    stats();
+    return;
+  }
+  if (kind === 0xc0) {
+    prog = bankLsb * 100 + b[1] + 1;
+    log(b, `Program change ${b[1]} → program ${String(prog).padStart(3, "0")}`);
+    vals.fill(null);
+    rows.forEach((_, i) => showRow(i));
+    stats();
+    return;
+  }
+  const names = { 0x80: "Note off", 0x90: "Note on", 0xa0: "Poly pressure", 0xd0: "Channel pressure", 0xe0: "Pitch bend" };
+  log(b, names[kind] || "Message");
+  stats();
+}
+
+setInterval(() => {
+  const now = performance.now();
+  stamps = stamps.filter((t) => now - t < 1000);
+  const chip = $("chipRate");
+  chip.lastChild.textContent = `${stamps.length} msg/s`;
+  chip.classList.toggle("on", stamps.length > 0);
+}, 250);
+
+// --- Web MIDI ---
+function note(html) { $("note").innerHTML = html; $("note").hidden = !html; }
+function setChip(id, on, text) { const c = $(id); c.classList.toggle("on", on); c.lastChild.textContent = text; }
+
+function fillPorts() {
+  const ins = [...access.inputs.values()], outs = [...access.outputs.values()];
+  const fill = (sel, ports, cur) => {
+    sel.innerHTML = "";
+    if (!ports.length) sel.add(new Option("No ports", ""));
+    for (const p of ports) sel.add(new Option(p.name, p.id));
+    const q = ports.find((p) => /quadra/i.test(p.name));
+    sel.value = cur && ports.some((p) => p.id === cur) ? cur : q ? q.id : ports[0]?.id ?? "";
+    sel.disabled = !ports.length;
+  };
+  fill($("inSel"), ins, input?.id);
+  fill($("outSel"), outs, output?.id);
+  useIn($("inSel").value);
+  output = access.outputs.get($("outSel").value) || null;
+  $("sendBtn").disabled = !output;
+  const knob = ins.some((p) => /quadra/i.test(p.name));
+  setChip("chipKnob", knob, knob ? "Quadra found" : "No Quadra port");
+}
+
+function useIn(id) {
+  if (input) input.onmidimessage = null;
+  input = access.inputs.get(id) || null;
+  if (input) input.onmidimessage = (e) => onMessage(e.data);
+}
+
+$("inSel").addEventListener("change", (e) => useIn(e.target.value));
+$("outSel").addEventListener("change", (e) => { output = access.outputs.get(e.target.value) || null; $("sendBtn").disabled = !output; });
+
+$("connect").addEventListener("click", async () => {
+  if (!navigator.requestMIDIAccess) {
+    note("<b>This browser has no Web MIDI.</b> Safari doesn't support it: open the page in Chrome, Edge or Firefox.");
+    return;
+  }
+  try {
+    access = await navigator.requestMIDIAccess({ sysex: false });
+  } catch (err) {
+    note(`<b>MIDI access was refused here (${err.name}).</b> The viewer's frame can block Web MIDI. Open this file in Chrome, Edge or Firefox.`);
+    setChip("chipMidi", false, "MIDI blocked");
+    return;
+  }
+  note("");
+  setChip("chipMidi", true, "MIDI on");
+  $("connect").textContent = "Connected";
+  $("connect").disabled = true;
+  access.onstatechange = fillPorts;
+  fillPorts();
+});
+
+// --- send back ---
+function updSend() {
+  const p = PARAMS[+$("sendParam").value];
+  const r = $("sendRange");
+  r.max = max(p);
+  if (+r.value > max(p)) r.value = max(p);
+  $("sendVal").textContent = fmt(p, +r.value);
+}
+$("sendParam").addEventListener("change", updSend);
+$("sendRange").addEventListener("input", updSend);
+$("sendBtn").addEventListener("click", () => {
+  if (!output) return;
+  const p = PARAMS[+$("sendParam").value], v = +$("sendRange").value, st = 0xb0 | (channel - 1);
+  const msgs = p.kind === 10 ? [[st, 63, v & 7], [st, p.cc, v >> 3]] : p.kind === "sw" ? [[st, p.cc, p.values[v]]] : [[st, p.cc, v]];
+  for (const m of msgs) output.send(m);
+  log(msgs.flat(), `Sent to the knob: ${p.sec} ${p.name} = ${fmt(p, v)}`);
+});
+$("sendParam").value = 17;
+updSend();
+
+$("clear").addEventListener("click", () => {
+  logEl.innerHTML = "";
+  Object.keys(counts).forEach((k) => (counts[k] = 0));
+  stats();
+});
+
+// --- at rest: an example of what a turn of CUTOFF looks like (cleared by the first real message) ---
+vals[17] = 712;
+showRow(17);
+rows[17].classList.add("last");
+last = 17;
+showReadout(17, "Example: <b>B0 3F 00</b> · <b>B0 2B 59</b>");
+for (const [b, t] of [[[0xb0, 0x2b, 0x59], "FILTER CUTOFF = 712  (89 << 3 | 0)"], [[0xb0, 0x3f, 0x00], "CC 63 low bits = 0"]]) {
+  const tr = document.createElement("tr");
+  tr.className = "example";
+  tr.innerHTML = `<td class="t">example</td><td class="hex">${hex(b)}</td><td class="dec">${t}</td>`;
+  logEl.appendChild(tr);
+}
+stats();
+</script>
+</body>
+</html>

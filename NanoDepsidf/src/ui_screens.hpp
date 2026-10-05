@@ -67,6 +67,8 @@ struct HidInputs {
     bool blink_on;
     const char *profile_name;     // APP: the PROFILE row's profile
     const uint8_t *profile_icon;  // its 24x24 icon, or nullptr
+    const char *midi_synth;       // MIDI: the SYNTH row's synth, in full (the row's value is cut short)
+    const char *midi_maker;       // and its maker ("KORG"), for the wordmark
 };
 void draw_hid(const menu_render_snapshot_t &snap, const HidInputs &in);
 

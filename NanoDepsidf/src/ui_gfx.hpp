@@ -44,6 +44,9 @@ extern const Sprite SPR_TRI_L_M, SPR_TRI_R_M;
 extern const Sprite SPR_STEPS_M, SPR_SNAP_M, SPR_DAMP_M, SPR_SHAPE_M, SPR_PITCH_M;
 // HOME's bulb: outline and glass, at 1x and hand-drawn 1.5x.
 extern const Sprite SPR_BULB, SPR_BULB_LIT, SPR_BULB_M, SPR_BULB_LIT_M;
+// MIDI: KORG's and Roland's wordmarks (7 px tall), and the one for a synth's maker (nullptr: none).
+extern const Sprite SPR_LOGO_KORG, SPR_LOGO_ROLAND;
+const Sprite *maker_logo(const char *maker);
 
 void bind(LGFX_Sprite *target);
 void clip(int x, int y, int w, int h);

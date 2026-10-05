@@ -70,3 +70,6 @@ void config_store_save_bindings(const bind_cfg_t *cfg);
 // id (not an index) keeps a saved choice valid when profiles are added or reordered.
 bool config_store_load_app_profile(char *id, size_t len);
 void config_store_save_app_profile(const char *id);
+// MIDI mode's synth profile (midi.h), by its id ("minilogue-xd"), next to the app profile.
+bool config_store_load_midi_synth(char *id, size_t len);
+void config_store_save_midi_synth(const char *id);

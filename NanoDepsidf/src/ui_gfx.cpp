@@ -1,4 +1,5 @@
 #include "ui_gfx.hpp"
+#include <string.h>
 #include "fonts/ui_font_silkscreen.h"
 #include <math.h>
 
@@ -78,6 +79,19 @@ const Sprite SPR_BULB_M = {11, 14,
 const Sprite SPR_BULB_LIT_M = {11, 14,
     "..........." "...#####..." "..#######.." ".#########." ".#########." ".#########." ".#########."
     "..#######.." "...#####..." "....###...." "..........." "..........." "..........." "..........."};
+
+// MIDI: the synth makers' wordmarks, small, drawn in whole pixels after their logos (one colour,
+// the caller's). 7 px tall like scale-1 caps; scale 2 for scale-2 text.
+const Sprite SPR_LOGO_KORG = {27, 7,
+    "##..##..####..#####...#####" "##.##..##..##.##..##.##...." "####...##..##.##..##.##...." "###....##..##.#####..##.###" "####...##..##.####...##..##" "##.##..##..##.##.##..##..##" "##..##..####..##..##..#####"};
+const Sprite SPR_LOGO_ROLAND = {27, 7,
+    "####.......#..............#" "#...#......#..............#" "#...#..##..#..###.###...###" "####..#..#.#.#..#.#..#.#..#" "#.#...#..#.#.#..#.#..#.#..#" "#..#..#..#.#.#..#.#..#.#..#" "#...#..##..#..###.#..#..###"};
+
+const Sprite *maker_logo(const char *maker) {
+    if (strcmp(maker, "KORG") == 0) return &SPR_LOGO_KORG;
+    if (strcmp(maker, "ROLAND") == 0) return &SPR_LOGO_ROLAND;
+    return nullptr;
+}
 
 void bind(LGFX_Sprite *target) {
     s_g = target;

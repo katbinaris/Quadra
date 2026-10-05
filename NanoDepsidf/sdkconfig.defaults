@@ -78,6 +78,12 @@ CONFIG_TINYUSB_HID_COUNT=2
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=1
 
+# USB MIDI (class compliant) for MIDI mode. Not in the same configuration as the keyboard /
+# mouse HID: with EP0 the S3 has 5 IN endpoints and the composite above uses all of them, so
+# MIDI mode re-enumerates as a second personality (usb_task.c). Also changed directly in
+# sdkconfig.esp32-s3-devkitm-1.
+CONFIG_TINYUSB_MIDI_COUNT=1
+
 # DEVICE -> SYS INFO shows per-core load from FreeRTOS run-time stats (the idle task's share
 # of each core). Costs one esp_timer read per context switch. Also changed directly in
 # sdkconfig.esp32-s3-devkitm-1, since defaults don't override a saved value.

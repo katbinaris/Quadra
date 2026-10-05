@@ -18,6 +18,7 @@
 #include "ext_link.h"
 #include "net.h"
 #include "home.h"
+#include "midi.h"
 #include "net_link.h"
 #include "clock.h"
 #include "hal/usb_serial_jtag_ll.h"
@@ -154,6 +155,7 @@ void app_main(void) {
     display_frame_reserve();
 
     // Core 1: everything DMA-offloaded/tolerant
+    midi_start(); // MIDI mode (midi.h): the TRS jacks work in either USB mode
     if (!usb_serial_mode) {
         net_start(); // before the usb task: a NET setup arriving over USB finds it running
         home_start(); // HOME's lamps (home.h); likewise before an import can arrive

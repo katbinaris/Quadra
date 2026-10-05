@@ -689,6 +689,109 @@ void draw_home(const HomeInputs &in) {
     }
 }
 
+// --- MIDI ---
+#define MIDI_PROG_SHOW_MS 1500
+
+// The status strip: the maker's wordmark (or its name in grey), the synth in white.
+static void midi_top(const midi_synth_t &sy) {
+    const Sprite *logo = maker_logo(sy.maker);
+    int wm = logo ? logo->w : text_width(sy.maker), wn = text_width(sy.name), total = wm + 7 + wn;
+    int x0 = (int)lroundf(CX - total / 2.0f);
+    if (logo) sprite(*logo, x0, 31, WHITE);
+    else text(sy.maker, x0, 31, GREY);
+    text(sy.name, x0 + wm + 7, 31, WHITE);
+    rect(56, 48, 128, 1, DARK);
+}
+
+static void midi_value_text(const midi_param_t &p, int v, char *out, size_t n) {
+    if (v < 0) {
+        snprintf(out, n, "--");
+    } else if (p.n_opts > 1) {
+        snprintf(out, n, "%s", p.opt_name[v]);
+    } else if (p.bipolar) { // around the middle: -64..+63, -512..+511
+        int d = v - (midi_param_max(&p) + 1) / 2;
+        snprintf(out, n, d > 0 ? "+%d" : "%d", d);
+    } else {
+        snprintf(out, n, "%d", v);
+    }
+}
+
+// A continuous value: 31 blocks, lit up to it (a centred value: from the middle out). A switch:
+// one box per option, the chosen one amber.
+static void midi_meter(const midi_param_t &p, int v, int y) {
+    if (p.n_opts > 1) {
+        const int gap = 4, w = (124 - (p.n_opts - 1) * gap) / p.n_opts;
+        int x = (int)lroundf(CX - (w * p.n_opts + gap * (p.n_opts - 1)) / 2.0f);
+        for (int o = 0; o < p.n_opts; o++, x += w + gap) cut(x, y, w, 5, o == v ? AMBER : DARK);
+        return;
+    }
+    const int N = 31, max = midi_param_max(&p);
+    const int at = v < 0 ? -1 : (int)lroundf((float)v / max * (N - 1)), mid = N / 2;
+    for (int i = 0; i < N; i++) {
+        bool lit = at >= 0 && (p.bipolar ? (at >= mid ? i >= mid && i <= at : i >= at && i <= mid) : i <= at);
+        uint32_t c = lit ? WHITE : (p.bipolar && i == mid) ? GREY : DARK;
+        rect(58 + i * 4, y, 3, 5, c);
+    }
+}
+
+// F1 held: the synth's parameters, five at a time, the one under the knob on a dark bar.
+static void draw_midi_list(const midi_snapshot_t &s, const midi_synth_t &sy) {
+    char idx[24];
+    snprintf(idx, sizeof(idx), "%d/%d", s.param + 1, sy.n_params);
+    text(idx, CX, 56, GREY, 1, CENTER);
+    for (int k = -2; k <= 2; k++) {
+        int i = s.param + k;
+        if (i < 0 || i >= sy.n_params) continue;
+        const midi_param_t &p = sy.params[i];
+        char row[32];
+        snprintf(row, sizeof(row), "%s %s", p.group, p.name);
+        int y = 97 + k * 14;
+        if (k == 0) {
+            cut(46, y - 3, 148, 13, DARK);
+            text(row, CX, y, AMBER, 1, CENTER);
+        } else {
+            text(row, CX, y, abs(k) == 1 ? GREY : DARK, 1, CENTER);
+        }
+    }
+}
+
+void draw_midi(const MidiInputs &in) {
+    const midi_snapshot_t &s = *in.snap;
+    const midi_synth_t &sy = *midi_synth_get(s.synth);
+    const midi_param_t &p = sy.params[s.param < sy.n_params ? s.param : 0];
+    midi_top(sy);
+    if (s.browsing) {
+        draw_midi_list(s, sy);
+        static const char *const acts[4] = {"PICK", "", "", "MENU"};
+        home_legend(acts, in.buttons);
+        return;
+    }
+    text(p.group, CX, 56, GREY, 1, CENTER);
+    text(p.name, CX, 68, WHITE, fit_scale(p.name, 170, 2), CENTER);
+    char v[24];
+    midi_value_text(p, s.value, v, sizeof(v));
+    int sc = fit_scale(v, 150, 3);
+    int w = text(v, CX, 88, s.value < 0 ? GREY : AMBER, sc, CENTER);
+    if (s.value >= 0) edit_arrows(CX, 88, w, cap_height(sc), AMBER);
+    midi_meter(p, s.value, 116);
+
+    // The ports, or the program just sent.
+    char line[32];
+    if (s.prog >= 0 && in.t_ms - s.prog_ms < MIDI_PROG_SHOW_MS) {
+        snprintf(line, sizeof(line), "PROG %03d", s.prog + 1);
+        text(line, CX, 129, AMBER, 1, CENTER);
+    } else {
+        snprintf(line, sizeof(line), "CH %02d", s.channel);
+        int wc = text_width(line), wu = text_width("USB"), wt = text_width("TRS");
+        int x0 = (int)lroundf(CX - (wc + 10 + wu + 10 + wt) / 2.0f);
+        text(line, x0, 129, WHITE);
+        text("USB", x0 + wc + 10, 129, s.usb ? WHITE : DARK);
+        text("TRS", x0 + wc + 10 + wu + 10, 129, s.trs ? WHITE : DARK);
+    }
+    static const char *const acts[4] = {"NEXT", "PROG-", "PROG+", "MENU"};
+    home_legend(acts, in.buttons);
+}
+
 // The idle screen's icon in HOME: the lamp as drawn on the list, lit in its colour, into a 48 x 48
 // RGB565 big-endian image (black = see-through, the icon format). Its three accents (dark to
 // bright) are the lamp's colour at a third, two thirds and full.

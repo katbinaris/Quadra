@@ -17,7 +17,7 @@
 
 // PSRAM stacks: internal RAM is short since the 115 KB frame sprite moved there (display_task.cpp
 // frame_init), so the tasks that can, keep their stacks in PSRAM (xTaskCreatePinnedToCoreWithCaps,
-// MALLOC_CAP_SPIRAM): LED and sysmon. A task qualifies only if it never writes flash (NVS,
+// MALLOC_CAP_SPIRAM): LED, sysmon, home and midi. A task qualifies only if it never writes flash (NVS,
 // LittleFS -- a write turns the PSRAM cache off, and a task whose stack lives there can't run),
 // never hands a stack buffer to DMA, and never ends itself (vTaskDeleteWithCaps from another
 // task only; the one-shot PD task frees its internal stack by ending). Not the control task, USB (profile saves), menu_save,
@@ -63,6 +63,8 @@
                          // the display, same reason as the LEDs: at 8 a departed client went
                          // unnoticed for seconds and the next one's handshake timed out. It
                          // sleeps in select() between frames
+#define PRIO_MIDI    10 // MIDI mode (midi.c): a knob turn to the synth within one 10 ms pass; above
+                        // the display for the same reason as the LEDs, and it sleeps between passes
 
 // Control loop rate. Was a 1kHz placeholder through all of Phase 2's bench-validation work.
 // RAISED to 10kHz once for haptic-feel tuning and immediately REVERTED: at the time, IDLE0
