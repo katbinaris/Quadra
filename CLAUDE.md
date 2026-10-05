@@ -8,8 +8,9 @@
 - **Anything visual** (device screens, sprites, icons, command cards, animations, the
   companion's UI, doc screenshots) follows `NanoDepsidf/docs/PIXEL_ART.md`. Read it first.
 - Check UI changes with `NanoDepsidf/tools/ui_preview/run.sh` (the companion: demo mode,
-  `companion/scripts/screenshots.mjs`), and profile JSON changes with
-  `NanoDepsidf/tools/profile_json_test/run.sh`. Type-check the companion with
+  `companion/scripts/screenshots.mjs`), profile JSON changes with
+  `NanoDepsidf/tools/profile_json_test/run.sh`, and synth profile changes with
+  `NanoDepsidf/tools/midi_synth_test/run.sh`. Type-check the companion with
   `npx tsc --noEmit` in `companion/`.
 - Code in the 10 kHz control loop must not block and must run from IRAM (`CONTROL_HOT`);
   see FIRMWARE.md section 17.

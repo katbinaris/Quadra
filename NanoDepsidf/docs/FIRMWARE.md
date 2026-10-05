@@ -490,11 +490,20 @@ values at most every 150 ms. A change without a reply in 1.5 s shows NO REPLY an
 hello (the lamp may have restarted with a new clock). A refresh never overwrites a change still
 on its way. Turning a value on a lamp that is off switches it on.
 
-**Import.** `quadra.py home import` (USB only: the tokens) sends `EXT_CMD_HOME` BEGIN, one LAMP
-per lamp (id, address, token, dialect, capabilities, colour-temperature range, siid / piid,
-name) and COMMIT. The usb task stores the list in NVS (`home` / `lamps`, one blob of up to 12,
-written from internal RAM) and the home task picks it up and scans. `STATUS` (any link) reports
-what the knob sees of a lamp, never its token.
+**Import.** The companion's Lamps › Import (or `quadra.py home import`; USB only: the tokens)
+sends `EXT_CMD_HOME` BEGIN, one LAMP per lamp (id, address, token, dialect, capabilities,
+colour-temperature range, siid / piid, name, icon) and COMMIT. The usb task stores the list in
+NVS (`home` / `lamps`, one blob of up to 12, written from internal RAM) and the home task picks
+it up and scans. `STATUS` (any link) reports what the knob sees of a lamp, never its token: from
+extensions v12 also its icon, the address it answers on and its dialect.
+
+**Edits** (v12, `EXT_HOME_EDIT`, any link: no tokens involved): rename, change the icon, move
+or remove the lamp in a slot, if it is still the one with the device id the companion names.
+`home_edit` changes the stored list and writes it at once (in the usb task, the same blob), then
+the home task rebuilds its table in the new order keeping each lamp's session (online, its
+state, its address), so nothing is scanned again and the selection stays on the same lamp. A
+lamp's new address, found during a session, goes into the stored list with the next edit or
+import.
 
 **The screens, the LEDs, the idle screen.** `ui_extras.cpp` draws each lamp from shapes after
 the real device (`HOME_KIND_*`: the import sends one per lamp from its model name; a lamp stored
@@ -518,6 +527,36 @@ synth profiles as tables, one row per parameter, transcribed from each maker's M
 (the sources are named in the file): GENERIC (General MIDI / GM2 controllers), KORG minilogue xd,
 Roland JU-06A and TR-8S. The menu picks one (PROFILES → MIDI → SYNTH, NVS `hid` / `midi_synth`,
 stored by id like the app profile) and the channel (`hid_cfg.midi_channel`).
+
+**The list of synths** (from extensions v12) is the four built-ins, then up to 12 of the
+user's own, at most 16 (`MIDI_MAX_SYNTHS`). The companion's Synths page edits them like app
+profiles: an upload (`EXT_CMD_SYNTH` PUT, JSON) is live at once, replacing the synth with its id
+or adding one; SAVE writes it to LittleFS (`/fs/synths/<id>.json`, indented, to be read and
+shared); REVERT goes back to the file, or to the built-in table, and a new synth never saved
+goes away; REMOVE deletes the file (a built-in shows its table again). At boot
+`midi_synths_init()` loads the files: one with a built-in's id replaces that built-in (flags
+BUILTIN | STORED, "Built-in, changed" in the app). The JSON:
+
+```json
+{"id": "minilogue-xd", "maker": "KORG", "name": "MINILOGUE XD", "channel": 1,
+ "programs": {"scheme": "korg-bank100", "count": 500},
+ "params": [{"group": "VCO 1", "name": "PITCH", "sends": "korg10", "cc": 34, "centred": true},
+            {"group": "VCO 1", "name": "WAVE", "sends": "cc", "cc": 50,
+             "options": [{"name": "SQR", "value": 0}, {"name": "TRI", "value": 64}, {"name": "SAW", "value": 127}]}]}
+```
+
+Limits (`midi.h`): id 1-23 of a-z, 0-9 and -; name 15 characters, maker 11, a parameter's group
+and name 11, an option's name 9; 1-64 parameters, 2-8 options, values 0-127, channel 0
+(none) to 16. Anything else is refused with a reason (`midi_synth_put`'s `why`), which the app
+shows. Each synth from JSON is one PSRAM block (the synth, its parameters, their strings,
+about 6 KB at 64 parameters). The list is an array of pointers swapped whole, so a reader
+(the display, the LEDs, the midi task, the menu) always sees a complete synth; a replaced block
+is freed a second later (`midi_synths_reap`, from the usb task). `midi_synth_count()` stays in
+IRAM (the menu's SYNTH row asks it at a detent crossing) and reads one atomic in internal RAM.
+The midi task notices its synth's block changed and starts its values over. A removed synth
+moves the menu's live, saved and undo choices like a removed app profile
+(`menu_midi_synth_removed`). Host test: `tools/midi_synth_test/run.sh` (every built-in to JSON
+and back, save / revert / remove, a boot, refused input).
 
 **Three sides, like HOME.** The control loop pushes turns and F1 down / up / F2 / F3 into a
 64-word lock-free ring (`midi_input_*`, `CONTROL_HOT`, internal RAM; each word carries the
@@ -561,7 +600,9 @@ QUADRA wordmark.
 **Memory.** About 1.2 KB of internal RAM (the ring, TinyUSB's MIDI FIFOs and buffers, the RAM
 descriptors, the snapshots), plus about 0.6 KB of heap for the UART driver once the jacks
 start; the 3.5 KB stack in PSRAM; about 37 KB of flash, the four synth tables included.
-Measured: static internal RAM 64,480 → 65,728 bytes, flash 1,324,839 → 1,361,411 bytes.
+Measured: static internal RAM 64,480 → 65,728 bytes, flash 1,324,839 → 1,361,411 bytes. The
+editable list (v12) added 80 bytes of internal RAM (the count; the rest of the list is in
+PSRAM) and about 10 KB of flash.
 
 ## 9. USB
 
@@ -657,6 +698,7 @@ and the companion shows a feature only from the version that has it:
 | 9 | `PD`: the USB-PD chip's NVM, read and checked, or written to 5 V 3 A only (USB only, `quadra.py pd`). Also two WiFi clients at once, and `COVER` over WiFi |
 | 10 | `NET CONTROLS` and `EXT_TAG_HID`: with no USB host, the HID reports go to the WiFi client that asked (the companion app types and scrolls for the knob) |
 | 11 | `HOME` and `EXT_TAG_HOME`: HOME's lamps, imported over USB, their state over any link (section 8.4). The first command of the second range, 0x30-0x3F: 0x20-0x2F is full |
+| 12 | `HOME EDIT` (rename, icon, order, remove; any link) and the lamp's icon, address and dialect in `EXT_TAG_HOME`; `SYNTH` and `EXT_TAG_SYNTH`: the synth list, a synth's JSON (read in 48-byte pieces: offset 0 alone first, the knob writes the JSON then; the rest may be asked for several at a time), upload, save / revert / remove, the midi task's status, and go to a parameter (section 8.5) |
 
 Work that touches NVS or decodes images runs in the usb task (`ext_link_poll`), not in
 TinyUSB's callback. Keys from `INPUT` are OR-ed into the real ones in the control loop and let
@@ -796,7 +838,7 @@ did the same things.
 | `nvs` | 20 KB | Settings and motor calibration |
 | `otadata` | 8 KB | OTA slot selection |
 | `app0`, `app1` | 1.625 MiB each | Firmware (two OTA slots) |
-| `spiffs` | 640 KiB | LittleFS: stored profiles |
+| `spiffs` | 640 KiB | LittleFS: stored app profiles (`/fs/profiles`) and synth profiles (`/fs/synths`) |
 | `coredump` | 64 KB | Crash dumps |
 
 The firmware image is about 1.32 MB (78% of a slot), most of the growth being WiFi. NVS also
@@ -815,6 +857,7 @@ cd NanoDepsidf
 pio run                                   # build (platform pinned: platformio/espressif32@7.1.3)
 pio run -t upload --upload-port <port>    # flash
 tools/profile_json_test/run.sh            # host test for profile JSON
+tools/midi_synth_test/run.sh              # host test for the synth profiles
 tools/ui_preview/run.sh out.png           # render every screen on the host
 ```
 

@@ -14,15 +14,17 @@ built-in profiles and icons. Settings such as Wi-Fi, the clock and System info a
 2. [The window](#2-the-window)
 3. [Live and saved](#3-live-and-saved)
 4. [Mode](#4-mode)
-5. [Haptics](#5-haptics)
-6. [App profiles](#6-app-profiles)
-7. [Knob and keys](#7-knob-and-keys)
-8. [Command wheel](#8-command-wheel)
-9. [Macros](#9-macros)
-10. [Look](#10-look)
-11. [Device](#11-device)
-12. [System info](#12-system-info)
-13. [When something doesn't work](#13-when-something-doesnt-work)
+5. [Lamps](#5-lamps)
+6. [Synths](#6-synths)
+7. [Haptics](#7-haptics)
+8. [App profiles](#8-app-profiles)
+9. [Knob and keys](#9-knob-and-keys)
+10. [Command wheel](#10-command-wheel)
+11. [Macros](#11-macros)
+12. [Look](#12-look)
+13. [Device](#13-device)
+14. [System info](#14-system-info)
+15. [When something doesn't work](#15-when-something-doesnt-work)
 
 ---
 
@@ -100,13 +102,13 @@ when you save:
 
   <img src="app-unsaved.png" width="720" alt="The list of what isn't saved: Settings (Haptics) and Figma, each with Revert; Revert all and Save to knob">
 
-  Settings and the lights revert together (the knob keeps them as one). Each app profile
-  reverts on its own.
+  Settings and the lights revert together (the knob keeps them as one). Each app profile and
+  each synth reverts on its own.
 - **Revert all** returns everything to what's stored.
 - A change that isn't saved is lost when the knob loses power.
 
 A few things are stored on the knob as soon as you set them, with no Save: the idle word, the
-music cover style, the clock, and Wi-Fi. Their pages say so.
+music cover style, the clock, Wi-Fi, and the lamps' names, icons and order. Their pages say so.
 
 ## 4. Mode
 
@@ -141,14 +143,14 @@ mode keeps its own:
 
 <img src="app-mode-mouse.png" width="720" alt="Mode with Mouse: the haptic profile for Mouse">
 
-In **Home**, the knob finds your lamps on the network and changes them itself; the app only
-switches the mode. The lamps and their keys come from your Xiaomi account, once, over USB:
-run the token extractor, then `quadra.py home import` (see the README's HOME section).
+In **Home**, the knob finds your lamps on the network and changes them itself; the page lists
+them with what each is doing now, and links to [Lamps](#5-lamps) and the import.
 
 <img src="app-mode-home.png" width="720" alt="Mode with Home: how the lamps get onto the knob">
 
 In **MIDI**, pick the **Synth** whose parameters the knob turns (GENERIC for General MIDI
-controllers and a DAW's MIDI learn, the KORG minilogue xd, the Roland JU-06A or TR-8S; on the knob:
+controllers and a DAW's MIDI learn, the KORG minilogue xd, the Roland JU-06A or TR-8S, or one of
+your own; **Edit synths…** opens [Synths](#6-synths); on the knob:
 F4 menu › Profiles › MIDI › F1 to SYNTH) and the **MIDI channel** to send on; the note says which
 channel the synth comes set to. On the knob, turn to change the parameter on its screen, F1 for
 the next one (hold F1 and turn to pick from the list), F2 and F3 for the synth's program. See the
@@ -160,7 +162,90 @@ In MIDI mode the knob is a USB MIDI device instead of a keyboard and mouse, so c
 from MIDI makes it reconnect: the app shows it looking for the knob for a second or so, then
 carries on. Over WiFi nothing changes.
 
-## 5. Haptics
+## 5. Lamps
+
+<img src="app-lamps.png" width="720" alt="Lamps: four lamps drawn as the knob draws them, Desk Lamp 2 on at 62% and 4000 K, the strip on in blue, the 1S off, a bulb offline; the knob's HOME screen with its ring, and the name, icon and order of the lamp picked">
+
+**Lamps** shows HOME's lamps as the knob sees them, asked every second: each one drawn the way
+the knob draws it, lit in its colour, with **On**, **Off**, **Offline** (it doesn't answer) or
+**No reply** (a change got no answer), its brightness and white or colour, its model, and the
+address and protocol it answers on. The knob talks to the lamps itself; the app never does.
+
+Pick a lamp to see the knob's HOME screen with it and to change:
+
+| Setting | What it does |
+|---|---|
+| **Name on the knob** | Up to 19 characters, in the knob's capitals. Press Enter to rename |
+| **Icon** | Bulb, desk lamp, desk lamp with an arm, or lightstrip |
+| **Order** | Where it sits in the knob's list |
+| **Remove from knob** | Takes it off the knob (asks once more). Import it again to get it back |
+
+These are stored on the knob at once, over USB or Wi-Fi (firmware with extensions v12).
+
+### Importing lamps
+
+<img src="app-lamps-import.png" width="720" alt="Import lamps, step Find: four Xiaomi lights found on the network, two moved to new addresses, one not answering; a watch and a router listed as not lights">
+
+**Import from Xiaomi…** puts the lamps of your Xiaomi account on the knob, in four steps:
+
+1. **Account:** the list of your devices and their keys, saved by the token extractor in
+   `~/.quadra/xiaomi-devices.json`. **Sign in to Xiaomi…** opens the extractor in Terminal for
+   a new list (sign in with the QR code in Mi Home, or your password, and choose your server);
+   **Look again** reads it once it's done. The extractor has to be installed in
+   `~/.quadra/token-extractor` (see the README's HOME section).
+2. **Find:** the app looks up what each light can do in its public spec, says hello to every
+   address of the networks the lamps were last seen on, and asks each lamp which protocol it
+   answers. A lamp that moved shows its new address; one that doesn't answer can still go on
+   the knob, which finds it when it's back.
+3. **Choose:** which lamps, their names (from Mi Home, without the brand word), icons (guessed
+   from the model) and order. The knob holds 12.
+4. **Send:** over USB only, since it carries the lamps' keys. It replaces the lamps on the knob.
+
+The keys stay in that file on this Mac and on the knob; the app never shows them. The import
+needs the Quadra app (a web page can't read the file or look on the network); in a terminal,
+`quadra.py home import` does the same.
+
+## 6. Synths
+
+<img src="app-synths.png" width="720" alt="Synths: the four synths with KORG and Roland marks, MINILOGUE XD in use; its parameters by group, VCO 1 WAVE open as a switch with SQR, TRI and SAW and the value each sends; the knob's screen below the list">
+
+**Synths** edits MIDI mode's synth profiles the way [App profiles](#8-app-profiles) are edited:
+changes reach the knob a moment after you make them, **Save to knob** keeps them, and
+**Revert** goes back. Firmware with extensions v12 is needed.
+
+On the left are the knob's synths, each with its maker's mark and where it comes from
+(**Built-in**, **Built-in, changed**, **Yours**), and below them the knob's screen for the
+parameter you're on: live when it's the synth in use. **New synth** starts one with four
+parameters, **Import a file…** adds one from a JSON file, and **Duplicate** and **Export…** (to
+Downloads) are at the top of each synth. The knob holds 16 synths.
+
+**Parameters** lists them in the order F1 steps through, by group. The one the knob is on now
+has a green dot and its value. Click one to change it:
+
+| Setting | What it sets |
+|---|---|
+| **Name on the knob**, **Group** | Up to 11 characters each; the group is the caption above the name |
+| **Kind** | **Value** (0 to 127, or 1023), **Centred value** (shown as − / + around the middle, like pan or tune), or **Switch** |
+| **Sends** | **CC, 7-bit**, or **KORG 10-bit** (CC 63 carries the low bits first: the minilogue xd's full resolution), and the CC number |
+| **Options** | A switch's 2 to 8 options: each one's name and the value it sends. **Space evenly** spreads them over 0 to 127 |
+
+**↑ Earlier** and **↓ Later** move a parameter, **Delete** removes it, **+ Parameter** adds
+one after it (up to 64), and **Show on the knob** moves the knob to it. The feel follows the
+kind: fine steps for a value, a click per option for a switch, walls at the ends.
+
+<img src="app-synths-programs.png" width="720" alt="Synths, Programs and channel: the name, the maker, the channel the synth comes set to, and its programs, sent as KORG banks of 100, 500 of them">
+
+**Programs and channel:** the synth's name on the knob, its maker (KORG and Roland show their
+logo on the knob), the channel it comes set to (a hint on the Mode page; the knob sends on the
+channel set there), and how F2 and F3 step its programs: **Program change** (up to 128), or
+**KORG, banks of 100**. At the bottom, **Reset to default** brings a changed built-in back, or
+**Delete synth** removes one of your own.
+
+**Monitor** lists what the knob sends on USB MIDI (the same goes out on the TRS jacks), each
+message with the parameter it moved. It reads the knob's MIDI port, which exists in MIDI mode
+only, and needs the Quadra app. What the synth sends back goes to the knob, which counts it.
+
+## 7. Haptics
 
 <img src="app-haptics.png" width="720" alt="Haptics: the five haptic profiles, the feel cards and the tuning sliders">
 
@@ -205,7 +290,7 @@ A slider that doesn't apply in the current feel is greyed out and shows `—`.
 any change it is live at once and stored when you save. On the knob, holding F2 for 1.5 seconds
 on the Haptics screen does the same.
 
-## 6. App profiles
+## 8. App profiles
 
 <img src="app-profile-editor.png" width="720" alt="A profile's General tab: name, icon, key labels, the main screen, and a preview of the knob's screen">
 
@@ -232,10 +317,10 @@ A profile has four tabs.
 **Reset to default** (a changed built-in) deletes your stored copy, so the original shows again;
 **Delete profile** (one of your own) removes it from the knob. Both ask once more before they act.
 
-The other tabs: [Knob & keys](#7-knob-and-keys), [Command wheel](#8-command-wheel) and
-[Macros](#9-macros).
+The other tabs: [Knob & keys](#9-knob-and-keys), [Command wheel](#10-command-wheel) and
+[Macros](#11-macros).
 
-## 7. Knob and keys
+## 9. Knob and keys
 
 <img src="app-editor-keys.png" width="720" alt="Knob & keys: the five inputs in a row, F1 open: Keys, the shortcuts for each way, its haptic profile Coarse, and a quick tap">
 
@@ -256,7 +341,7 @@ click one to set it up below. Each is set to one of these:
 - **Name on screen** is what the knob's screen shows while that input is in use.
 - **Haptic profile** is how that input feels: **Mode default** (the App mode's own), or one of
   the five haptic profiles. That's the only haptic choice per input: the feel and the strength
-  come from the haptic profile, tuned once under [Haptics](#5-haptics). A wheel menu needs
+  come from the haptic profile, tuned once under [Haptics](#7-haptics). A wheel menu needs
   steps, so it can't use Smooth.
 - **Quick tap** (F1–F3) is a shortcut or a macro sent when you press and let go without turning.
   It works alongside the turning action of the same key.
@@ -265,7 +350,7 @@ click one to set it up below. Each is set to one of these:
 To set a shortcut, click its field and press the keys. Hover over it for the ⌃ ⌥ ⇧ ⌘ buttons,
 for shortcuts the system keeps to itself (⌘Q, ⌘Tab); × clears it.
 
-## 8. Command wheel
+## 10. Command wheel
 
 <img src="app-editor-wheel.png" width="720" alt="Command wheel: Figma's four rings, STRUCTURE open with its four commands and their shortcuts">
 
@@ -283,7 +368,7 @@ a command, let go to run it. The tab says which key opens it.
 - A **Card** tag means the command has an animated illustration on the knob; **Value** means it
   sets a number afterwards. Both are kept as they are, and can't be edited here yet.
 
-## 9. Macros
+## 11. Macros
 
 <img src="app-editor-macros.png" width="720" alt="Macros: EXPORT PNG with a key, a pause, a text and a key step, and Record">
 
@@ -310,7 +395,7 @@ macro updates the places that use it; deleting it clears them.
 
 A profile holds up to 16 macros of up to 64 steps each. The knob types about 50 keys a second.
 
-## 10. Look
+## 12. Look
 
 Three tabs: **Lights**, **Screen & music** and **Clock**. Lights and the clock need firmware with
 the extensions (2.0 and later).
@@ -346,7 +431,7 @@ also sets its clock from the internet). Each zone follows its own daylight-savin
 Clock app on the knob, turning steps through the zones; F1 switches 12 / 24 hours, F2 the
 seconds, F3 the date. Stored on the knob as you change them.
 
-## 11. Device
+## 13. Device
 
 <img src="app-device.png" width="720" alt="Device, General: Mac or PC, HID or serial at start, and the firmware details">
 
@@ -370,7 +455,7 @@ once more: every other paired computer has to pair again) and **Forget**. With f
 has it, **The knob's controls** shows whether they come to this Mac over Wi-Fi (**On**), or
 whether macOS still needs to allow it (**Allow**).
 
-## 12. System info
+## 14. System info
 
 <img src="app-sys-info.png" width="720" alt="System info: power, heat, CPU and system tiles with gauges and the last minute">
 
@@ -388,7 +473,7 @@ should be zero and aren't.
 The knob sends these numbers only while this page is open: it does a little work for each
 report, so the app doesn't ask for them otherwise.
 
-## 13. When something doesn't work
+## 15. When something doesn't work
 
 | What you see | What to do |
 |---|---|
@@ -398,6 +483,11 @@ report, so the app doesn't ask for them otherwise.
 | A setting came back after a restart | It wasn't saved. Change it again and press **Save to knob** |
 | An edit is refused, with a message under the profile's name | The message says which field: for example a name that's too long, or text that isn't plain ASCII |
 | **New profile** and **Duplicate** are greyed out | The knob already holds 16 profiles. Delete one |
+| **Sign in to Xiaomi…** says the extractor isn't installed | Install it in `~/.quadra/token-extractor` with its `.venv` (README, HOME) |
+| The import finds a lamp but says **Not answering** | It's off at the switch, or on another network. Import it anyway: the knob finds it when it's back |
+| **Send** is greyed out in the import | The knob is on Wi-Fi: the lamps' keys only go over USB. Plug it in |
+| The Monitor says **No MIDI port** | The knob has one in MIDI mode only: pick MIDI on the Mode page |
+| A synth edit is refused | The message under its name says which parameter and why (a name too long, a CC over 127, a switch with one option) |
 
 ---
 

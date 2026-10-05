@@ -6,6 +6,13 @@ where the app shows the knob itself.
 
 - **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI); in App, the profile in use; in Mouse
   and Keys, the haptic profile that mode uses; in MIDI, the synth and the channel.
+- **Lamps:** HOME's lamps as the knob sees them (drawn with the knob's own lamp art), renamed,
+  re-iconed, reordered or removed; and the import from a Xiaomi account (the token extractor in
+  Terminal, then `src-tauri/src/home.rs` finds the lamps, probes them and reads their MIoT specs;
+  the keys go to the knob over USB only).
+- **Synths:** MIDI's synth profiles, edited like app profiles (live, then Save; your own too, as
+  JSON on the knob), with the knob's screen for the parameter and a monitor of the knob's USB
+  MIDI port (`src-tauri/src/midi.rs`, CoreMIDI through `midir`).
 - **Haptics:** the five haptic profiles (Wide / Coarse / Medium / Fine / Smooth) and, for the
   one picked, its feel (Saw / Sine / Viscose) and the sliders Snap, Damp, Shape, Click volume
   and Click pitch. **Reset to factory** puts that profile back.
@@ -22,7 +29,7 @@ where the app shows the knob itself.
 - **System info:** power (an estimate), heat, CPU and system, with a minute of history.
 
 Changes are live on the knob at once. The top bar counts what isn't stored yet (settings,
-lights, profiles) and lists it on a click, each with its own Revert; **Save to knob** stores it
+lights, profiles, synths) and lists it on a click, each with its own Revert; **Save to knob** stores it
 all. F2 on the device stores the settings and lights too.
 
 The app doesn't show the knob's screen or LEDs live (the knob does), and only asks for the live
@@ -69,12 +76,14 @@ pnpm dev                # just the page: open http://localhost:1420 in Chrome fo
 ```
 
 **Demo mode:** add `?demo` to the page's URL, for example `http://localhost:1420/?demo`. A
-simulated knob answers the protocol (and the extensions up to v5: Look, Wi-Fi status, the
-clock), so the UI can be worked on without the hardware. Its built-in profiles are the
+simulated knob answers the protocol (and the extensions up to v12: Look, Wi-Fi status, the
+clock, HOME's lamps, the synths; the lamp import answers with made-up devices), so the UI can be
+worked on without the hardware. Its built-in profiles are the
 firmware's, icons included, from `src/demo_builtins.json`; after a built-in profile or icon
-changes, rerun `scripts/gen_demo_builtins.sh` (it uses `tools/profile_json_test`). Every page has an address:
+changes, rerun `scripts/gen_demo_builtins.sh` (it uses `tools/profile_json_test`); its synths
+come from `src/demo_synths.json` (`scripts/gen_demo_synths.sh`, `tools/midi_synth_test`). Every page has an address:
 `#/mode`, `#/haptics`, `#/profile/figma/general` (or `keys/f1`, `wheel`, `macros`),
-`#/look/lights` (`screen`, `clock`), `#/device/general` (`wifi`), `#/sys` — for example
+`#/lamps` (`lamps/import`), `#/synths/minilogue-xd/params` (`programs`, `monitor`), `#/look/lights` (`screen`, `clock`), `#/device/general` (`wifi`), `#/sys` — for example
 `http://localhost:1420/?demo#/profile/figma/keys/f1`.
 
 **Screenshots** for the user guide come from demo mode, all in one go: with `pnpm dev` running,
@@ -140,21 +149,29 @@ src/transport.ts    Tauri pipe | WebHID, one interface
 src/device.ts       connection, settings, profiles + icons, SYS history; changes by topic
 src/store.ts        the views' state: a signal per device topic, the #route, save / revert
 src/profiles.ts     new profile, duplicate
-src/mock.ts         ?demo: a simulated knob (its built-ins: src/demo_builtins.json)
+src/mock.ts         ?demo: a simulated knob (its built-ins: src/demo_builtins.json, src/demo_synths.json)
+src/home.ts         the lamp import's logic (names, icons, MIoT specs); the computer's part is home.rs
+src/synth.ts        a synth profile: its JSON, limits, and what the monitor shows of a message
 src/main.tsx        the pages by route
-src/pages/          Mode, Haptics, Look, Device, System info; profile/ (the editor's tabs,
-                    its session with the knob, an input's haptic profile)
-src/ui/             the shell (sidebar, top bar), controls, the knob's screen drawn from data
+src/pages/          Mode, Haptics, Lamps, LampImport, Synths, Look, Device, System info; profile/
+                    (the editor's tabs, its session with the knob, an input's haptic profile);
+                    synths/session.ts (the open synth's session)
+src/ui/             the shell (sidebar, top bar), controls, the knob's screen drawn from data;
+                    knobart.ts: the knob's HOME and MIDI art (lamps, marks, both screens, the ring)
 src/style.css       the look: tokens, layout, controls
 src/assets/         device.png, the top-down render (the sidebar's picture)
-scripts/            screenshots.mjs (the user guide's), gen_demo_builtins.sh (the demo knob's
-                    profiles), gen_tzdata.py (the clock's cities)
-src-tauri/          the Rust side: HID list / open / write / close, reports as events; Wi-Fi
+scripts/            screenshots.mjs (the user guide's), gen_demo_builtins.sh and gen_demo_synths.sh (the
+                    demo knob's profiles and synths), gen_tzdata.py (the clock's cities)
+src-tauri/          the Rust side: HID list / open / write / close, reports as events; Wi-Fi;
+                    home.rs (the lamp import: the extractor's file, finding and probing lamps,
+                    MIoT specs), midi.rs (the knob's USB MIDI port, for the Synths monitor)
 ```
 
 The views are [Preact](https://preactjs.com) components with
 [signals](https://preactjs.com/guide/v10/signals): a page reads the device topics it shows
-(`use("settings")`), and re-renders only when one of them changes.
+(`use("settings")`), and re-renders only when one of them changes. A component whose props
+don't change re-renders only for a signal it reads itself: an editor's tabs read their session's
+`rev`.
 
 ---
 

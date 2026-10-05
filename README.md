@@ -117,12 +117,12 @@ shows, at 2× scale.
   the internet over WiFi.
 - **HOME.** The knob as a remote for Xiaomi lamps on your network: pick a lamp, turn its
   brightness, white or colour, switch it on and off. It talks to the lamps itself over WiFi
-  (miIO), with keys imported once from your Xiaomi account.
+  (miIO), with keys imported once from your Xiaomi account in the companion.
 - **MIDI.** The knob as a hands-on controller for a synth: it turns one parameter at a time,
   with a click per option on a switch and walls at the ends of the range, and steps the
   synth's programs. Built-in profiles for the KORG minilogue xd (with its 10-bit values),
-  the Roland JU-06A and TR-8S, and General MIDI. It sends over USB MIDI and the TRS jacks at
-  once.
+  the Roland JU-06A and TR-8S, and General MIDI, each editable in the companion, and your own
+  synths besides. It sends over USB MIDI and the TRS jacks at once.
 - **WiFi.** The knob can join a network and work without a cable, over an encrypted link
   paired over USB. The companion app and the Mac service connect at the same time, and on a
   charger the knob's controls type and scroll on the Mac through the app.
@@ -553,17 +553,23 @@ it sits, in the lamp's own light:
 **Idle.** On the idle screen the lamp you changed last jumps, lit in its colour.
 
 **Setting it up, once.** Each lamp has a key (its token) that only your Xiaomi account knows:
-1. Get the tokens with [Xiaomi-cloud-tokens-extractor](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor)
-   (it logs in to your Xiaomi account; the account the Xiaomi Home app uses for the lamps):
-   `python token_extractor.py -o ~/.quadra/xiaomi-devices.json`.
-2. With the knob on USB: `quadra.py home import`. It takes every Xiaomi light from that file,
-   looks up what each model can do in its public spec ([miot-spec.org](https://miot-spec.org)),
-   finds where each lamp is on the network now, asks it which protocol it answers (the newer
-   MIoT, or the older commands some Yeelight-made lamps keep to) and stores up to 12 lamps on
-   the knob, each with its icon. `quadra.py home list` shows what the knob sees.
+1. Install [Xiaomi-cloud-tokens-extractor](https://github.com/PiotrMachowski/Xiaomi-cloud-tokens-extractor)
+   in `~/.quadra/token-extractor` (with its own `.venv`). It logs in to your Xiaomi account (the
+   one the Xiaomi Home app uses for the lamps) and writes `~/.quadra/xiaomi-devices.json`.
+2. With the knob on USB, in the companion: **Lamps › Import from Xiaomi**. **Sign in to
+   Xiaomi** runs the extractor in Terminal (a QR code or your password); then **Find the
+   lamps** takes every Xiaomi light from that file, looks up what each model can do in its
+   public spec ([miot-spec.org](https://miot-spec.org)), finds where each lamp is on the network
+   now and asks it which protocol it answers (the newer MIoT, or the older commands some
+   Yeelight-made lamps keep to). Choose names, icons and order, and **Send**: up to 12 lamps go
+   onto the knob. Without the app, `quadra.py home import` does the same in a terminal, and
+   `quadra.py home list` shows what the knob sees.
 
-Run the import again after adding a lamp in the Xiaomi Home app. The tokens are stored on the
-knob in plain text, like the WiFi password, and only travel over USB. Lamps on another subnet
+The companion's **Lamps** page shows every lamp as the knob sees it (on or off, brightness,
+white or colour, its address), drawn the way the knob draws it, and renames one, changes its
+icon, moves it in the list or removes it, over USB or WiFi. Run the import again after adding a
+lamp in the Xiaomi Home app. The tokens are stored on the knob in plain text, like the WiFi
+password, and only travel over USB. Lamps on another subnet
 are found by their last known address; if one doesn't answer there (the router gave it a new
 one), the knob says hello to every address in that subnet and finds it by its id.
 
@@ -601,6 +607,15 @@ documentation; the knob turns one at a time and sends it as you turn.
 Set the knob's channel (PROFILES → MIDI → CHANNEL) to the synth's. Sources: KORG's minilogue
 xd MIDI Implementation 1.01, and Roland's JU-06A and TR-8S MIDI Implementation Charts.
 
+**Your own synths.** The companion's **Synths** page edits them: each parameter's name, group,
+CC (or KORG's 10-bit pair), whether it's a value, a centred value or a switch, a switch's
+options and the value each sends, the order F1 steps through, the programs and the channel. A
+built-in you change stays changed (Reset to default brings it back); **New synth**, **Duplicate**
+and **Import a file** add up to 12 of your own, and **Export** writes one to a file to share.
+They are stored on the knob as JSON (`/fs/synths/<id>.json`). The page shows the knob's screen
+for the parameter you're on, marks the one the knob is on now, and its **Monitor** tab lists
+what the knob sends on USB MIDI.
+
 **Where it goes.** Every message goes out on both ports at once:
 - **USB MIDI.** In MIDI mode the knob is a class-compliant USB MIDI device named Quadra (no
   driver on macOS, Windows, Linux or an iPad), so a DAW, or a computer that passes MIDI on,
@@ -633,12 +648,9 @@ dot per parameter, the one under the knob bright.
   <img src="NanoDepsidf/docs/images/midi-prog.png" width="180" alt="MIDI: PROG 042 in amber where the channel was, F3 lit">
 </p>
 
-**Still to check with the synths themselves:**
-- The minilogue xd's SYNC and RING: KORG's document sends OFF / ON as 0 / 127 but reads 0-63 as
-  ON; the knob follows what the synth reads.
-- Roland's charts list each CC but not a switch's values; the knob sends evenly spaced values
-  (0 / 127; 0 / 64 / 127; 0 / 43 / 85 / 127).
-- The TRS jacks' wiring (type A or B) and polarity.
+Roland's charts list each CC but not a switch's values; the knob sends evenly spaced values
+(0 / 127; 0 / 64 / 127; 0 / 43 / 85 / 127), which the synths read as intended. If a synth of
+yours wants others, set them on the Synths page.
 
 ### The Mac service
 
@@ -999,6 +1011,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | Tool | What it does |
 |---|---|
 | `tools/ui_preview/run.sh [out.png]` | Compiles the firmware's UI code for the host against a small graphics stub and renders every screen into one PNG contact sheet: menus, wheels, every command card, parameter dials, the idle screen. No hardware needed. |
+| `tools/midi_synth_test/run.sh` | Builds the synth profile code for the host and checks it: every built-in synth survives a round trip, save / revert / remove and a boot work, and bad input is refused with a reason. |
 | `tools/profile_json_test/run.sh` | Builds the profile JSON code for the host and checks it: every built-in profile survives a round trip unchanged, and bad input is refused with a reason. |
 | `tools/send_icon.py` | Uploads a 48×48 image to the device over the vendor HID interface (`icon.png`, `--test-pattern`, `--clear`, `--list`, `--dry-run --preview out.png`). |
 | `tools/gen_icon_c.py` | Converts a PNG into an RGB565 C array for a profile icon (24×24 status bar, 48×48 profile screen and idle screen). |
@@ -1024,6 +1037,10 @@ profiles from the computer:
 
 - **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use (for
   MIDI, the synth and channel).
+- **Lamps:** HOME's lamps as the knob sees them; rename, icon, order, remove; and the import
+  from a Xiaomi account.
+- **Synths:** MIDI's synth profiles, edited like app profiles, your own too; the knob's
+  screen for the parameter, and a monitor of what it sends.
 - **Haptics:** the five haptic profiles, and each one's feel and Snap, Damp, Shape, Click
   volume and Click pitch, with a reset to factory.
 - **App profiles:** one page each, built-ins included: name, icon, key labels, what the knob
@@ -1182,20 +1199,22 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - The Mac service, and flashing with `quadra.py flash`.
 - HOME: Xiaomi lamps over WiFi (list, brightness, white, colour, on / off).
 - MIDI: USB MIDI and the TRS jacks, the synth profiles (GENERIC, KORG minilogue xd, Roland
-  JU-06A and TR-8S), parameter pages and program changes.
+  JU-06A and TR-8S) with the real synths, parameter pages and program changes, the KORG and
+  Roland logos.
 
 **Built, not yet tested on hardware:**
-- MIDI's KORG and Roland logos (the header, PROFILES → MIDI, the idle screen) and the larger
-  PROFILES → MIDI text.
+- The companion's Lamps page and lamp import (extensions v12 for renaming, icons, order and
+  removing), and its Synths page: editable synth profiles stored on the knob as JSON, your own
+  synths, the knob's parameter live, and a USB MIDI monitor.
 
 **Next:**
-- Safe SNAP and DAMP limits for each haptic profile and feel (today they are the full
-  ranges), and tuned values for each profile's second feel.
 - F4 quick tap in APP mode, and KEYBOARD / MOUSE as built-in profiles.
 - Integration tests: the cross-core load test, and the loop's worst case during a save to
   flash.
 
 **Later:**
+- Safe SNAP and DAMP limits for each haptic profile and feel (today they are the full
+  ranges), and tuned values for each profile's second feel.
 - Automatic profile switching from the frontmost app.
 - A Figma plugin for direct value control over HID.
 - The companion on Windows.
