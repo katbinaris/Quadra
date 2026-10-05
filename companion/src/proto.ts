@@ -53,8 +53,9 @@ export const Tag = {
 
 // Extensions -- a mirror of NanoDepsidf/src/ext_proto.h (commands 0x20-0x2F, tags 0xC0-0xCF).
 // Firmware without them answers Tag.ERROR, and the app leaves out what needs them.
-export const ExtCmd = { HELLO: 0x20, TEXT: 0x22, LIGHTS: 0x23, PREFS: 0x24, NET: 0x29, CLOCK: 0x2b, SCREEN: 0x2c, INPUT: 0x2d, MUSIC: 0x2e } as const;
-export const ExtTag = { HELLO: 0xc0, ACK: 0xc1, PREFS: 0xc2, NET: 0xc4, CLOCK: 0xc5, SCREEN: 0xc6, KEY: 0xc7 } as const;
+// The range 0x20-0x2F is full; 0x30 on (HOME, SYNTH) goes to the same handler (ext_link.c).
+export const ExtCmd = { HELLO: 0x20, TEXT: 0x22, LIGHTS: 0x23, PREFS: 0x24, NET: 0x29, CLOCK: 0x2b, SCREEN: 0x2c, INPUT: 0x2d, MUSIC: 0x2e, HOME: 0x30, SYNTH: 0x31 } as const;
+export const ExtTag = { HELLO: 0xc0, ACK: 0xc1, PREFS: 0xc2, NET: 0xc4, CLOCK: 0xc5, SCREEN: 0xc6, KEY: 0xc7, HOME: 0xca, SYNTH: 0xcb } as const;
 export const EXT_SCREEN_VERSION = 6; // the live screen (EXT_CMD_SCREEN) and the knob from here (EXT_CMD_INPUT)
 export const InputOp = { KEYS: 1, TURN: 2 } as const;
 export const SCREEN_SIZE = 240;
@@ -69,6 +70,25 @@ export const EXT_WIFI_LINK_VERSION = 7;
 // The knob's controls over WiFi (NetOp.CONTROLS; the reports, EXT_TAG_HID, are handled in Rust:
 // src-tauri/src/input.rs) from this extensions version on.
 export const EXT_CONTROLS_VERSION = 10;
+// HOME's lamps (EXT_CMD_HOME: import over USB, STATUS) from v11; the lamp edits (HomeOp.EDIT),
+// each lamp's icon and address in STATUS, and the synth profiles (EXT_CMD_SYNTH) from v12.
+export const EXT_HOME_VERSION = 11;
+export const EXT_SYNTH_VERSION = 12;
+export const HomeOp = { BEGIN: 1, LAMP: 2, COMMIT: 3, STATUS: 4, EDIT: 5 } as const;
+export const HomeEdit = { NAME: 1, KIND: 2, MOVE: 3, REMOVE: 4 } as const;
+export const HomeFlag = { ONLINE: 0x01, KNOWN: 0x02, ON: 0x04, FAILED: 0x08 } as const;
+export const HomeCap = { BRIGHT: 0x01, TEMP: 0x02, COLOR: 0x04 } as const;
+export const HomeKind = { BULB: 0, DESK: 1, DESK_ARM: 2, STRIP: 3 } as const; // home.h HOME_KIND_*: the icon
+export const HomeProto = { MIOT: 0, LEGACY: 1 } as const;
+export const HOME_MAX_LAMPS = 12;
+export const HOME_NAME_MAX = 19;
+export const SynthOp = { LIST: 1, READ: 2, RESULT: 3, STATUS: 4, PUT_BEGIN: 5, PUT_DATA: 6, PUT_END: 7, OP: 8, GOTO: 10 } as const;
+export const SynthFlag = { BUILTIN: 0x01, STORED: 0x02, LIVE: 0x04 } as const;
+export const SynthEdit = { SAVE: 1, REVERT: 2, REMOVE: 3 } as const; // MIDI_SYNTH_OP_*
+export const SYNTH_RESULT = ["OK", "Not a valid synth profile", "No room for more synths", "Storage error", "No such synth"]; // MIDI_SYNTH_ERR_*
+export const SYNTH_CHUNK = 48; // READ's bytes per reply
+export const SYNTH_PUT_CHUNK = 56;
+export const MAX_SYNTHS = 16;
 export const NET_STATE = ["OFF", "CONNECTING", "CONNECTED", "NETWORK NOT FOUND", "WRONG PASSWORD"] as const; // net_state_t
 export const NetState = { OFF: 0, CONNECTING: 1, CONNECTED: 2 } as const;
 export const ExtStatus = { OK: 0, BAD_PARAM: 1, UNKNOWN: 2, STORAGE: 3, USB_ONLY: 4 } as const;
@@ -159,7 +179,8 @@ export const HapticProfiles = [
   { name: "SMOOTH", detents: 0 }, // VISCOSE only: no felt steps
 ] as const;
 
-// MIDI mode's synth profiles (midi_synths.c SYNTHS), by index; the knob sends the index.
+// MIDI mode's built-in synth profiles (midi_synths.c SYNTHS), by index; the knob sends the index.
+// From extensions v12 the knob lists its synths itself (Device.synths), the user's own too.
 export const MidiSynths = [
   { id: "generic", maker: "MIDI", name: "GENERIC", channel: 0, params: 18 },
   { id: "minilogue-xd", maker: "KORG", name: "MINILOGUE XD", channel: 1, params: 48 },
@@ -270,6 +291,51 @@ export interface SysB {
   sensorCrcErrors: number;
 }
 
+// One of HOME's lamps as the knob sees it (EXT_TAG_HOME).
+export interface Lamp {
+  slot: number;
+  count: number; // lamps stored
+  did: number;
+  flags: number; // HomeFlag
+  bright: number; // %
+  ct: number; // K
+  rgb: [number, number, number]; // the colour it shows
+  caps: number; // HomeCap
+  name: string;
+  kind: number; // HomeKind (v12; bulb before)
+  ip: string; // where it answers (v12; "" before)
+  proto: number; // HomeProto it answers (v12)
+}
+
+// A synth profile in the knob's list (EXT_TAG_SYNTH LIST).
+export interface SynthEntry {
+  index: number;
+  count: number;
+  flags: number; // SynthFlag
+  params: number;
+  channel: number; // its factory channel, 0 = none
+  progScheme: number;
+  programs: number;
+  id: string;
+  maker: string;
+  name: string;
+}
+
+// The midi task now (EXT_TAG_SYNTH STATUS).
+export interface MidiStatus {
+  active: boolean; // MIDI mode, menu closed
+  synth: number;
+  param: number;
+  value: number; // -1 unknown
+  browsing: boolean;
+  prog: number; // -1 none sent yet
+  channel: number;
+  usb: boolean;
+  trs: boolean;
+  tx: number;
+  rx: number;
+}
+
 export interface IconChunk {
   index: number;
   offset: number;
@@ -305,6 +371,11 @@ export type Message =
   | { tag: typeof ExtTag.CLOCK; clock: ClockSlot }
   | { tag: typeof ExtTag.SCREEN; screen: ScreenChunk }
   | { tag: typeof ExtTag.KEY; key: Uint8Array; port: number }
+  | { tag: typeof ExtTag.HOME; lamp: Lamp }
+  | { tag: typeof ExtTag.SYNTH; op: typeof SynthOp.LIST; synth: SynthEntry }
+  | { tag: typeof ExtTag.SYNTH; op: typeof SynthOp.READ; index: number; length: number; crc: number; offset: number; bytes: Uint8Array }
+  | { tag: typeof ExtTag.SYNTH; op: typeof SynthOp.RESULT; what: number; res: number; index: number; removed: boolean; why: string }
+  | { tag: typeof ExtTag.SYNTH; op: typeof SynthOp.STATUS; status: MidiStatus }
   | { tag: number };
 
 // --- encoding ---
@@ -433,6 +504,109 @@ export const encode = {
     return r;
   },
   extPrefs: () => report(ExtCmd.PREFS),
+  homeStatus: (slot: number) => {
+    const r = report(ExtCmd.HOME);
+    r[1] = HomeOp.STATUS;
+    r[2] = slot;
+    return r;
+  },
+  homeBegin: () => {
+    const r = report(ExtCmd.HOME);
+    r[1] = HomeOp.BEGIN;
+    return r;
+  },
+  // One lamp of an import (USB only: it carries the lamp's token).
+  homeLamp: (slot: number, l: { did: number; ip: string; token: Uint8Array; proto: number; caps: number; ctMin: number; ctMax: number; siid: number[]; piid: number[]; name: string; kind: number }) => {
+    const r = report(ExtCmd.HOME);
+    const v = new DataView(r.buffer);
+    r[1] = HomeOp.LAMP;
+    r[2] = slot;
+    v.setUint32(3, l.did >>> 0, true);
+    r.set(l.ip.split(".").map(Number), 7);
+    r.set(l.token.subarray(0, 16), 11);
+    r[27] = l.proto;
+    r[28] = l.caps;
+    v.setUint16(29, l.ctMin, true);
+    v.setUint16(31, l.ctMax, true);
+    r.set(l.siid.slice(0, 4), 33);
+    r.set(l.piid.slice(0, 4), 37);
+    r.set(new TextEncoder().encode(l.name.slice(0, HOME_NAME_MAX)), 41);
+    r[61] = l.kind;
+    return r;
+  },
+  homeCommit: (count: number) => {
+    const r = report(ExtCmd.HOME);
+    r[1] = HomeOp.COMMIT;
+    r[2] = count;
+    return r;
+  },
+  // A change to the lamp in `slot`, if it's still the one with device id `did` (v12).
+  homeEdit: (slot: number, did: number, what: number, value: number | string) => {
+    const r = report(ExtCmd.HOME);
+    r[1] = HomeOp.EDIT;
+    r[2] = slot;
+    r[3] = what;
+    new DataView(r.buffer).setUint32(4, did >>> 0, true);
+    if (typeof value === "string") r.set(new TextEncoder().encode(value.slice(0, HOME_NAME_MAX)), 8);
+    else r[8] = value;
+    return r;
+  },
+  synthList: (index: number) => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.LIST;
+    r[2] = index;
+    return r;
+  },
+  synthRead: (index: number, offset: number) => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.READ;
+    r[2] = index;
+    new DataView(r.buffer).setUint32(4, offset, true);
+    return r;
+  },
+  synthPutBegin: (length: number, crc: number, save: boolean) => {
+    const r = report(ExtCmd.SYNTH);
+    const v = new DataView(r.buffer);
+    r[1] = SynthOp.PUT_BEGIN;
+    r[2] = save ? 1 : 0;
+    v.setUint32(4, length, true);
+    v.setUint32(8, crc, true);
+    return r;
+  },
+  synthPutData: (offset: number, bytes: Uint8Array) => {
+    const r = report(ExtCmd.SYNTH);
+    const n = Math.min(SYNTH_PUT_CHUNK, bytes.length);
+    r[1] = SynthOp.PUT_DATA;
+    r[2] = offset & 0xff;
+    r[3] = (offset >> 8) & 0xff;
+    r[4] = (offset >> 16) & 0xff;
+    r[5] = n;
+    r.set(bytes.subarray(0, n), 8);
+    return r;
+  },
+  synthPutEnd: () => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.PUT_END;
+    return r;
+  },
+  synthOp: (index: number, op: number) => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.OP;
+    r[2] = index;
+    r[3] = op;
+    return r;
+  },
+  synthStatus: () => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.STATUS;
+    return r;
+  },
+  synthGoto: (param: number) => {
+    const r = report(ExtCmd.SYNTH);
+    r[1] = SynthOp.GOTO;
+    r[2] = param;
+    return r;
+  },
   // MUSIC's cover style (COVER_STYLES index): stored on the knob at once.
   coverStyle: (style: number) => {
     const r = report(ExtCmd.MUSIC);
@@ -611,6 +785,32 @@ export function decode(b: Uint8Array): Message {
       return { tag: ExtTag.ACK, cmd: b[1], status: b[2] };
     case ExtTag.KEY:
       return { tag: ExtTag.KEY, key: b.slice(1, 33), port: u16(33) };
+    case ExtTag.HOME:
+      return {
+        tag: ExtTag.HOME,
+        lamp: {
+          count: b[1], slot: b[2], did: u32(3), flags: b[7], bright: b[8], ct: u16(9), rgb: [b[11], b[12], b[13]], caps: b[14], name: str(b, 15, 20), kind: b[35],
+          ip: b[36] | b[37] | b[38] | b[39] ? `${b[36]}.${b[37]}.${b[38]}.${b[39]}` : "", proto: b[40],
+        },
+      };
+    case ExtTag.SYNTH:
+      switch (b[1]) {
+        case SynthOp.LIST:
+          return {
+            tag: ExtTag.SYNTH, op: SynthOp.LIST,
+            synth: { index: b[2], count: b[3], flags: b[4], params: b[5], channel: b[6], progScheme: b[7], programs: u16(8), id: str(b, 10, 24), maker: str(b, 34, 12), name: str(b, 46, 16) },
+          };
+        case SynthOp.READ:
+          return { tag: ExtTag.SYNTH, op: SynthOp.READ, index: b[2], length: u32(4), crc: u32(8), offset: u32(12), bytes: b.slice(16, 16 + Math.min(SYNTH_CHUNK, b[3])) };
+        case SynthOp.RESULT:
+          return { tag: ExtTag.SYNTH, op: SynthOp.RESULT, what: b[2], res: b[3], index: b[4], removed: b[5] === 1, why: str(b, 8, 56) };
+        case SynthOp.STATUS:
+          return {
+            tag: ExtTag.SYNTH, op: SynthOp.STATUS,
+            status: { active: b[2] === 1, synth: b[3], param: b[4], value: v.getInt16(5, true), browsing: b[7] === 1, prog: v.getInt16(8, true), channel: b[10], usb: b[11] === 1, trs: b[12] === 1, tx: u32(13), rx: u32(17) },
+          };
+      }
+      return { tag: b[0] };
     case ExtTag.SCREEN:
       return { tag: ExtTag.SCREEN, screen: { seq: b[1], first: (b[2] & 1) !== 0, last: (b[2] & 2) !== 0, bytes: b.slice(4, 4 + Math.min(60, b[3])) } };
     case ExtTag.CLOCK:

@@ -45,8 +45,23 @@ await shot("app-mode-home");
 await click(".card", "MIDI");
 await pg.waitForTimeout(600);
 await shot("app-mode-midi");
+// Synths while MIDI is the mode, so the knob's parameter shows (the green row).
+await go("#/synths/minilogue-xd/params", 3000);
+await click(".prow", "WAVE");
+await pg.waitForTimeout(600);
+await shot("app-synths");
+await go("#/synths/minilogue-xd/programs");
+await shot("app-synths-programs");
+await go("#/mode", 800);
 await click(".card", "App");
 await pg.waitForTimeout(600);
+
+await go("#/lamps", 2500);
+await shot("app-lamps");
+await go("#/lamps/import", 1500);
+await click(".btn", "Find the lamps");
+await pg.waitForTimeout(3000);
+await shot("app-lamps-import");
 
 await go("#/haptics");
 await shot("app-haptics");

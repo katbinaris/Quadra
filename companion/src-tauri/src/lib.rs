@@ -20,6 +20,8 @@ use tauri::{AppHandle, Emitter, State};
 
 #[cfg(target_os = "macos")]
 mod input;
+mod home;
+mod midi;
 
 const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 const VENDOR_USAGE: u16 = 0x01;
@@ -381,7 +383,25 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Link::default())
         .manage(Net::default())
-        .invoke_handler(tauri::generate_handler![hid_list, hid_open, hid_write, hid_close, net_open, net_write, net_close, input_trusted])
+        .manage(midi::Midi::default())
+        .invoke_handler(tauri::generate_handler![
+            hid_list,
+            hid_open,
+            hid_write,
+            hid_close,
+            net_open,
+            net_write,
+            net_close,
+            input_trusted,
+            home::home_devices,
+            home::home_find,
+            home::home_probe,
+            home::miot_spec,
+            home::home_run_extractor,
+            home::save_download,
+            midi::midi_watch,
+            midi::midi_port
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Quadra companion");
 }

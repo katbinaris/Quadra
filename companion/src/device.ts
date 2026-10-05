@@ -1,7 +1,8 @@
 // One knob, as the UI sees it: connection, the latest settings / state / SYS INFO, the app
 // profiles with their icons, and a short history for the charts. Views subscribe and redraw.
 
-import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_CONTROLS_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lights, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SysA, type SysB } from "./proto";
+import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_CONTROLS_VERSION, EXT_HOME_VERSION, EXT_SYNTH_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SYNTH_RESULT, SynthOp, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lamp, type Lights, type MidiStatus, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SynthEntry, type SysA, type SysB } from "./proto";
+import { tidySynth, type SynthJson } from "./synth";
 import { rgb565ToImage, tidy, type ProfileJson } from "./profile";
 import { loadPairing, savePairing, type Pairing, type Transport } from "./transport";
 
@@ -9,7 +10,7 @@ export type Status = "searching" | "needs-permission" | "connected" | "unsupport
 
 // What changed, so a view redraws only for what it shows: "state" arrives 30 times a second
 // while streaming, the rest when something really changes.
-export const TOPICS = ["conn", "settings", "state", "profiles", "sys", "prefs", "net", "clock"] as const;
+export const TOPICS = ["conn", "settings", "state", "profiles", "sys", "prefs", "net", "clock", "lamps", "synths", "midi"] as const;
 export type Topic = (typeof TOPICS)[number];
 
 export interface ProfileEntry extends Profile {
@@ -33,6 +34,25 @@ const LIST_RETRY_MS = 2000; // a step of the profile list unanswered this long i
 // An icon's chunks asked for at once. One at a time, a list of eight took ~25 s over WiFi (672
 // round trips); six in flight, ~3 s. The knob holds 16 replies, and the poll asks up to 8 at once.
 const ICON_WINDOW = 6;
+const SYNTH_WINDOW = 6; // a synth's JSON pieces asked for at once (READ), like an icon's
+
+// What the pages watch, polled with the settings every second: HOME's lamps, the midi task.
+export type Watch = "lamps" | "midi";
+
+// A HOME lamp to import (LampImport.tsx): what EXT_HOME_LAMP carries.
+export interface ImportLamp {
+  did: number;
+  ip: string;
+  token: Uint8Array;
+  proto: number;
+  caps: number;
+  ctMin: number;
+  ctMax: number;
+  siid: number[];
+  piid: number[];
+  name: string;
+  kind: number;
+}
 
 export class DeviceError extends Error {}
 
@@ -56,7 +76,17 @@ export class Device {
   controls: "on" | "needs-permission" | null = null;
   private keyAsked = false; // every HID client sees the knob's key reply: only take one asked for
   clockSlots: (ClockSlot | null)[] = []; // the CLOCK app, from extensions v5: slot 0 has the format too
+  // HOME's lamps as the knob sees them (extensions v11), while a page watches them.
+  lamps: Lamp[] = [];
+  lampCount: number | null = null; // null: not asked yet
+  // MIDI's synth profiles (extensions v12; empty before) and the midi task now.
+  synths: SynthEntry[] = [];
+  midi: MidiStatus | null = null;
   error: string | null = null;
+  private watching = new globalThis.Set<Watch>();
+  private waitAck: { cmd: number; done: (status: number) => void } | null = null;
+  private waitSynth: { what: number; done: (r: { res: number; index: number; removed: boolean; why: string }) => void } | null = null;
+  private synthRead: { index: number; buf: Uint8Array | null; crc: number; have: globalThis.Set<number>; sent: number; at: number; done: (t: string) => void; fail: (e: Error) => void; tries: number } | null = null;
 
   private listeners = new Set<(t: Topic) => void>();
   private streamWanted = false; // the live stream (STATE, SYS, LEDs): only while a view needs it
@@ -147,8 +177,14 @@ export class Device {
     this.want = null;
     window.clearInterval(this.listTimer);
     this.listTimer = window.setInterval(() => {
-      const w = this.want, ic = this.icon;
+      const w = this.want, ic = this.icon, rd = this.synthRead;
       if (w && Date.now() - w.at > LIST_RETRY_MS) this.ask(w.r, w.key);
+      // A synth's lost pieces, asked again (or the start, if even that got lost).
+      if (rd && Date.now() - rd.at > LIST_RETRY_MS) {
+        rd.at = Date.now();
+        if (!rd.buf) void this.send(encode.synthRead(rd.index, 0));
+        else for (let o = 0; o < rd.sent; o += SYNTH_CHUNK) if (!rd.have.has(o)) void this.send(encode.synthRead(rd.index, o));
+      }
       if (ic && Date.now() - ic.at > LIST_RETRY_MS) {
         ic.at = Date.now();
         for (let o = 0; o < ic.sent; o += ICON_CHUNK) if (!ic.have.has(o)) void this.send(encode.profileIcon(ic.index, o));
@@ -161,7 +197,18 @@ export class Device {
     await this.send(encode.extHello());
   }
 
+  // A page shows the lamps or the MIDI status: they're asked for every second while it does.
+  watch(what: Watch, on: boolean) {
+    if (on) this.watching.add(what);
+    else this.watching.delete(what);
+  }
+
   private onClosed() {
+    this.lamps = [];
+    this.lampCount = null;
+    this.synths = [];
+    this.midi = null;
+    this.synthRead = null;
     this.status = "searching";
     this.hello = this.settings = this.state = this.sysA = this.sysB = null;
     this.ext = this.prefs = this.net = null;
@@ -274,13 +321,15 @@ export class Device {
     return run;
   }
 
-  private timeout<T>(p: Promise<T>, what: string): Promise<T> {
+  private timeout<T>(p: Promise<T>, what: string, ms = TRANSFER_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const t = window.setTimeout(() => {
         this.download = null;
         this.waitResult = null;
+        this.waitAck = null;
+        this.waitSynth = null;
         reject(new DeviceError(`${what}: no answer from the knob`));
-      }, TRANSFER_MS);
+      }, ms);
       p.then(
         (v) => (window.clearTimeout(t), resolve(v)),
         (e) => (window.clearTimeout(t), reject(e)),
@@ -431,11 +480,47 @@ export class Device {
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION && tick++ % 5 === 4) for (let s = 1; s < CLOCK_SLOTS; s++) void this.send(encode.clockGet(s));
             if ((this.ext ?? 0) >= EXT_NET_VERSION) void this.send(encode.net(NetOp.STATUS));
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION) void this.send(encode.clockGet(0));
+            if ((this.ext ?? 0) >= EXT_HOME_VERSION && this.watching.has("lamps")) this.pollLamps();
+            if ((this.ext ?? 0) >= EXT_SYNTH_VERSION && this.watching.has("midi")) void this.send(encode.synthStatus());
             void this.checkControls();
           };
           this.prefsTimer = window.setInterval(poll, PREFS_MS);
           poll();
           if (m.ext >= EXT_CLOCK_VERSION) for (let s = 1; s < CLOCK_SLOTS; s++) void this.send(encode.clockGet(s));
+          if (m.ext >= EXT_SYNTH_VERSION) this.reloadSynths();
+        }
+        break;
+      case ExtTag.HOME:
+        if ("lamp" in m) {
+          const l = m.lamp;
+          this.lampCount = l.count;
+          this.lamps.length = Math.min(this.lamps.length, l.count);
+          if (l.slot < l.count) this.lamps[l.slot] = l;
+        }
+        topic = "lamps";
+        break;
+      case ExtTag.SYNTH:
+        if ("synth" in m) {
+          const e = m.synth;
+          this.synths.length = Math.min(this.synths.length, e.count);
+          if (e.index < e.count) {
+            this.synths[e.index] = e;
+            if (e.index + 1 < e.count) void this.send(encode.synthList(e.index + 1));
+          }
+          topic = "synths";
+        } else if ("status" in m) {
+          this.midi = m.status;
+          topic = "midi";
+        } else if ("what" in m) {
+          const w = this.waitSynth;
+          if (w && w.what === m.what) {
+            this.waitSynth = null;
+            w.done(m);
+          }
+          return;
+        } else if ("offset" in m) {
+          this.onSynthPiece(m.index, m.length, m.crc, m.offset, m.bytes);
+          return;
         }
         break;
       case ExtTag.PREFS:
@@ -465,6 +550,22 @@ export class Device {
         break;
       case ExtTag.ACK:
         if ("status" in m) {
+          const wa = this.waitAck;
+          if (wa && wa.cmd === m.cmd) {
+            this.waitAck = null;
+            wa.done(m.status);
+            return;
+          }
+          if (m.cmd === ExtCmd.SYNTH && this.synthRead) {
+            // A piece asked for after the knob's copy changed (an edit elsewhere): start over.
+            const rd = this.synthRead;
+            if (rd.tries++ < 3) this.restartSynthRead();
+            else {
+              this.synthRead = null;
+              rd.fail(new DeviceError("The synth changed while it was being read"));
+            }
+            return;
+          }
           const sent = this.lightsSent;
           if (m.cmd === ExtCmd.LIGHTS && m.status === ExtStatus.BAD_PARAM && sent && !sent.retried) {
             sent.retried = true; // the knob was still applying the one before
@@ -514,6 +615,146 @@ export class Device {
     this.download = null;
     if (crc32(d.buf!) !== d.crc) d.fail(new DeviceError("The profile was damaged on the way (CRC)"));
     else d.done(new TextDecoder().decode(d.buf!));
+  }
+
+  // --- HOME's lamps (extensions v11 / v12) ---
+
+  // Every stored lamp's state: slot 0 tells how many there are.
+  private pollLamps() {
+    const n = this.lampCount ?? 1;
+    for (let s = 0; s < Math.max(1, n); s++) void this.send(encode.homeStatus(s));
+  }
+
+  private ack(r: Uint8Array, cmd: number, what: string, ms = TRANSFER_MS): Promise<void> {
+    return this.timeout(
+      new Promise<number>((done) => {
+        this.waitAck = { cmd, done };
+        void this.send(r);
+      }),
+      what,
+      ms,
+    ).then((st) => {
+      if (st === ExtStatus.OK) return;
+      throw new DeviceError(st === ExtStatus.STORAGE ? `${what}: the knob couldn't store it` : st === ExtStatus.USB_ONLY ? `${what}: only over USB` : `${what}: the knob refused it`);
+    });
+  }
+
+  // A rename, an icon, a move or a removal (HomeEdit); stored on the knob at once.
+  homeEdit(slot: number, did: number, what: number, value: number | string): Promise<void> {
+    return this.serial(async () => {
+      await this.ack(encode.homeEdit(slot, did, what, value), ExtCmd.HOME, "The lamp");
+      this.pollLamps();
+    });
+  }
+
+  // A new list of lamps, tokens and all: USB only.
+  homeImport(lamps: ImportLamp[]): Promise<void> {
+    return this.serial(async () => {
+      await this.ack(encode.homeBegin(), ExtCmd.HOME, "Starting the import");
+      for (const [i, l] of lamps.entries()) await this.ack(encode.homeLamp(i, l), ExtCmd.HOME, `Lamp ${i + 1}`);
+      await this.ack(encode.homeCommit(lamps.length), ExtCmd.HOME, "Storing the lamps", 10000);
+      this.lampCount = lamps.length;
+      this.lamps = [];
+      this.pollLamps();
+    });
+  }
+
+  // --- MIDI's synth profiles (extensions v12) ---
+
+  reloadSynths() {
+    if ((this.ext ?? 0) >= EXT_SYNTH_VERSION) void this.send(encode.synthList(0));
+  }
+
+  // The synth at `index` as the knob has it now (a live edit included).
+  readSynth(index: number): Promise<SynthJson> {
+    return this.serial(() =>
+      this.timeout(
+        new Promise<string>((done, fail) => {
+          this.synthRead = { index, buf: null, crc: 0, have: new globalThis.Set(), sent: 0, at: Date.now(), done, fail, tries: 0 };
+          this.restartSynthRead();
+        }),
+        "Reading the synth",
+      ).then((t) => JSON.parse(t) as SynthJson),
+    ).finally(() => (this.synthRead = null));
+  }
+
+  private restartSynthRead() {
+    const rd = this.synthRead!;
+    rd.buf = null;
+    rd.have.clear();
+    rd.sent = 0;
+    rd.at = Date.now();
+    void this.send(encode.synthRead(rd.index, 0)); // offset 0 alone: the knob writes the JSON then
+  }
+
+  private onSynthPiece(index: number, length: number, crc: number, offset: number, bytes: Uint8Array) {
+    const rd = this.synthRead;
+    if (!rd || rd.index !== index) return;
+    if (length === 0) {
+      this.synthRead = null;
+      rd.fail(new DeviceError("There's no such synth on the knob"));
+      return;
+    }
+    if (!rd.buf || rd.crc !== crc || rd.buf.length !== length) {
+      if (offset !== 0) return; // from an older copy
+      rd.buf = new Uint8Array(length);
+      rd.crc = crc;
+      rd.have.clear();
+      rd.sent = SYNTH_CHUNK;
+    }
+    if (offset % SYNTH_CHUNK || rd.have.has(offset)) return;
+    rd.buf.set(bytes.subarray(0, Math.min(SYNTH_CHUNK, length - offset)), offset);
+    rd.have.add(offset);
+    rd.at = Date.now();
+    if (rd.have.size >= Math.ceil(length / SYNTH_CHUNK)) {
+      this.synthRead = null;
+      if (crc32(rd.buf) !== crc) rd.fail(new DeviceError("The synth was damaged on the way (CRC)"));
+      else rd.done(new TextDecoder().decode(rd.buf));
+      return;
+    }
+    while (rd.sent < length && rd.sent / SYNTH_CHUNK - (rd.have.size - 1) < SYNTH_WINDOW) {
+      void this.send(encode.synthRead(index, rd.sent));
+      rd.sent += SYNTH_CHUNK;
+    }
+  }
+
+  private synthResult(what: number, send: () => Promise<void>, label: string) {
+    return this.timeout(
+      new Promise<{ res: number; index: number; removed: boolean; why: string }>((done) => {
+        this.waitSynth = { what, done };
+        void send();
+      }),
+      label,
+    ).then((r) => {
+      this.reloadSynths();
+      if (r.res !== 0) throw new DeviceError(r.why ? `${SYNTH_RESULT[r.res] ?? "Failed"}: ${r.why}` : (SYNTH_RESULT[r.res] ?? "Failed"));
+      return r;
+    });
+  }
+
+  // Live on the knob at once (the one with its id is replaced, else it's added); `save` stores it.
+  putSynth(s: SynthJson, save: boolean) {
+    return this.serial(() => {
+      const bytes = new TextEncoder().encode(JSON.stringify(tidySynth(s)));
+      return this.synthResult(
+        SynthOp.PUT_END,
+        async () => {
+          await this.send(encode.synthPutBegin(bytes.length, crc32(bytes), save));
+          for (let off = 0; off < bytes.length; off += SYNTH_PUT_CHUNK) await this.send(encode.synthPutData(off, bytes.subarray(off, off + SYNTH_PUT_CHUNK)));
+          await this.send(encode.synthPutEnd());
+        },
+        "Sending the synth",
+      );
+    });
+  }
+
+  // SynthEdit: SAVE, REVERT (to what's stored, or built in) or REMOVE.
+  synthOp(index: number, op: number) {
+    return this.serial(() => this.synthResult(SynthOp.OP, () => this.send(encode.synthOp(index, op)), "The synth"));
+  }
+
+  synthGoto(param: number) {
+    return this.send(encode.synthGoto(param));
   }
 
   // SYS arrives twice a second: HISTORY_SECONDS worth of samples.

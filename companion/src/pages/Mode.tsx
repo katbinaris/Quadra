@@ -1,12 +1,14 @@
 // MODE: what the knob sends (APP / HOME / MOUSE / KEYS / MIDI) and, per mode, what goes with it: the
 // app profile in use, the haptic profile, the MIDI synth and channel.
 
-import { HapticProfiles, HidType, MidiSynths, ProfileFlag, Set } from "../proto";
+import { EXT_SYNTH_VERSION, HapticProfiles, HidType, HomeFlag, MidiSynths, ProfileFlag, Set } from "../proto";
 import { createProfile, duplicateProfile, MAX_PROFILES } from "../profiles";
 import { device, href, inUse, use } from "../store";
 import { Box, Card, Dial, PageHead } from "../ui/controls";
 import { ProfileIcon } from "../ui/icons";
 import { titleCase } from "../ui/shell";
+import { LampTile, lampState } from "./Lamps";
+import { MakerMark } from "./Synths";
 
 const MODES = [
   { value: HidType.APP, name: "App", sub: "Your app profiles: shortcuts, command wheels and macros per app" },
@@ -22,11 +24,13 @@ export function origin(flags: number): string {
 }
 
 export function ModePage() {
-  use("settings", "profiles");
+  use("settings", "profiles", "lamps", "synths");
   const s = device.settings!;
   const bit = (id: number) => ((s.dirty >> id) & 1) === 1;
   const using = inUse.value;
   const current = device.profiles[s.profile];
+  // The knob's own list (extensions v12), else the built-ins this app knows.
+  const synths: { id: string; maker: string; name: string; channel: number; params: number }[] = device.synths.length ? device.synths : [...MidiSynths];
   return (
     <>
       <PageHead title="Mode" hint="What the knob sends to the computer. Changes at once; Save keeps it after a restart." />
@@ -96,12 +100,34 @@ export function ModePage() {
       )}
 
       {s.hidType === HidType.HOME && (
-        <Box title="Lamps" note="The knob finds them on the network and talks to them itself">
-          <span class="hint">
-            The lamps and their keys come from your Xiaomi account, once, over USB: run the token extractor, then{" "}
-            <span class="mono">quadra.py home import</span>. On the knob: turn to pick a lamp, F1 to change it (F1 again
-            for the next setting), F2 switches it on or off, F3 goes back or looks again.
-          </span>
+        <Box
+          title="Lamps"
+          note={device.lampCount ? `${device.lamps.filter((l) => l && l.flags & HomeFlag.ONLINE).length} of ${device.lampCount} answering` : "The knob finds them on the network and talks to them itself"}
+        >
+          {device.lamps.filter(Boolean).length > 0 ? (
+            <div class="line" style={{ gap: "8px" }}>
+              {device.lamps.filter(Boolean).map((l) => (
+                <span class="lampchip">
+                  <LampTile lamp={l} scale={0.75} />
+                  <span>{l.name}</span>
+                  <span class="faint">{lampState(l)}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span class="hint">No lamps on the knob yet. They come from your Xiaomi account, once: Import from Xiaomi finds them and sends them over USB.</span>
+          )}
+          <div class="line">
+            <a class="btn" href={href({ page: "lamps", sub: "list" })}>
+              Open Lamps
+            </a>
+            <a class="btn ghost" href={href({ page: "lamps", sub: "import" })}>
+              Import from Xiaomi…
+            </a>
+            <span class="hint" style={{ marginLeft: "auto" }}>
+              On the knob: turn to pick a lamp, F1 to change it, F2 power, F3 back or look again
+            </span>
+          </div>
         </Box>
       )}
 
@@ -109,17 +135,24 @@ export function ModePage() {
         <>
           <Box title="Synth" note="Also from the knob: F4 menu › Profiles › MIDI">
             <div class="cards">
-              {MidiSynths.map((m, i) => (
+              {synths.map((m, i) => (
                 <Card left on={s.midiSynth === i} dirty={s.midiSynth === i && bit(Set.MIDI_SYNTH)} onClick={() => device.set(Set.MIDI_SYNTH, i)}>
+                  <MakerMark maker={m.maker} />
                   <span class="nm">{m.name}</span>
-                  <span class="sub">{m.maker === "MIDI" ? "General MIDI controllers, for a DAW's MIDI learn" : `${titleCase(m.maker)}, ${m.params} parameters`}</span>
+                  <span class="sub">{m.maker === "MIDI" ? "General MIDI controllers, for a DAW's MIDI learn" : `${m.maker ? `${titleCase(m.maker)}, ` : ""}${m.params} parameters`}</span>
                 </Card>
               ))}
+              {(device.ext ?? 0) >= EXT_SYNTH_VERSION && (
+                <a class="card left dashed" href={href({ page: "synths", id: synths[s.midiSynth]?.id ?? "", tab: "params" })}>
+                  <span class="nm">Edit synths…</span>
+                  <span class="sub">Parameters, switches, programs; add your own</span>
+                </a>
+              )}
             </div>
           </Box>
           <Box
             title="MIDI channel"
-            note={MidiSynths[s.midiSynth]?.channel ? `The ${MidiSynths[s.midiSynth].name} comes set to ${MidiSynths[s.midiSynth].channel}` : "Set the synth to the same one"}
+            note={synths[s.midiSynth]?.channel ? `The ${synths[s.midiSynth].name} comes set to ${synths[s.midiSynth].channel}` : "Set the synth to the same one"}
           >
             <div class="line">
               <button class="btn sm" aria-label="Channel down" onClick={() => device.set(Set.MIDI_CH, s.midiChannel - 1)}>

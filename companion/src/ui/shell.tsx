@@ -5,7 +5,7 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import deviceUrl from "../assets/device.png";
 import { HidType, MidiSynths, ProfileFlag } from "../proto";
-import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, route, saveAll, saveError, saving, unsaved, unsavedCount, use, type Route } from "../store";
+import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, revertSynth, route, saveAll, saveError, saving, unsaved, unsavedCount, use, type Route } from "../store";
 import { isTauri } from "../transport";
 import { cls } from "./controls";
 import { drawMainScreen } from "./draw";
@@ -55,6 +55,8 @@ function Sidebar() {
             <div class="gh">Knob</div>
             {nav({ page: "mode" }, "Mode", <Icon d="M8 2v4" circle />, changed("Mode") ? <i class="chg" /> : <span class="val">{MODE_NAMES[s!.hidType] ?? ""}</span>)}
             {nav({ page: "haptics" }, "Haptics", <Icon d="M1 8c2-5 4-5 6 0s4 5 6 0" />, changed("Haptics") && <i class="chg" />)}
+            {nav({ page: "lamps", sub: "list" }, "Lamps", <Icon d="M2.5 14.5h6M5.5 14.5l2-6 3.4-2.6M8.6 2.8l5 3.2-1.4 2.2-5-3.2zM12.5 9.5l.8 1.6M10.6 10.6l.2 1.8" />)}
+            {nav({ page: "synths", id: "", tab: "params" }, "Synths", <Icon d="M4 2v12M8 2v12M12 2v12M2.4 5.5h3.2M6.4 10.5h3.2M10.4 7h3.2" />, dirty.synths.length > 0 && <i class="chg" />)}
           </div>
           <div class="grp">
             <div class="gh">App profiles</div>
@@ -105,7 +107,7 @@ function KnobPicture() {
   const on = connected.value;
   const s = device.settings;
   const p = s && s.hidType === HidType.APP ? device.profiles[s.profile] : undefined;
-  const midi = s && s.hidType === HidType.MIDI ? MidiSynths[s.midiSynth] : undefined;
+  const midi = s && s.hidType === HidType.MIDI ? (device.synths[s.midiSynth] ?? MidiSynths[s.midiSynth]) : undefined;
   const legend = (h: number) =>
     h === HidType.HOME ? ["EDIT", "POWER", "SCAN", "MENU"] : h === HidType.MIDI ? ["NEXT", "PROG-", "PROG+", "MENU"] : ["SEL", "", "BACK", "MENU"];
   const info = s
@@ -140,6 +142,8 @@ function KnobPicture() {
 const CRUMBS: Record<Route["page"], [string, string]> = {
   mode: ["Knob", "Mode"],
   haptics: ["Knob", "Haptics"],
+  lamps: ["Knob", "Lamps"],
+  synths: ["Knob", "Synths"],
   profile: ["App profiles", ""],
   look: ["Setup", "Look"],
   device: ["Setup", "Device"],
@@ -154,6 +158,8 @@ function Topbar() {
   const on = connected.value;
   let [section, page] = CRUMBS[r.page];
   if (r.page === "profile") page = titleCase(device.profiles.find((p) => p?.id === r.id)?.name ?? r.id);
+  if (r.page === "lamps" && r.sub === "import") page = "Lamps › Import";
+  if (r.page === "synths" && r.id) page = `Synths › ${device.synths.find((x) => x?.id === r.id)?.name ?? r.id}`; // the knob's capitals
   useEffect(() => {
     if (n === 0) open.value = false;
   }, [n]);
@@ -178,7 +184,7 @@ function Topbar() {
           <>
             <button class="pend" aria-expanded={open.value} onClick={() => (open.value = !open.value)}>
               <i />
-              {n} unsaved: {[...u.settings, ...u.profiles.map((p) => titleCase(p.name))].join(", ")}
+              {n} unsaved: {[...u.settings, ...u.profiles.map((p) => titleCase(p.name)), ...u.synths.map((x) => x.name)].join(", ")}
             </button>
             <button class="btn ghost" disabled={saving.value} onClick={() => void revertAll()}>
               Revert all
@@ -222,6 +228,17 @@ function Topbar() {
                 <span>App profile</span>
               </span>
               <button class="btn sm ghost" disabled={saving.value} onClick={() => void revertProfile(p.id)}>
+                Revert
+              </button>
+            </div>
+          ))}
+          {u.synths.map((x) => (
+            <div class="popi">
+              <span class="what">
+                <b>{x.name}</b>
+                <span>Synth profile</span>
+              </span>
+              <button class="btn sm ghost" disabled={saving.value} onClick={() => void revertSynth(x.id)}>
                 Revert
               </button>
             </div>

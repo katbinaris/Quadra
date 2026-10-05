@@ -22,6 +22,13 @@ hmac = "0.12"
 sha2 = "0.10"
 getrandom = "0.3"
 libc = "0.2"
+serde_json = "1"
+# HOME's lamp import (src/home.rs): miIO is AES-128-CBC with MD5 keys.
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+md5 = { package = "md-5", version = "0.10" }
+# The Synths page's monitor (src/midi.rs): the knob's USB MIDI port.
+midir = "0.10"
 
 # The knob's controls over WiFi (src/input.rs): CGEvent for keys, the mouse and the wheel; NSEvent
 # for media keys; Accessibility's trust check.
