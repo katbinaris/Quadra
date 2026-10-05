@@ -89,7 +89,7 @@ export function go(r: Route) {
 // Settings bits (Set) by the page they live on.
 const SETTING_PAGES: [string, number[]][] = [
   ["Haptics", [Set.DETENTS, Set.KP, Set.KD, Set.FEEL, Set.AMP, Set.PITCH, Set.SOUND, Set.SHAPE, Set.HAPTIC_PROFILE]],
-  ["Mode", [Set.HID_TYPE, Set.MIDI_CH, Set.PROFILE, Set.MODE_HAPTIC]],
+  ["Mode", [Set.HID_TYPE, Set.MIDI_CH, Set.MIDI_SYNTH, Set.PROFILE, Set.MODE_HAPTIC]],
   ["Device", [Set.BOOT, Set.HOST]],
   ["Screen", [Set.ROTATION]],
 ];

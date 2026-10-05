@@ -137,6 +137,7 @@ export const Set = {
   SHAPE: 13,
   HAPTIC_PROFILE: 14,
   MODE_HAPTIC: 15,
+  MIDI_SYNTH: 16,
 } as const;
 export type SetId = (typeof Set)[keyof typeof Set];
 const FLOAT_SETTINGS: ReadonlySet<number> = new globalThis.Set([Set.KP, Set.KD, Set.PITCH]);
@@ -156,6 +157,14 @@ export const HapticProfiles = [
   { name: "MEDIUM", detents: 24 },
   { name: "FINE", detents: 36 },
   { name: "SMOOTH", detents: 0 }, // VISCOSE only: no felt steps
+] as const;
+
+// MIDI mode's synth profiles (midi_synths.c SYNTHS), by index; the knob sends the index.
+export const MidiSynths = [
+  { id: "generic", maker: "MIDI", name: "GENERIC", channel: 0, params: 18 },
+  { id: "minilogue-xd", maker: "KORG", name: "MINILOGUE XD", channel: 1, params: 48 },
+  { id: "ju-06a", maker: "ROLAND", name: "JU-06A", channel: 1, params: 33 },
+  { id: "tr-8s", maker: "ROLAND", name: "TR-8S", channel: 10, params: 54 },
 ] as const;
 
 // The widest ranges; a profile's own limits come with Settings.
@@ -187,6 +196,7 @@ export interface Settings {
   sound: number;
   hidType: number;
   midiChannel: number;
+  midiSynth: number; // index into MidiSynths
   profile: number;
   boot: number;
   rotation: number;
@@ -490,7 +500,7 @@ export function decode(b: Uint8Array): Message {
       return {
         tag: Tag.SETTINGS,
         settings: {
-          dirty: u16(1),
+          dirty: u16(1) | (b[3] << 16), // 24 bits: [3] carries MIDI_SYNTH and on
           detents: i32(4),
           kp: f32(8),
           kd: f32(12),
@@ -500,6 +510,7 @@ export function decode(b: Uint8Array): Message {
           sound: b[22],
           hidType: b[23],
           midiChannel: b[24],
+          midiSynth: b[35] ? b[34] : 0, // [35] = how many: 0 from firmware before MIDI synths
           profile: b[25],
           boot: b[26],
           rotation: b[27],

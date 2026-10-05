@@ -1,7 +1,7 @@
 // A pretend knob for working on the UI without hardware: open the page with ?demo. Answers
 // the protocol like host_link.c does and streams a slowly turning knob.
 
-import { CLOCK_SLOTS, ClockOp, Cmd, EXT_CLOCK_VERSION, ExtCmd, ExtTag, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, Tag, TEXT_CHUNK, crc32 } from "./proto";
+import { CLOCK_SLOTS, ClockOp, Cmd, EXT_CLOCK_VERSION, ExtCmd, ExtTag, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, MidiSynths, Op, ProfileFlag, REPORT_SIZE, Res, Set, Tag, TEXT_CHUNK, crc32 } from "./proto";
 import { b64ToBytes, ID_RE, type ProfileJson } from "./profile";
 import type { Transport } from "./transport";
 import builtins from "./demo_builtins.json";
@@ -25,7 +25,7 @@ export class MockTransport implements Transport {
 
   private reg: Entry[] = BUILTINS.map((p) => ({ builtin: structuredClone(p), stored: null, live: null }));
   private upload: { buf: Uint8Array; crc: number; got: number; flags: number } | null = null;
-  private live = { detents: 12, kp: 6, kd: 0.01, feel: 0, amp: 100, pitch: 1, sound: 0, hidType: 3, midi: 1, profile: 3, boot: 1, rotation: 0, host: 0, shape: 0 };
+  private live = { detents: 12, kp: 6, kd: 0.01, feel: 0, amp: 100, pitch: 1, sound: 0, hidType: 3, midi: 1, midiSynth: 1, profile: 3, boot: 1, rotation: 0, host: 0, shape: 0 };
   private saved = { ...this.live };
   // ext_proto.h: LIGHTS (saved by SAVE like the rest) and the idle word (stored at once).
   private lights = { src: 0, fx: 0, hue: 200, sat: 80, speed: 5, level: 100 };
@@ -113,6 +113,8 @@ export class MockTransport implements Transport {
         else if (r[1] === Set.SHAPE) tune.shape = clamp(val, 0, 90);
         else if (r[1] === Set.AMP) tune.amp = clamp(val, 0, lim.ampMax);
         else if (r[1] === Set.PITCH) tune.pitch = clamp(val, lim.pitchMin, lim.pitchMax);
+        else if (r[1] === Set.MIDI_SYNTH) this.live.midiSynth = clamp(val, 0, MidiSynths.length - 1);
+        else if (r[1] === Set.MIDI_CH) this.live.midi = clamp(val, 1, 16);
         else if (k) (this.live as any)[k] = val;
         this.settings(out);
         return reply();
@@ -344,8 +346,8 @@ export class MockTransport implements Transport {
   private settings(out: Uint8Array) {
     const v = new DataView(out.buffer);
     const l = this.live, s = this.saved;
-    const keys = ["sound", "hidType", "midi", "profile", "boot", "rotation", "host"] as const;
-    const ids = [Set.SOUND, Set.HID_TYPE, Set.MIDI_CH, Set.PROFILE, Set.BOOT, Set.ROTATION, Set.HOST];
+    const keys = ["sound", "hidType", "midi", "midiSynth", "profile", "boot", "rotation", "host"] as const;
+    const ids = [Set.SOUND, Set.HID_TYPE, Set.MIDI_CH, Set.MIDI_SYNTH, Set.PROFILE, Set.BOOT, Set.ROTATION, Set.HOST];
     let dirty = 0;
     keys.forEach((k, i) => {
       if (l[k] !== s[k]) dirty |= 1 << ids[i];
@@ -370,7 +372,8 @@ export class MockTransport implements Transport {
     });
     if (this.hp.mode.join() !== this.hpSaved.mode.join()) dirty |= 1 << Set.MODE_HAPTIC;
     out[0] = Tag.SETTINGS;
-    v.setUint16(1, dirty, true);
+    v.setUint16(1, dirty & 0xffff, true);
+    out[3] = dirty >>> 16;
     v.setInt32(4, [8, 12, 24, 36, 24][e], true);
     v.setFloat32(8, t.kp, true);
     v.setFloat32(12, t.kd, true);
@@ -389,6 +392,8 @@ export class MockTransport implements Transport {
     out[31] = MockTransport.hpFeels(e);
     out[32] = lim.ampMax;
     out[33] = this.hp.mode[l.hidType];
+    out[34] = l.midiSynth;
+    out[35] = MidiSynths.length;
     v.setFloat32(36, lim.kpMin, true);
     v.setFloat32(40, lim.kpMax, true);
     v.setFloat32(44, lim.kdMin, true);

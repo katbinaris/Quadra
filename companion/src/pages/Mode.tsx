@@ -1,7 +1,7 @@
 // MODE: what the knob sends (APP / HOME / MOUSE / KEYS / MIDI) and, per mode, what goes with it: the
-// app profile in use, the haptic profile, the MIDI channel.
+// app profile in use, the haptic profile, the MIDI synth and channel.
 
-import { HapticProfiles, HidType, ProfileFlag, Set } from "../proto";
+import { HapticProfiles, HidType, MidiSynths, ProfileFlag, Set } from "../proto";
 import { createProfile, duplicateProfile, MAX_PROFILES } from "../profiles";
 import { device, href, inUse, use } from "../store";
 import { Box, Card, Dial, PageHead } from "../ui/controls";
@@ -13,7 +13,7 @@ const MODES = [
   { value: HidType.HOME, name: "Home", sub: "Your Xiaomi lamps on the network: brightness, white and colour" },
   { value: HidType.MOUSE, name: "Mouse", sub: "A scroll wheel" },
   { value: HidType.KEYBOARD, name: "Keys", sub: "Keyboard keys" },
-  { value: HidType.MIDI, name: "MIDI", sub: "Channel only for now: no MIDI is sent yet" },
+  { value: HidType.MIDI, name: "MIDI", sub: "A synth's parameters, over USB MIDI and the TRS jacks" },
 ];
 
 export function origin(flags: number): string {
@@ -106,17 +106,40 @@ export function ModePage() {
       )}
 
       {s.hidType === HidType.MIDI && (
-        <Box title="MIDI channel" note="Stored only for now: no MIDI is sent yet">
-          <div class="line">
-            <button class="btn sm" aria-label="Channel down" onClick={() => device.set(Set.MIDI_CH, s.midiChannel - 1)}>
-              ‹
-            </button>
-            <span class="mono big2">{String(s.midiChannel).padStart(2, "0")}</span>
-            <button class="btn sm" aria-label="Channel up" onClick={() => device.set(Set.MIDI_CH, s.midiChannel + 1)}>
-              ›
-            </button>
-          </div>
-        </Box>
+        <>
+          <Box title="Synth" note="Also from the knob: F4 menu › Profiles › MIDI">
+            <div class="cards">
+              {MidiSynths.map((m, i) => (
+                <Card left on={s.midiSynth === i} dirty={s.midiSynth === i && bit(Set.MIDI_SYNTH)} onClick={() => device.set(Set.MIDI_SYNTH, i)}>
+                  <span class="nm">{m.name}</span>
+                  <span class="sub">{m.maker === "MIDI" ? "General MIDI controllers, for a DAW's MIDI learn" : `${titleCase(m.maker)}, ${m.params} parameters`}</span>
+                </Card>
+              ))}
+            </div>
+          </Box>
+          <Box
+            title="MIDI channel"
+            note={MidiSynths[s.midiSynth]?.channel ? `The ${MidiSynths[s.midiSynth].name} comes set to ${MidiSynths[s.midiSynth].channel}` : "Set the synth to the same one"}
+          >
+            <div class="line">
+              <button class="btn sm" aria-label="Channel down" onClick={() => device.set(Set.MIDI_CH, s.midiChannel - 1)}>
+                ‹
+              </button>
+              <span class={bit(Set.MIDI_CH) ? "mono big2 amber" : "mono big2"}>{String(s.midiChannel).padStart(2, "0")}</span>
+              <button class="btn sm" aria-label="Channel up" onClick={() => device.set(Set.MIDI_CH, s.midiChannel + 1)}>
+                ›
+              </button>
+            </div>
+          </Box>
+          <Box title="On the knob">
+            <span class="hint">
+              Turn to change the parameter on the screen; F1 moves to the next one (hold F1 and turn to pick from the list);
+              F2 and F3 step the synth's program down and up. The knob sends on USB MIDI and on the TRS jacks at once. In MIDI
+              mode the knob is a USB MIDI device instead of a keyboard and mouse: changing to or from MIDI reconnects it
+              (about a second).
+            </span>
+          </Box>
+        </>
       )}
     </>
   );

@@ -4,7 +4,7 @@
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import deviceUrl from "../assets/device.png";
-import { HidType, ProfileFlag } from "../proto";
+import { HidType, MidiSynths, ProfileFlag } from "../proto";
 import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, route, saveAll, saveError, saving, unsaved, unsavedCount, use, type Route } from "../store";
 import { isTauri } from "../transport";
 import { cls } from "./controls";
@@ -94,7 +94,7 @@ function Icon(p: { d: string; circle?: boolean; small?: boolean }) {
 }
 
 // Names the knob shows in capitals, as their makers write them.
-const NAMES: Record<string, string> = { AUTOCAD: "AutoCAD" };
+const NAMES: Record<string, string> = { AUTOCAD: "AutoCAD", KORG: "KORG" };
 export const titleCase = (s: string) => NAMES[s] ?? s.toLowerCase().replace(/(^|[\s/-])\S/g, (c) => c.toUpperCase());
 
 // The knob: its render, and on its glass what its main screen shows (drawn here from what the
@@ -105,7 +105,12 @@ function KnobPicture() {
   const on = connected.value;
   const s = device.settings;
   const p = s && s.hidType === HidType.APP ? device.profiles[s.profile] : undefined;
-  const info = s ? { icon: p?.icon ?? null, name: p ? p.name : (MODE_NAMES[s.hidType] ?? "").toUpperCase(), feel: s.feel, legend: p ? p.legend : s.hidType === HidType.HOME ? ["EDIT", "POWER", "SCAN", "MENU"] : ["SEL", "", "BACK", "MENU"] } : null;
+  const midi = s && s.hidType === HidType.MIDI ? MidiSynths[s.midiSynth] : undefined;
+  const legend = (h: number) =>
+    h === HidType.HOME ? ["EDIT", "POWER", "SCAN", "MENU"] : h === HidType.MIDI ? ["NEXT", "PROG-", "PROG+", "MENU"] : ["SEL", "", "BACK", "MENU"];
+  const info = s
+    ? { icon: p?.icon ?? null, name: p ? p.name : midi ? midi.name : (MODE_NAMES[s.hidType] ?? "").toUpperCase(), feel: s.feel, legend: p ? p.legend : legend(s.hidType) }
+    : null;
   const key = info ? `${info.name}|${info.feel}|${info.legend.join()}|${!!info.icon}` : "";
   useEffect(() => {
     if (!canvas.current || !info) return;
