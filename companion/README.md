@@ -4,8 +4,8 @@ The desktop app for the Quadra knob. It changes the knob's settings and app prof
 computer: a sidebar with the knob and its pages, one Save for everything, and pixel art only
 where the app shows the knob itself.
 
-- **Mode:** what the knob sends (App, Mouse, Keys, MIDI); in App, the profile in use; in Mouse
-  and Keys, the haptic profile that mode uses.
+- **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI); in App, the profile in use; in Mouse
+  and Keys, the haptic profile that mode uses; in MIDI, the synth and the channel.
 - **Haptics:** the five haptic profiles (Wide / Coarse / Medium / Fine / Smooth) and, for the
   one picked, its feel (Saw / Sine / Viscose) and the sliders Snap, Damp, Shape, Click volume
   and Click pitch. **Reset to factory** puts that profile back.

@@ -16,7 +16,7 @@ All paths below are relative to `NanoDepsidf/`.
 5. [Timing and code placement](#5-timing-and-code-placement)
 6. [How the parts talk to each other](#6-how-the-parts-talk-to-each-other)
 7. [Menu and settings](#7-menu-and-settings)
-8. [APP mode and profiles](#8-app-mode-and-profiles) (and [HOME](#84-home-mode-xiaomi-lamps))
+8. [APP mode and profiles](#8-app-mode-and-profiles) (and [HOME](#84-home-mode-xiaomi-lamps), [MIDI](#85-midi-mode))
 9. [USB](#9-usb)
 10. [The companion protocol](#10-the-companion-protocol)
 11. [Audio](#11-audio)
@@ -101,6 +101,7 @@ Priorities and core assignments are in `src/tasks_common.h`.
 | `net_link` | 1 | 10 | `net_link.c` | The companion over WiFi: socket, handshake, AES-GCM (section 10.2) |
 | `net` | 1 | 5 | `net.c` | WiFi: connecting, reconnecting with a growing pause, RSSI; starts SNTP and mDNS |
 | `home` | 1 | 5 | `home.c` | HOME (section 8.4): the lamps over miIO; wakes every 10 ms. Stack in PSRAM |
+| `midi` | 1 | 10 | `midi.c` | MIDI (section 8.5): turns and keys into messages on USB MIDI and the TRS jacks, and what comes back; wakes every 10 ms. Stack in PSRAM |
 
 Why the priorities are what they are:
 
@@ -374,8 +375,8 @@ Every setting has three copies:
 F2 hands the save to the `menu_save` task. `config_store.c` writes one blob per settings group,
 each in its own NVS namespace: `hprof_cfg` (the haptic profiles: each one's feel and its
 tuning per feel, versioned), `hmode_cfg` (the haptic profile per HID type -- the first four;
-HOME has none, so the blob kept its size), `hid_cfg`,
-`boot_cfg`, `disp_cfg`, `bind_cfg`. On load, a blob with the wrong size or an out-of-range
+HOME has none, so the blob kept its size), `hid_cfg` (with the APP profile and MIDI's synth
+next to it as strings, by id: `app`, `midi_synth`), `boot_cfg`, `disp_cfg`, `bind_cfg`. On load, a blob with the wrong size or an out-of-range
 value is rejected and the compiled-in default is kept; haptic values are also clamped into
 their profile's limits. (`haptic_cfg`, the single global tuning from before haptic
 profiles, is no longer read.)
@@ -510,18 +511,84 @@ as APP mode's idle screen.
 table in PSRAM, one UDP socket (the socket closes a minute after HOME is left), about 16 KB of
 flash.
 
+### 8.5 MIDI mode
+
+MIDI (`MENU_HID_MIDI`, value 2) makes the knob a controller for a synth. `midi_synths.c` holds the
+synth profiles as tables, one row per parameter, transcribed from each maker's MIDI document
+(the sources are named in the file): GENERIC (General MIDI / GM2 controllers), KORG minilogue xd,
+Roland JU-06A and TR-8S. The menu picks one (PROFILES → MIDI → SYNTH, NVS `hid` / `midi_synth`,
+stored by id like the app profile) and the channel (`hid_cfg.midi_channel`).
+
+**Three sides, like HOME.** The control loop pushes turns and F1 down / up / F2 / F3 into a
+64-word lock-free ring (`midi_input_*`, `CONTROL_HOT`, internal RAM; each word carries the
+event and a 1.024 ms timestamp, `esp_timer_get_time() >> 10`, so the loop does no 64-bit
+division) and reads two atomics: the end-stop flags (`midi_at_end`: the value's 0 and maximum,
+the first and last option of a switch, the ends of the list while F1 is held) and the haptic
+profile (`midi_haptic_profile`: FINE for a continuous value, WIDE for a switch, one option per
+click; COARSE while picking). The `midi` task owns the rest and publishes `midi_snapshot_t`.
+
+**A parameter** is a CC (0..127), a KORG 10-bit CC (0..1023: CC 63 carries the low 3 bits,
+then the parameter's CC the upper 7, as the minilogue xd's implementation note *1-4 / *5-4
+says), or a switch: up to 8 options, each with the value it sends. The step per detent follows
+the turning speed (time between detents): over 150 ms the finest (1, or 2 of 1023), then one
+7-bit step, then 3, then 6 for a flick. A value is unknown (-1, `--` on screen) until it is
+turned or received; the first turn starts from the middle. F1 tapped: the next parameter
+(wrapping); F1 held 400 ms, or turned while held: the list, and the knob picks; let go to use
+it. F2 / F3: program change down / up (`MIDI_PROG_PC`, or `MIDI_PROG_KORG_BANK100`: bank select
+MSB 0 and LSB n / 100, then program n % 100, for the minilogue xd's 500). A program change
+makes every value unknown.
+
+**Ports.** Every message goes to both: USB MIDI (`tud_midi_stream_write`, when the MIDI
+personality is mounted, section 9) and the TRS jacks (UART1 on GPIO 43 TX / 44 RX at 31250
+baud, 8N1, RX pulled up; started the first time MIDI mode is used, then the pins stay the
+jacks'). UART0, the console's default, shares those pins: the boot ROM's and bootloader's log
+still goes out there at 115200 before the UART is taken, which a synth reads as noise. What
+comes in on either port (USB MIDI packets, or TRS bytes through a running-status parser that
+skips system messages) updates the values: a CC on the knob's channel sets every parameter
+with that CC (a switch to the option whose value is nearest; KORG 10-bit with the last CC 63);
+a program change makes them unknown.
+
+**The screen and the LEDs.** `ui_extras.cpp` `draw_midi`: the synth, the parameter's group and
+name, the value (a bipolar one as -/+ around the middle, a switch as its option's name), a
+31-block meter or one box per option, the channel and the ports, or `PROG nnn` for 1.5 s after
+a program change; with F1 held, five rows of the list. The ring (`led_task.c`) fills clockwise
+from 12 o'clock with the value, from 12 o'clock either way for a bipolar one, one segment per
+option for a switch, and with F1 held a dim dot per parameter and the current one bright. The
+idle screen jumps the synth maker's wordmark (`ui::maker_logo`, a 1-bit sprite, handed to
+`fx_attract` as its `mark` and drawn at 3×) instead of an icon; GENERIC has none and keeps the
+QUADRA wordmark.
+
+**Memory.** About 1.2 KB of internal RAM (the ring, TinyUSB's MIDI FIFOs and buffers, the RAM
+descriptors, the snapshots), plus about 0.6 KB of heap for the UART driver once the jacks
+start; the 3.5 KB stack in PSRAM; about 37 KB of flash, the four synth tables included.
+Measured: static internal RAM 64,480 → 65,728 bytes, flash 1,324,839 → 1,361,411 bytes.
+
 ## 9. USB
 
-`usb_task.c` installs one composite TinyUSB device:
+`usb_task.c` installs one composite TinyUSB device, in one of two personalities:
 
 | Interface | Endpoints | Purpose |
 |---|---|---|
 | CDC-ACM | EP1 IN, EP2 IN/OUT | Serial console, and the 1200-baud reset the uploader uses |
-| HID | EP3 IN | Keyboard, mouse, gamepad and Consumer (media keys) as four report IDs; polled every 10 ms |
+| HID (not in MIDI) | EP3 IN | Keyboard, mouse, gamepad and Consumer (media keys) as four report IDs; polled every 10 ms |
+| USB MIDI (MIDI only) | EP3 IN/OUT | Class-compliant MIDI 1.0: Audio Control + MIDI Streaming, one cable, "Quadra MIDI" |
 | Vendor HID | EP4 IN/OUT | 64-byte raw reports for the companion and icon upload |
 
 The vendor interface is separate from the keyboard interface so host tools can open it without
 the operating system's keyboard-access permission.
+
+**Two personalities.** The S3's USB controller has 5 IN endpoints active at once, and EP0 is one
+of them (TinyUSB's `dwc2_esp32.h` `ep_in_count`; `dcd_dwc2.c` allocates EP0 IN from the same
+count). The HID personality uses all 5, so MIDI can't be added to it: in MIDI mode the device is
+CDC + vendor HID + USB MIDI instead (product ID 0x400D; the HID one keeps 0x4009, so a host never
+applies one's cached interfaces to the other). esp_tinyusb answers every GET_DESCRIPTOR from the
+pointers it was given at install, so the device and configuration descriptors live in RAM and
+are rewritten between `tud_disconnect()` and `tud_connect()` (300 ms apart). The usb task does
+that when MIDI is picked or left, once the menu is closed (the carousel passes MIDI on its way)
+and the choice has held for 500 ms (the companion sets the mode live); the boot comes up in the
+saved mode's personality. TinyUSB numbers HID instances in the order they open, so the vendor
+interface is instance 1 in HID and 0 in MIDI (`host_link_set_instance`). In MIDI no keyboard or
+mouse report is sent over USB (the WiFi client that asked for the controls still gets them).
 
 The usb task waits on the wheel queue with a one-tick timeout, so it wakes at least every
 10 ms. Each pass it:
@@ -558,7 +625,9 @@ PITCH) are those of one haptic profile, the one the Haptics screen shows, in its
 feel; the reply also carries that profile's id, the feels it allows and its limits, and the
 HID type's own haptic profile. `SET HAPTIC_PROFILE` chooses which profile the values are of,
 `SET MODE_HAPTIC` sets the current HID type's profile, and `HAPTIC_RESET` puts the shown
-profile back to factory. `SET DETENTS`, from older apps, shows the nearest stepped profile.
+profile back to factory. `SET MIDI_SYNTH` (16) picks MIDI's synth profile; the reply carries it
+and the number of profiles in bytes 34 and 35, and its dirty bits are 24 bits wide (byte 3 holds
+bit 16 and up). `SET DETENTS`, from older apps, shows the nearest stepped profile.
 
 Whole profiles travel as JSON text with a CRC-32 over the complete text. Uploads must arrive
 in order; anything else fails the transfer rather than applying a damaged profile.
@@ -695,7 +764,8 @@ between 60 and 250 mA. That is 100 mA on a plain 500 mA port and 250 mA from 1.5
 WiFi on, the radio's ~100 mA comes off it. A strip is sent only when its data changed.
 
 Other ring states: an agent request breathes in the agent's colour, with one arc per waiting
-agent; MUSIC shows the volume as an arc while the knob turns; CLOCK can sweep the seconds.
+agent; MUSIC shows the volume as an arc while the knob turns; CLOCK can sweep the seconds;
+HOME shows the chosen lamp's scale (section 8.4) and MIDI the parameter's value (section 8.5).
 
 ## 14. SYS INFO
 

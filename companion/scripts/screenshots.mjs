@@ -42,6 +42,9 @@ await shot("app-mode-mouse");
 await click(".card", "Home");
 await pg.waitForTimeout(600);
 await shot("app-mode-home");
+await click(".card", "MIDI");
+await pg.waitForTimeout(600);
+await shot("app-mode-midi");
 await click(".card", "App");
 await pg.waitForTimeout(600);
 

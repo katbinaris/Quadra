@@ -57,6 +57,8 @@ shows, at 2× scale.
   - [MUSIC](#music)
   - [AGENTS](#agents)
   - [CLOCK](#clock)
+  - [HOME (Xiaomi lamps)](#home-xiaomi-lamps)
+  - [MIDI](#midi)
   - [The command wheel](#the-command-wheel)
   - [Parameter mode](#parameter-mode)
   - [Idle screen](#idle-screen)
@@ -93,11 +95,12 @@ shows, at 2× scale.
   different from a coarse one. Two timbres exist (WOOD, THUD); choosing one is hidden from
   the menu for now, and the saved one plays.
 - **USB composite device:**
-  - a keyboard, mouse, gamepad and media-key HID interface;
+  - a keyboard, mouse, gamepad and media-key HID interface (in MIDI mode, a class-compliant
+    USB MIDI interface instead);
   - a vendor HID data channel, used by the desktop companion and for icon upload;
   - a CDC serial console.
 
-  Nothing has to be installed: the computer sees a keyboard and a mouse. The optional
+  Nothing has to be installed: the computer sees a keyboard and a mouse, or a MIDI device. The optional
   [desktop companion](#desktop-companion) edits settings and profiles.
 - **APP mode with app profiles.** Each supported application is one data file describing
   what the knob and keys send, how the knob feels while doing it, and what the screen shows.
@@ -115,6 +118,11 @@ shows, at 2× scale.
 - **HOME.** The knob as a remote for Xiaomi lamps on your network: pick a lamp, turn its
   brightness, white or colour, switch it on and off. It talks to the lamps itself over WiFi
   (miIO), with keys imported once from your Xiaomi account.
+- **MIDI.** The knob as a hands-on controller for a synth: it turns one parameter at a time,
+  with a click per option on a switch and walls at the ends of the range, and steps the
+  synth's programs. Built-in profiles for the KORG minilogue xd (with its 10-bit values),
+  the Roland JU-06A and TR-8S, and General MIDI. It sends over USB MIDI and the TRS jacks at
+  once.
 - **WiFi.** The knob can join a network and work without a cable, over an encrypted link
   paired over USB. The companion app and the Mac service connect at the same time, and on a
   charger the knob's controls type and scroll on the Mac through the app.
@@ -238,7 +246,7 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
 
 | Screen | Settings |
 |---|---|
-| **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel. |
+| **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel, then to **SYNTH**, the synth profile. |
 | **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
 | **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°. The screen turns live while you turn the knob. |
 | **LIGHTS** | The LED look. COLOR: APP (the profile's colours, or the album cover's while music plays) or CUSTOM, with HUE and SAT. EFFECT at rest: GRADIENT, SOLID, BREATHE, SPIN, RAINBOW or OFF, with SPEED for the moving ones. LEVEL: brightness, 10–200% of the standard level. The screen's rim mirrors the ring while you tune. |
@@ -559,6 +567,79 @@ knob in plain text, like the WiFi password, and only travel over USB. Lamps on a
 are found by their last known address; if one doesn't answer there (the router gave it a new
 one), the knob says hello to every address in that subnet and finds it by its id.
 
+### MIDI
+
+<p>
+  <img src="NanoDepsidf/docs/images/midi-cutoff.png" width="225" alt="MIDI: the KORG minilogue xd's filter cutoff at 712 of 1023; the LED ring filled clockwise from 12 o'clock to match, in amber">
+  <img src="NanoDepsidf/docs/images/midi-switch.png" width="225" alt="MIDI: the minilogue xd's VCO 1 wave set to SAW; three boxes under it and three segments on the ring, the third bright">
+</p>
+<p>
+  <img src="NanoDepsidf/docs/images/midi-pick.png" width="225" alt="MIDI with F1 held: the parameter list, FILTER RESONANCE on a dark bar, 19/48; the ring has a dim dot per parameter and a bright one for this one">
+  <img src="NanoDepsidf/docs/images/midi-tune.png" width="225" alt="MIDI: the Roland TR-8S bass drum's tune at -12, a centred value; the ring lights from 12 o'clock anticlockwise">
+</p>
+
+Pick **MIDI** in PROFILES and the knob becomes a controller for a synth. The synth profile
+(PROFILES → MIDI → F1 to **SYNTH**) lists its parameters from the maker's own MIDI
+documentation; the knob turns one at a time and sends it as you turn.
+
+| Input | Does |
+|---|---|
+| Knob | The parameter's value. Slowly for fine steps, faster for bigger ones; a switch clicks from one option to the next. The ends of the range are walls |
+| F1 | Next parameter. **Hold F1 and turn** to pick one from the list; let go to use it |
+| F2 / F3 | The synth's program down / up |
+| F4 | Menu |
+
+**The synth profiles:**
+
+| Synth | What the knob reaches | Programs | Comes on channel |
+|---|---|---|---|
+| GENERIC | General MIDI controllers (mod wheel, volume, pan, cutoff, resonance, attack, decay, release, reverb, chorus, sustain, GP 1-4), for a DAW's MIDI learn or any synth | 128 | — |
+| KORG minilogue xd | 48: both VCOs, MULTI, the filter, both envelopes, the LFO, voice mode, portamento, MOD FX, delay and reverb. Continuous values go at the synth's full 10-bit resolution (0-1023) | 500 (bank + program) | 1 |
+| Roland JU-06A | 33: LFO, DCO, HPF, VCF, VCA, the envelope, chorus, delay, portamento, voice mode | 64 | 1 |
+| Roland TR-8S | 54: tune, decay, level and CTRL of all 11 instruments; accent, shuffle, external in; reverb, delay and the master FX | 128 | 10 |
+
+Set the knob's channel (PROFILES → MIDI → CHANNEL) to the synth's. Sources: KORG's minilogue
+xd MIDI Implementation 1.01, and Roland's JU-06A and TR-8S MIDI Implementation Charts.
+
+**Where it goes.** Every message goes out on both ports at once:
+- **USB MIDI.** In MIDI mode the knob is a class-compliant USB MIDI device named Quadra (no
+  driver on macOS, Windows, Linux or an iPad), so a DAW, or a computer that passes MIDI on,
+  reaches the synth. While in MIDI mode the knob isn't a keyboard or mouse: picking MIDI, or
+  leaving it, reconnects the knob over USB (about a second). Synths with a USB port are USB
+  devices too, so the knob can't plug into one directly; it goes through the computer.
+- **TRS jacks.** The board's 3.5 mm MIDI jacks (31250 baud) drive a synth with no computer at
+  all.
+
+**What it shows.** The maker's wordmark (KORG, Roland) and the synth, the parameter's section and name, its value (a centred one,
+like pan or tune, as -/+), and under it a meter or, for a switch, one box per option. Under
+that the channel and which ports are up, or for a moment the program just sent. Until a
+parameter has been turned (or the synth has sent it) the knob doesn't know its value and
+shows `--`; the first turn starts from the middle. A synth that sends its own knob moves (or a
+DAW's echo) keeps the values on the knob up to date. A program change makes them unknown again.
+
+**Idle.** On the idle screen the synth maker's logo jumps (KORG for the minilogue xd, Roland for
+the JU-06A and TR-8S; GENERIC has none, so the QUADRA wordmark does).
+
+<p>
+  <img src="NanoDepsidf/docs/images/midi-idle.png" width="180" alt="MIDI idle screen: the KORG logo, white, jumping">
+</p>
+
+**The LED ring** shows the value: it fills clockwise from 12 o'clock, dim to full, a centred
+value from 12 o'clock either way, and a switch as one segment per option. With F1 held it has a
+dot per parameter, the one under the knob bright.
+
+<p>
+  <img src="NanoDepsidf/docs/images/hid-midi.png" width="180" alt="PROFILES with MIDI chosen: CH 01, and under it the synth being changed, Roland's wordmark and TR-8S in amber">
+  <img src="NanoDepsidf/docs/images/midi-prog.png" width="180" alt="MIDI: PROG 042 in amber where the channel was, F3 lit">
+</p>
+
+**Still to check with the synths themselves:**
+- The minilogue xd's SYNC and RING: KORG's document sends OFF / ON as 0 / 127 but reads 0-63 as
+  ON; the knob follows what the synth reads.
+- Roland's charts list each CC but not a switch's values; the knob sends evenly spaced values
+  (0 / 127; 0 / 64 / 127; 0 / 43 / 85 / 127).
+- The TRS jacks' wiring (type A or B) and polarity.
+
 ### The Mac service
 
 `NanoDepsidf/tools/mac/` is an optional background service for macOS. It powers MUSIC's now
@@ -680,7 +761,8 @@ After 5 s without input the screen goes into an arcade-style attract mode: the a
 screen: two small hops, a crouch and a big jump with afterimages, a hard landing (squash,
 screen shake, dust, debris), a gleam, hops left and right, a spinning jump, then it breathes
 with sparkles around it. While music plays (MUSIC) or the clock is up (CLOCK), those stay on
-screen instead. In HOME the icon is the lamp you changed last, lit in its colour.
+screen instead. In HOME the icon is the lamp you changed last, lit in its colour; in MIDI it is
+the synth maker's logo (KORG or Roland), in white at 3×.
 
 A second routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
 built but switched off. Set `ROUTINE_ON[ATTRACT_BOUNCE]` to `true` in `src/ui_fx.cpp` to put
@@ -719,6 +801,8 @@ of that, and **LIGHTS** also sets a custom colour and a different effect at rest
 | An agent's request | Breathes in the agent's colour; one arc per waiting agent; fills green while F1 is held | — |
 | MUSIC, turning the knob | The volume, as an arc in the cover's colour | — |
 | CLOCK with LED SECONDS | A seconds hand | — |
+| HOME | The chosen lamp's brightness, whites or hue wheel, in its own light | The lamp's colour |
+| MIDI | The parameter's value: a fill from 12 o'clock, a centred one either way, or one segment per option of a switch; F1 held, a dot per parameter | — |
 
 The animations are deliberately calm: 30 updates a second, and a strip is only sent again
 when one of its LEDs changes. A software cap scales everything down if the estimated draw
@@ -921,6 +1005,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | `tools/gen_silkscreen_font.py` | Regenerates the pixel fonts in `src/fonts/` from Silkscreen. |
 | `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob), `home import` / `home list` (HOME's lamps, see [HOME](#home-xiaomi-lamps)) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
 | `tools/mac/` | The optional [Mac service](#the-mac-service): now playing, agent requests, the local time. |
+| `tools/midi_monitor.html` | A MIDI monitor for the browser (Chrome, Edge or Firefox; Safari has no Web MIDI): open the file, Connect MIDI, and every message from the knob in [MIDI](#midi) mode is decoded with the minilogue xd's map, 10-bit values and programs included; it also sends values back to test pick-up. |
 | `tools/tz_test/`, `tools/net_pend_test/` | Host checks for CLOCK's time-zone rules (against Python's zoneinfo) and for how the WiFi link queues handshakes. |
 
 ---
@@ -937,7 +1022,8 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 `companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings and app
 profiles from the computer:
 
-- **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use.
+- **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use (for
+  MIDI, the synth and channel).
 - **Haptics:** the five haptic profiles, and each one's feel and Snap, Damp, Shape, Click
   volume and Click pitch, with a reset to factory.
 - **App profiles:** one page each, built-ins included: name, icon, key labels, what the knob
@@ -1094,9 +1180,13 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - WiFi and the companion over WiFi.
 - LIGHTS, the idle word, and the companion's Look page.
 - The Mac service, and flashing with `quadra.py flash`.
+- HOME: Xiaomi lamps over WiFi (list, brightness, white, colour, on / off).
+- MIDI: USB MIDI and the TRS jacks, the synth profiles (GENERIC, KORG minilogue xd, Roland
+  JU-06A and TR-8S), parameter pages and program changes.
 
 **Built, not yet tested on hardware:**
-- HOME: Xiaomi lamps over WiFi (list, brightness, white, colour, on / off).
+- MIDI's KORG and Roland logos (the header, PROFILES → MIDI, the idle screen) and the larger
+  PROFILES → MIDI text.
 
 **Next:**
 - Safe SNAP and DAMP limits for each haptic profile and feel (today they are the full
@@ -1104,7 +1194,6 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - F4 quick tap in APP mode, and KEYBOARD / MOUSE as built-in profiles.
 - Integration tests: the cross-core load test, and the loop's worst case during a save to
   flash.
-- Real MIDI output (the MIDI mode stores a channel only).
 
 **Later:**
 - Automatic profile switching from the frontmost app.

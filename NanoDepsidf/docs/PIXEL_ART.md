@@ -148,6 +148,10 @@ const Sprite SPR_SHAPE_M = {11, 6,
   hand-drawn 1.5× (`_M`) version.
 - Strokes are 1px at 1×; at 1.5× use 2px where a 1px line would look thin next to the
   other icons.
+- Makers' wordmarks (MIDI's `SPR_LOGO_KORG`, `SPR_LOGO_ROLAND`) are 1-bit sprites too: drawn by
+  hand after the logo, 7 px tall to sit with scale-1 caps, in one palette colour (white, or amber
+  while focused). Not their brand colours. The idle screen jumps them at 3× (`fx_attract`'s
+  `mark`), in white with amber effects.
 - Declare new sprites in `ui_gfx.hpp` and add them to the size check in
   `tools/ui_preview/preview.cpp`, which fails if a string has the wrong length.
 

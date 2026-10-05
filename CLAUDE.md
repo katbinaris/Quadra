@@ -17,6 +17,9 @@
   frame rate). Put new buffers in PSRAM (`heap_caps_malloc(..., MALLOC_CAP_SPIRAM)`,
   `EXT_RAM_BSS_ATTR`, `xQueueCreateWithCaps`); `tasks_common.h` says which task stacks may live
   there. The console's `memory_report()` (sysmon.c, 10 s and 60 s after boot) shows the heaps.
+- USB has no free IN endpoint (5 with EP0, all used): MIDI mode is a second USB personality
+  (USB MIDI instead of the keyboard / mouse HID) and switching re-enumerates; see
+  `NanoDepsidf/docs/FIRMWARE.md` section 9 before adding a USB interface.
 - USB power is 5 V 3 A, always (the user's rule): `pd_status.c` asks again at boot if a charger
   gave more, and the STUSB4500's NVM is set to 5 V 3 A only.
 - The Mac service is `NanoDepsidf/tools/mac/quadrad.py` (USB, else WiFi). The knob serves two

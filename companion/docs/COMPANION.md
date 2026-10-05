@@ -120,7 +120,7 @@ music cover style, the clock, and Wi-Fi. Their pages say so.
 | **Home** | A remote for your Xiaomi lamps on the network |
 | **Mouse** | Scroll wheel |
 | **Keys** | Keyboard keys |
-| **MIDI** | Stores a MIDI channel only; no MIDI is sent yet |
+| **MIDI** | A controller for a synth, over USB MIDI and the knob's TRS jacks |
 
 In **App** mode, **Profile in use** lists the profiles on the knob with the icons the knob
 draws (their black is see-through, as on the knob); click one to use it (on the knob: F4 menu › Profiles). Under each name is where it comes
@@ -146,6 +146,19 @@ switches the mode. The lamps and their keys come from your Xiaomi account, once,
 run the token extractor, then `quadra.py home import` (see the README's HOME section).
 
 <img src="app-mode-home.png" width="720" alt="Mode with Home: how the lamps get onto the knob">
+
+In **MIDI**, pick the **Synth** whose parameters the knob turns (GENERIC for General MIDI
+controllers and a DAW's MIDI learn, the KORG minilogue xd, the Roland JU-06A or TR-8S; on the knob:
+F4 menu › Profiles › MIDI › F1 to SYNTH) and the **MIDI channel** to send on; the note says which
+channel the synth comes set to. On the knob, turn to change the parameter on its screen, F1 for
+the next one (hold F1 and turn to pick from the list), F2 and F3 for the synth's program. See the
+README's MIDI section.
+
+<img src="app-mode-midi.png" width="720" alt="Mode with MIDI: the four synths, KORG MINILOGUE XD chosen; the MIDI channel, 01; what the keys do">
+
+In MIDI mode the knob is a USB MIDI device instead of a keyboard and mouse, so changing to or
+from MIDI makes it reconnect: the app shows it looking for the knob for a second or so, then
+carries on. Over WiFi nothing changes.
 
 ## 5. Haptics
 
