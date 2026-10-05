@@ -75,6 +75,8 @@ typedef struct {
     uint16_t ct, ct_min, ct_max;
     uint16_t hue;            // 0-359, COLOR's value (full saturation)
     uint32_t rgb;            // the colour it shows, RGB888: its colour, or its white as RGB
+    uint32_t ip;             // where it answers (network order)
+    uint8_t proto;           // HOME_PROTO_* it answers
 } home_lamp_view_t;
 
 typedef struct {
@@ -138,3 +140,8 @@ void home_import_begin(void);
 bool home_import_lamp(int slot, const home_lamp_cfg_t *lamp);
 bool home_import_commit(int count); // NVS; the home task picks the new list up and looks again
 int home_lamp_count(void);
+// The companion's edits (EXT_HOME_EDIT; usb task): the lamp in `slot`, if it is still the one with
+// device id `did`. NAME: `name`; KIND: `value` = HOME_KIND_*; MOVE: `value` = its new slot;
+// REMOVE. Stored at once (NVS); the knob keeps talking to the lamps (no new scan).
+enum { HOME_EDIT_NAME = 1, HOME_EDIT_KIND, HOME_EDIT_MOVE, HOME_EDIT_REMOVE };
+bool home_edit(int slot, uint32_t did, int what, int value, const char *name);

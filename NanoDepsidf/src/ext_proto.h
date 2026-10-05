@@ -6,11 +6,13 @@
 // range is full: new commands go in 0x30-0x3F (same handler, ext_link.c).
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 11 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+#define EXT_PROTO_VERSION 12 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
                              // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
                              // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi;
                              // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi);
-                             // 11: EXT_CMD_HOME / EXT_TAG_HOME (HOME's lamps)
+                             // 11: EXT_CMD_HOME / EXT_TAG_HOME (HOME's lamps);
+                             // 12: EXT_HOME_EDIT, the lamp's icon / address in EXT_TAG_HOME,
+                             //     EXT_CMD_SYNTH / EXT_TAG_SYNTH (MIDI's synth profiles)
 
 // --- Host -> device ---
 enum {
@@ -64,7 +66,7 @@ enum {
                            //   -> EXT_TAG_PREFS
     EXT_CMD_PD = 0x2F,     // the USB-PD chip's NVM (pd_status.h pd_nvm_5v), USB only. [1]=0: read and
                            //   check, 1: write 5 V 3 A for good -> EXT_TAG_PD
-    EXT_CMD_HOME = 0x30,   // HOME's lamps (home.h). [1]=EXT_HOME_*; all but STATUS over USB only (tokens):
+    EXT_CMD_HOME = 0x30,   // HOME's lamps (home.h). [1]=EXT_HOME_*; BEGIN, LAMP, COMMIT over USB only (tokens):
                            //   BEGIN: a new list starts -> EXT_TAG_ACK
                            //   LAMP: [2]=slot [3..6]=miIO device id [7..10]=IPv4 (a.b.c.d)
                            //     [11..26]=token [27]=HOME_PROTO_* [28]=HOME_CAP_* [29..30]=lowest
@@ -75,13 +77,37 @@ enum {
                            //   COMMIT: [2]=count -- stores the list (NVS), the knob looks for it
                            //     -> EXT_TAG_ACK (EXT_ST_STORAGE: not stored)
                            //   STATUS: [2]=slot -> EXT_TAG_HOME
+                           //   EDIT (v12): [2]=slot [3]=EXT_HOME_EDIT_* [4..7]=its device id (the
+                           //     lamp the companion means; another there now: BAD_PARAM)
+                           //     [8..]=NAME: the name, NUL-padded (19) / KIND: HOME_KIND_* /
+                           //     MOVE: the slot it goes to / REMOVE: nothing.
+                           //     Stored at once -> EXT_TAG_ACK (EXT_ST_STORAGE: not stored)
+    EXT_CMD_SYNTH = 0x31,  // MIDI's synth profiles (midi.h), v12. [1]=EXT_SYNTH_*:
+                           //   LIST: [2]=index -> EXT_TAG_SYNTH LIST
+                           //   READ: [2]=index [4..7]=offset -> EXT_TAG_SYNTH READ: its JSON from
+                           //     there (EXT_SYNTH_CHUNK bytes). Ask for offset 0 first and wait:
+                           //     the knob writes the JSON then; the rest can be asked for together
+                           //   PUT_BEGIN: [2]=EXT_SYNTH_SAVE or 0 [4..7]=length [8..11]=CRC-32;
+                           //     PUT_DATA: [2..4]=offset (24-bit) [5]=n (<= 56) [8..]=bytes;
+                           //     PUT_END -> EXT_TAG_SYNTH RESULT. Live at once (replaces the
+                           //     one with its id, else added); SAVE stores it too
+                           //   OP: [2]=index [3]=MIDI_SYNTH_OP_* (SAVE, REVERT, REMOVE)
+                           //     -> EXT_TAG_SYNTH RESULT
+                           //   STATUS -> EXT_TAG_SYNTH STATUS
+                           //   GOTO: [2]=parameter: the knob moves to it (the synth in use)
 };
 enum { EXT_INPUT_KEYS = 1, EXT_INPUT_TURN = 2 };
 enum { EXT_CLOCK_FORMAT = 1, EXT_CLOCK_ZONE = 2, EXT_CLOCK_GET = 3 };
 enum { EXT_NET_SSID = 1, EXT_NET_PASS_A = 2, EXT_NET_PASS_B = 3, EXT_NET_APPLY = 4, EXT_NET_STATUS = 5, EXT_NET_KEY = 6,
        EXT_NET_CONTROLS = 7 };
 enum { EXT_COVER_BEGIN = 1, EXT_COVER_DATA = 2, EXT_COVER_END = 3 };
-enum { EXT_HOME_BEGIN = 1, EXT_HOME_LAMP = 2, EXT_HOME_COMMIT = 3, EXT_HOME_STATUS = 4 };
+enum { EXT_HOME_BEGIN = 1, EXT_HOME_LAMP = 2, EXT_HOME_COMMIT = 3, EXT_HOME_STATUS = 4, EXT_HOME_EDIT = 5 };
+enum { EXT_HOME_EDIT_NAME = 1, EXT_HOME_EDIT_KIND = 2, EXT_HOME_EDIT_MOVE = 3, EXT_HOME_EDIT_REMOVE = 4 };
+enum { EXT_SYNTH_LIST = 1, EXT_SYNTH_READ = 2, EXT_SYNTH_RESULT = 3, EXT_SYNTH_STATUS = 4, EXT_SYNTH_PUT_BEGIN = 5,
+       EXT_SYNTH_PUT_DATA = 6, EXT_SYNTH_PUT_END = 7, EXT_SYNTH_OP = 8, EXT_SYNTH_GOTO = 10 };
+#define EXT_SYNTH_SAVE 0x01
+#define EXT_SYNTH_CHUNK 48  // READ's bytes per report
+#define EXT_SYNTH_PUT_CHUNK 56
 #define EXT_HOME_ONLINE 0x01 // EXT_TAG_HOME [7]: answered this session
 #define EXT_HOME_KNOWN 0x02  // its state has been read
 #define EXT_HOME_ON 0x04
@@ -122,7 +148,21 @@ enum {
                            //   [4..43]=the NVM as read before (5 sectors x 8 bytes)
     EXT_TAG_HOME = 0xCA,   // [1]=lamps stored [2]=slot [3..6]=device id [7]=EXT_HOME_* flags
                            // [8]=brightness % [9..10]=colour temperature K [11..13]=the colour it
-                           // shows, RGB [14]=HOME_CAP_* [15..34]=name. A slot past the list: [3..]=0
+                           // shows, RGB [14]=HOME_CAP_* [15..34]=name [35]=HOME_KIND_* (v12)
+                           // [36..39]=its IPv4, a.b.c.d (v12) [40]=HOME_PROTO_* it answers (v12).
+                           // A slot past the list: [3..]=0
+    EXT_TAG_SYNTH = 0xCB,  // [1]=EXT_SYNTH_*:
+                           //   LIST: [2]=index [3]=how many [4]=MIDI_SYNTH_* flags [5]=parameters
+                           //     [6]=factory channel [7]=midi_prog_scheme_t [8..9]=programs
+                           //     [10..33]=id [34..45]=maker [46..61]=name. Past the end: [4..]=0
+                           //   READ: [2]=index [3]=bytes here [4..7]=the JSON's length [8..11]=its
+                           //     CRC-32 [12..15]=offset [16..63]=bytes. [3]=0, length 0: no such
+                           //   RESULT: [2]=EXT_SYNTH_PUT_END or _OP [3]=MIDI_SYNTH_ERR_* (0 OK)
+                           //     [4]=index [5]=1: it was removed [8..63]=why, NUL-padded
+                           //   STATUS: [2]=1: MIDI mode, menu closed [3]=synth [4]=parameter
+                           //     [5..6]=its value (int16, -1 unknown) [7]=1: F1 held, picking
+                           //     [8..9]=program sent last (int16, -1 none) [10]=channel [11]=1: USB
+                           //     MIDI up [12]=1: TRS up [13..16]=messages sent [17..20]=received
     EXT_TAG_HID = 0xC9,    // to the EXT_NET_CONTROLS client: the HID report USB would have carried,
                            //   the whole state each time (like HID). [1]=EXT_HID_*:
                            //   KEYBOARD: [2]=modifiers (HID bits) [3..8]=keys held (HID usages)

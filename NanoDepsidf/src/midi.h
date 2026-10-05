@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // MIDI: the knob as a controller for a synth. It sends on two ports at once: USB MIDI (class
@@ -53,9 +54,45 @@ typedef struct {
     const midi_param_t *params;
 } midi_synth_t;
 
-int midi_synth_count(void);
+// --- the synth profiles (midi_synths.c) ---
+// The built-ins (compiled in) come first, in a fixed order; then the user's own, from LittleFS
+// (/fs/synths/<id>.json). A built-in with a stored copy of the same id shows that copy. The
+// companion edits them like app profiles: an upload is live at once, SAVE stores it, REVERT goes
+// back to what's stored (or built in). The list is only changed from the usb task; everyone else
+// reads it: midi_synth_get()'s pointer stays good for a second after a change replaces it.
+#define MIDI_MAX_SYNTHS 16
+#define MIDI_ID_MAX 23    // [a-z0-9-]
+#define MIDI_MAKER_MAX 11
+#define MIDI_NAME_MAX 15  // the synth's, on the knob's header
+#define MIDI_LABEL_MAX 11 // a parameter's group and name
+#define MIDI_OPT_MAX 9    // an option's name
+#define MIDI_JSON_MAX (16 * 1024)
+
+#define MIDI_SYNTH_BUILTIN 0x01 // compiled in
+#define MIDI_SYNTH_STORED 0x02  // a file in LittleFS (for a built-in: a changed copy)
+#define MIDI_SYNTH_LIVE 0x04    // edited, differs from what's stored (or built in)
+
+typedef enum {
+    MIDI_SYNTH_OK = 0,
+    MIDI_SYNTH_ERR_INVALID, // not a synth profile (why says what)
+    MIDI_SYNTH_ERR_FULL,    // MIDI_MAX_SYNTHS already
+    MIDI_SYNTH_ERR_STORAGE,
+    MIDI_SYNTH_ERR_INDEX,
+} midi_synth_err_t;
+enum { MIDI_SYNTH_OP_SAVE = 1, MIDI_SYNTH_OP_REVERT = 2, MIDI_SYNTH_OP_REMOVE = 3 };
+
+void midi_synths_init(void); // app_main: after LittleFS is mounted (app_profiles_init), before menu_init
+int midi_synth_count(void);  // CONTROL_HOT
 const midi_synth_t *midi_synth_get(int i); // clamped
 int midi_synth_find(const char *id);       // -1: not there
+uint8_t midi_synth_flags(int i);           // MIDI_SYNTH_*
+uint32_t midi_synth_gen(void);             // moves on with every change to the list or a synth
+// usb task only:
+char *midi_synth_json(int i, size_t *len); // the profile as JSON (malloc'd, PSRAM); NULL: no such
+// Live at once (replacing the one with its id, else added); `save` stores it too.
+midi_synth_err_t midi_synth_put(const char *json, size_t len, bool save, int *index, char *why, size_t why_n);
+midi_synth_err_t midi_synth_op(int index, int op, bool *removed);
+void midi_synths_reap(void); // frees what a change replaced, once nobody can still be reading it
 
 // A continuous parameter's range: 0..127, or 0..1023 for KORG10.
 static inline int midi_param_max(const midi_param_t *p) {
@@ -90,3 +127,6 @@ int midi_haptic_profile(void);          // HAPTIC_PROFILE_*: the parameter's, CO
 // --- display / LEDs (Core 1) ---
 void midi_get_snapshot(midi_snapshot_t *out);
 uint32_t midi_version(void);
+
+// The companion: the knob moves to parameter `param` of the synth in use (as if picked with F1).
+void midi_goto(int param);

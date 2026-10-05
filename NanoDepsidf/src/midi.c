@@ -66,6 +66,8 @@ static bool take_evt(uint32_t *e) {
 
 // --- midi task state ---
 static int s_synth = -1;   // the profile the values below belong to
+static const midi_synth_t *s_synth_ptr = NULL; // and its data: an edit from the companion replaces it
+static _Atomic int s_goto = -1; // the companion's "show on the knob": a parameter to move to
 static int s_param = 0;
 EXT_RAM_BSS_ATTR static int16_t s_val[MIDI_MAX_PARAMS]; // -1: unknown
 static bool s_f1_down = false, s_browsed = false;
@@ -328,6 +330,14 @@ static void midi_task(void *arg) {
             s_f1_down = false;
             forget_values();
         }
+        const midi_synth_t *sp = midi_synth_get(s_synth);
+        if (sp != s_synth_ptr) { // edited (or reverted) in the companion: its parameters may differ
+            s_synth_ptr = sp;
+            s_param = clampi(s_param, 0, sp->n_params - 1);
+            forget_values();
+        }
+        int g = atomic_exchange(&s_goto, -1);
+        if (g >= 0) s_param = clampi(g, 0, sp->n_params - 1);
         s_channel = (uint8_t)clampi(menu_get_midi_channel(), 1, 16);
         if (active && !s_uart) uart_start(); // once MIDI is first used; the pins stay the jacks'
         receive_all();
@@ -356,6 +366,8 @@ void midi_get_snapshot(midi_snapshot_t *out) {
 }
 
 uint32_t midi_version(void) { return atomic_load(&s_version); }
+
+void midi_goto(int param) { atomic_store(&s_goto, param); }
 
 void midi_start(void) {
     s_snap_mux = xSemaphoreCreateMutex();

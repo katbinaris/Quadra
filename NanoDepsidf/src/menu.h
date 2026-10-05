@@ -216,6 +216,8 @@ int32_t menu_get_midi_synth(void);
 // The app profile at `index` was removed and the ones after it moved up one: keeps the live,
 // saved and undo choices on the same profiles (the removed one falls back to the first).
 void menu_profile_removed(int index);
+// Likewise for a synth profile the companion removed (midi.h).
+void menu_midi_synth_removed(int index);
 // Screen rotation, 0-3 quarter turns (live while the DISPLAY screen is being turned).
 int32_t menu_get_display_rotation(void);
 // DEVICE -> BINDINGS (live while the screen is being turned, like rotation). Any core.

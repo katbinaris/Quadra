@@ -1,6 +1,17 @@
 #include "midi.h"
 #include "tasks_common.h"
+#include "cJSON.h"
+#include "esp_attr.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include <dirent.h>
+#include <stdatomic.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+
+static const char *TAG = "synths";
 
 // The synth profiles: each one's parameters as its maker documents them. Names are upper case
 // and short (the screen has ~10 characters at scale 2).
@@ -181,19 +192,439 @@ static const midi_synth_t SYNTHS[] = {
     {"ju-06a", "ROLAND", "JU-06A", 1, MIDI_PROG_PC, 64, N(JU_06A), JU_06A},
     {"tr-8s", "ROLAND", "TR-8S", 10, MIDI_PROG_PC, 128, N(TR_8S), TR_8S},
 };
+#define BUILTINS ((int)(sizeof(SYNTHS) / sizeof(SYNTHS[0])))
+
+// --- the list: the built-ins, then the user's own ---
+// Each entry is a pointer, swapped whole: a reader that took one keeps a complete synth. One that
+// came from JSON is a single PSRAM block (the synth, its parameters, then their strings); when a
+// change replaces it, the old block waits in s_dead for a second before it's freed (a screen frame
+// or a midi task pass is done with it long before).
+#ifndef MIDI_SYNTH_DIR
+#define MIDI_SYNTH_DIR "/fs/synths" // LittleFS (profile_store.c mounts it); the host test points it elsewhere
+#endif
+#define DIR_PATH MIDI_SYNTH_DIR
+#define DEAD_MAX 24
+#define DEAD_US 1000000
+
+EXT_RAM_BSS_ATTR static const midi_synth_t *_Atomic s_list[MIDI_MAX_SYNTHS];
+EXT_RAM_BSS_ATTR static void *s_block[MIDI_MAX_SYNTHS]; // the block behind s_list[i], NULL: a built-in's table
+EXT_RAM_BSS_ATTR static _Atomic uint8_t s_flags[MIDI_MAX_SYNTHS];
+static _Atomic int s_count = 0; // internal RAM: read on the control loop (menu.c)
+static _Atomic uint32_t s_gen = 1;
+EXT_RAM_BSS_ATTR static struct {
+    void *p;
+    int64_t at;
+} s_dead[DEAD_MAX];
 
 // IRAM: the menu's SYNTH row asks it at a detent crossing (midi_synth_at_end, menu.c).
-int CONTROL_HOT midi_synth_count(void) { return (int)(sizeof(SYNTHS) / sizeof(SYNTHS[0])); }
+int CONTROL_HOT midi_synth_count(void) { return atomic_load_explicit(&s_count, memory_order_relaxed); }
 
 const midi_synth_t *midi_synth_get(int i) {
+    int n = midi_synth_count();
+    if (i >= n) i = n - 1;
     if (i < 0) i = 0;
-    if (i >= midi_synth_count()) i = midi_synth_count() - 1;
-    return &SYNTHS[i];
+    const midi_synth_t *s = atomic_load(&s_list[i]);
+    return s ? s : &SYNTHS[0];
 }
 
 int midi_synth_find(const char *id) {
     for (int i = 0; i < midi_synth_count(); i++) {
+        if (strcmp(midi_synth_get(i)->id, id) == 0) return i;
+    }
+    return -1;
+}
+
+uint8_t midi_synth_flags(int i) { return i >= 0 && i < midi_synth_count() ? atomic_load(&s_flags[i]) : 0; }
+uint32_t midi_synth_gen(void) { return atomic_load(&s_gen); }
+
+static void retire(void *block) {
+    if (block == NULL) return;
+    for (int i = 0; i < DEAD_MAX; i++) {
+        if (s_dead[i].p == NULL) {
+            s_dead[i].p = block;
+            s_dead[i].at = esp_timer_get_time();
+            return;
+        }
+    }
+    ESP_LOGW(TAG, "too many changes at once: a replaced synth is kept"); // a leak, not a crash
+}
+
+void midi_synths_reap(void) {
+    int64_t now = esp_timer_get_time();
+    for (int i = 0; i < DEAD_MAX; i++) {
+        if (s_dead[i].p != NULL && now - s_dead[i].at >= DEAD_US) {
+            heap_caps_free(s_dead[i].p);
+            s_dead[i].p = NULL;
+        }
+    }
+}
+
+// Slot `i` now shows `s` (its block, NULL for a built-in table), with `flags`.
+static void set_slot(int i, const midi_synth_t *s, void *block, uint8_t flags) {
+    void *old = s_block[i];
+    s_block[i] = block;
+    atomic_store(&s_flags[i], flags);
+    atomic_store(&s_list[i], s);
+    if (old != block) retire(old);
+    atomic_fetch_add(&s_gen, 1);
+}
+
+static void remove_slot(int i) {
+    int n = midi_synth_count();
+    void *old = s_block[i];
+    // Shrink first, so nobody indexes past the end while the rest move down.
+    atomic_store(&s_count, n - 1);
+    for (int j = i; j < n - 1; j++) {
+        s_block[j] = s_block[j + 1];
+        atomic_store(&s_flags[j], atomic_load(&s_flags[j + 1]));
+        atomic_store(&s_list[j], atomic_load(&s_list[j + 1]));
+    }
+    s_block[n - 1] = NULL;
+    atomic_store(&s_list[n - 1], NULL);
+    retire(old);
+    atomic_fetch_add(&s_gen, 1);
+}
+
+// --- JSON ---
+// {"id": "minilogue-xd", "maker": "KORG", "name": "MINILOGUE XD", "channel": 1,
+//  "programs": {"scheme": "pc" | "korg-bank100", "count": 500},
+//  "params": [{"group": "VCO 1", "name": "PITCH", "sends": "cc" | "korg10", "cc": 34,
+//              "centred": true, "options": [{"name": "SQR", "value": 0}, ...]}, ...]}
+
+static bool valid_text(const cJSON *v, int max, bool allow_empty) {
+    if (!cJSON_IsString(v)) return false;
+    size_t n = strlen(v->valuestring);
+    if ((n == 0 && !allow_empty) || n > (size_t)max) return false;
+    for (const char *c = v->valuestring; *c; c++) {
+        if (*c < 0x20 || *c > 0x7E) return false;
+    }
+    return true;
+}
+
+static bool valid_id(const char *id) {
+    size_t n = strlen(id);
+    if (n == 0 || n > MIDI_ID_MAX) return false;
+    for (const char *c = id; *c; c++) {
+        if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '-')) return false;
+    }
+    return true;
+}
+
+static int int_in(const cJSON *v, int lo, int hi, int dflt, bool *ok) {
+    if (v == NULL) return dflt;
+    if (!cJSON_IsNumber(v) || v->valuedouble < lo || v->valuedouble > hi || v->valuedouble != (int)v->valuedouble) {
+        *ok = false;
+        return dflt;
+    }
+    return (int)v->valuedouble;
+}
+
+#define FAIL(...)                              \
+    do {                                       \
+        snprintf(why, why_n, __VA_ARGS__);     \
+        return NULL;                           \
+    } while (0)
+
+// Checks `root` and builds the synth in one PSRAM block. NULL: not valid (why says what).
+static midi_synth_t *from_json(const cJSON *root, char *why, size_t why_n) {
+    if (!cJSON_IsObject(root)) FAIL("not a JSON object");
+    const cJSON *id = cJSON_GetObjectItem(root, "id"), *maker = cJSON_GetObjectItem(root, "maker"),
+                *name = cJSON_GetObjectItem(root, "name"), *params = cJSON_GetObjectItem(root, "params"),
+                *progs = cJSON_GetObjectItem(root, "programs");
+    if (!cJSON_IsString(id) || !valid_id(id->valuestring)) FAIL("id: 1-%d of a-z, 0-9, -", MIDI_ID_MAX);
+    if (!valid_text(maker, MIDI_MAKER_MAX, true)) FAIL("maker: up to %d characters", MIDI_MAKER_MAX);
+    if (!valid_text(name, MIDI_NAME_MAX, false)) FAIL("name: 1-%d characters", MIDI_NAME_MAX);
+    int n = cJSON_GetArraySize(params);
+    if (!cJSON_IsArray(params) || n < 1 || n > MIDI_MAX_PARAMS) FAIL("params: 1-%d of them", MIDI_MAX_PARAMS);
+    bool ok = true;
+    int channel = int_in(cJSON_GetObjectItem(root, "channel"), 0, 16, 0, &ok);
+    int scheme = MIDI_PROG_PC, count = 128;
+    if (progs != NULL) {
+        const cJSON *sc = cJSON_GetObjectItem(progs, "scheme");
+        if (cJSON_IsString(sc) && strcmp(sc->valuestring, "korg-bank100") == 0) scheme = MIDI_PROG_KORG_BANK100;
+        else if (sc != NULL && !(cJSON_IsString(sc) && strcmp(sc->valuestring, "pc") == 0)) FAIL("programs.scheme: pc or korg-bank100");
+        count = int_in(cJSON_GetObjectItem(progs, "count"), 1, scheme == MIDI_PROG_KORG_BANK100 ? 12800 : 128, count, &ok);
+    }
+    if (!ok) FAIL("channel 0-16, programs.count in range");
+
+    // Measure: the strings' room.
+    size_t text = strlen(id->valuestring) + strlen(maker->valuestring) + strlen(name->valuestring) + 3;
+    for (int i = 0; i < n; i++) {
+        const cJSON *p = cJSON_GetArrayItem(params, i);
+        const cJSON *g = cJSON_GetObjectItem(p, "group"), *pn = cJSON_GetObjectItem(p, "name"),
+                    *sends = cJSON_GetObjectItem(p, "sends"), *opts = cJSON_GetObjectItem(p, "options");
+        if (!cJSON_IsObject(p)) FAIL("param %d: not an object", i + 1);
+        if (!valid_text(g, MIDI_LABEL_MAX, true)) FAIL("param %d: group up to %d characters", i + 1, MIDI_LABEL_MAX);
+        if (!valid_text(pn, MIDI_LABEL_MAX, false)) FAIL("param %d: name 1-%d characters", i + 1, MIDI_LABEL_MAX);
+        if (sends != NULL && !(cJSON_IsString(sends) && (strcmp(sends->valuestring, "cc") == 0 || strcmp(sends->valuestring, "korg10") == 0)))
+            FAIL("param %d: sends cc or korg10", i + 1);
+        int_in(cJSON_GetObjectItem(p, "cc"), 0, 127, 0, &ok);
+        if (!ok || cJSON_GetObjectItem(p, "cc") == NULL) FAIL("param %d: cc 0-127", i + 1);
+        text += strlen(g->valuestring) + strlen(pn->valuestring) + 2;
+        if (opts != NULL) {
+            int k = cJSON_GetArraySize(opts);
+            if (!cJSON_IsArray(opts) || k < 2 || k > MIDI_MAX_OPTS) FAIL("param %d: 2-%d options", i + 1, MIDI_MAX_OPTS);
+            for (int o = 0; o < k; o++) {
+                const cJSON *opt = cJSON_GetArrayItem(opts, o), *on = cJSON_GetObjectItem(opt, "name");
+                if (!valid_text(on, MIDI_OPT_MAX, false)) FAIL("param %d option %d: name 1-%d characters", i + 1, o + 1, MIDI_OPT_MAX);
+                int_in(cJSON_GetObjectItem(opt, "value"), 0, 127, 0, &ok);
+                if (!ok || cJSON_GetObjectItem(opt, "value") == NULL) FAIL("param %d option %d: value 0-127", i + 1, o + 1);
+                text += strlen(on->valuestring) + 1;
+            }
+        }
+    }
+
+    size_t size = sizeof(midi_synth_t) + (size_t)n * sizeof(midi_param_t) + text;
+    uint8_t *block = heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM);
+    if (block == NULL) FAIL("out of memory");
+    midi_synth_t *s = (midi_synth_t *)block;
+    midi_param_t *ps = (midi_param_t *)(block + sizeof(midi_synth_t));
+    char *at = (char *)(ps + n);
+    // Copies `src` into the block's string room.
+    #define PUT(dst, src)                \
+        do {                             \
+            size_t _l = strlen(src) + 1; \
+            memcpy(at, (src), _l);       \
+            (dst) = at;                  \
+            at += _l;                    \
+        } while (0)
+    PUT(s->id, id->valuestring);
+    PUT(s->maker, maker->valuestring);
+    PUT(s->name, name->valuestring);
+    s->channel = (uint8_t)channel;
+    s->prog_scheme = (uint8_t)scheme;
+    s->prog_count = (uint16_t)count;
+    s->n_params = (uint8_t)n;
+    s->params = ps;
+    for (int i = 0; i < n; i++) {
+        const cJSON *p = cJSON_GetArrayItem(params, i), *opts = cJSON_GetObjectItem(p, "options"),
+                    *sends = cJSON_GetObjectItem(p, "sends");
+        midi_param_t *q = &ps[i];
+        PUT(q->group, cJSON_GetObjectItem(p, "group")->valuestring);
+        PUT(q->name, cJSON_GetObjectItem(p, "name")->valuestring);
+        q->cc = (uint8_t)cJSON_GetObjectItem(p, "cc")->valuedouble;
+        q->kind = sends && strcmp(sends->valuestring, "korg10") == 0 ? MIDI_P_KORG10 : MIDI_P_CC;
+        q->bipolar = cJSON_IsTrue(cJSON_GetObjectItem(p, "centred"));
+        if (opts != NULL) {
+            q->n_opts = (uint8_t)cJSON_GetArraySize(opts);
+            q->kind = MIDI_P_CC; // a switch sends one CC value per option
+            for (int o = 0; o < q->n_opts; o++) {
+                const cJSON *opt = cJSON_GetArrayItem(opts, o);
+                PUT(q->opt_name[o], cJSON_GetObjectItem(opt, "name")->valuestring);
+                q->opt_value[o] = (uint8_t)cJSON_GetObjectItem(opt, "value")->valuedouble;
+            }
+        }
+    }
+    #undef PUT
+    return s;
+}
+#undef FAIL
+
+static cJSON *to_json(const midi_synth_t *s) {
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) return NULL;
+    cJSON_AddStringToObject(root, "id", s->id);
+    cJSON_AddStringToObject(root, "maker", s->maker);
+    cJSON_AddStringToObject(root, "name", s->name);
+    cJSON_AddNumberToObject(root, "channel", s->channel);
+    cJSON *progs = cJSON_AddObjectToObject(root, "programs");
+    cJSON_AddStringToObject(progs, "scheme", s->prog_scheme == MIDI_PROG_KORG_BANK100 ? "korg-bank100" : "pc");
+    cJSON_AddNumberToObject(progs, "count", s->prog_count);
+    cJSON *params = cJSON_AddArrayToObject(root, "params");
+    for (int i = 0; i < s->n_params; i++) {
+        const midi_param_t *p = &s->params[i];
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "group", p->group);
+        cJSON_AddStringToObject(o, "name", p->name);
+        cJSON_AddStringToObject(o, "sends", p->kind == MIDI_P_KORG10 ? "korg10" : "cc");
+        cJSON_AddNumberToObject(o, "cc", p->cc);
+        if (p->bipolar) cJSON_AddTrueToObject(o, "centred");
+        if (p->n_opts > 1) {
+            cJSON *opts = cJSON_AddArrayToObject(o, "options");
+            for (int k = 0; k < p->n_opts; k++) {
+                cJSON *x = cJSON_CreateObject();
+                cJSON_AddStringToObject(x, "name", p->opt_name[k]);
+                cJSON_AddNumberToObject(x, "value", p->opt_value[k]);
+                cJSON_AddItemToArray(opts, x);
+            }
+        }
+        cJSON_AddItemToArray(params, o);
+    }
+    return root;
+}
+
+char *midi_synth_json(int i, size_t *len) {
+    if (i < 0 || i >= midi_synth_count()) return NULL;
+    cJSON *root = to_json(midi_synth_get(i));
+    char *text = root ? cJSON_PrintUnformatted(root) : NULL;
+    cJSON_Delete(root);
+    if (text && len) *len = strlen(text);
+    return text;
+}
+
+// --- files ---
+static void path_for(char *out, size_t n, const char *id, const char *ext) { snprintf(out, n, DIR_PATH "/%s%s", id, ext); }
+
+static midi_synth_t *load_file(const char *id) {
+    char path[96], why[64];
+    path_for(path, sizeof(path), id, ".json");
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) return NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    midi_synth_t *s = NULL;
+    char *buf = size > 0 && size <= MIDI_JSON_MAX ? heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM) : NULL;
+    if (buf && fread(buf, 1, size, f) == (size_t)size) {
+        buf[size] = '\0';
+        cJSON *root = cJSON_ParseWithLength(buf, size);
+        s = from_json(root, why, sizeof(why));
+        cJSON_Delete(root);
+        if (s == NULL) ESP_LOGW(TAG, "%s: %s", path, why);
+        else if (strcmp(s->id, id) != 0) {
+            ESP_LOGW(TAG, "%s: its id is %s -- skipped", path, s->id);
+            heap_caps_free(s);
+            s = NULL;
+        }
+    }
+    heap_caps_free(buf);
+    fclose(f);
+    return s;
+}
+
+static bool write_file(const midi_synth_t *s) {
+    cJSON *root = to_json(s);
+    char *text = root ? cJSON_Print(root) : NULL; // indented: it's meant to be read and shared
+    cJSON_Delete(root);
+    if (text == NULL) return false;
+    char path[96], tmp[96];
+    path_for(path, sizeof(path), s->id, ".json");
+    path_for(tmp, sizeof(tmp), s->id, ".tmp");
+    size_t len = strlen(text);
+    FILE *f = fopen(tmp, "wb");
+    bool ok = f != NULL && fwrite(text, 1, len, f) == len;
+    if (f) ok = (fclose(f) == 0) && ok;
+    cJSON_free(text);
+    if (ok) {
+        remove(path);
+        ok = rename(tmp, path) == 0;
+    }
+    if (!ok) remove(tmp);
+    ESP_LOGI(TAG, "%s: %s", path, ok ? "saved" : "NOT saved");
+    return ok;
+}
+
+static bool delete_file(const char *id) {
+    char path[96];
+    path_for(path, sizeof(path), id, ".json");
+    return remove(path) == 0;
+}
+
+static int builtin_index(const char *id) {
+    for (int i = 0; i < BUILTINS; i++) {
         if (strcmp(SYNTHS[i].id, id) == 0) return i;
     }
     return -1;
+}
+
+void midi_synths_init(void) {
+    for (int i = 0; i < BUILTINS; i++) {
+        atomic_store(&s_list[i], &SYNTHS[i]);
+        atomic_store(&s_flags[i], MIDI_SYNTH_BUILTIN);
+    }
+    atomic_store(&s_count, BUILTINS);
+    mkdir(DIR_PATH, 0775); // EEXIST after the first boot; fails quietly with no LittleFS
+    DIR *d = opendir(DIR_PATH);
+    if (d == NULL) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        char id[MIDI_ID_MAX + 1];
+        size_t len = strlen(e->d_name);
+        if (len <= 5 || len - 5 > MIDI_ID_MAX || strcmp(e->d_name + len - 5, ".json") != 0) continue;
+        memcpy(id, e->d_name, len - 5);
+        id[len - 5] = '\0';
+        midi_synth_t *s = load_file(id);
+        if (s == NULL) continue;
+        int b = builtin_index(id);
+        if (b >= 0) {
+            set_slot(b, s, s, MIDI_SYNTH_BUILTIN | MIDI_SYNTH_STORED);
+        } else if (midi_synth_count() < MIDI_MAX_SYNTHS) {
+            int n = midi_synth_count();
+            set_slot(n, s, s, MIDI_SYNTH_STORED);
+            atomic_store(&s_count, n + 1);
+        } else {
+            heap_caps_free(s);
+        }
+    }
+    closedir(d);
+    ESP_LOGI(TAG, "%d synth profiles (%d built in)", midi_synth_count(), BUILTINS);
+}
+
+// --- the companion's edits (usb task) ---
+midi_synth_err_t midi_synth_put(const char *json, size_t len, bool save, int *index, char *why, size_t why_n) {
+    why[0] = '\0';
+    cJSON *root = cJSON_ParseWithLength(json, len);
+    if (root == NULL) {
+        snprintf(why, why_n, "not JSON");
+        return MIDI_SYNTH_ERR_INVALID;
+    }
+    midi_synth_t *s = from_json(root, why, why_n);
+    cJSON_Delete(root);
+    if (s == NULL) return MIDI_SYNTH_ERR_INVALID;
+    int i = midi_synth_find(s->id);
+    uint8_t flags;
+    if (i >= 0) {
+        flags = (midi_synth_flags(i) & (MIDI_SYNTH_BUILTIN | MIDI_SYNTH_STORED)) | MIDI_SYNTH_LIVE;
+        set_slot(i, s, s, flags);
+    } else {
+        i = midi_synth_count();
+        if (i >= MIDI_MAX_SYNTHS) {
+            heap_caps_free(s);
+            snprintf(why, why_n, "%d synths already", MIDI_MAX_SYNTHS);
+            return MIDI_SYNTH_ERR_FULL;
+        }
+        set_slot(i, s, s, MIDI_SYNTH_LIVE);
+        atomic_store(&s_count, i + 1);
+    }
+    *index = i;
+    if (save) return midi_synth_op(i, MIDI_SYNTH_OP_SAVE, NULL);
+    return MIDI_SYNTH_OK;
+}
+
+midi_synth_err_t midi_synth_op(int index, int op, bool *removed) {
+    if (removed) *removed = false;
+    if (index < 0 || index >= midi_synth_count()) return MIDI_SYNTH_ERR_INDEX;
+    const midi_synth_t *s = midi_synth_get(index);
+    uint8_t flags = midi_synth_flags(index);
+    int b = builtin_index(s->id);
+    switch (op) {
+        case MIDI_SYNTH_OP_SAVE:
+            if (!write_file(s)) return MIDI_SYNTH_ERR_STORAGE;
+            atomic_store(&s_flags[index], (uint8_t)((flags | MIDI_SYNTH_STORED) & ~MIDI_SYNTH_LIVE));
+            atomic_fetch_add(&s_gen, 1);
+            return MIDI_SYNTH_OK;
+        case MIDI_SYNTH_OP_REVERT:
+            if (flags & MIDI_SYNTH_STORED) {
+                midi_synth_t *f = load_file(s->id);
+                if (f == NULL) return MIDI_SYNTH_ERR_STORAGE;
+                set_slot(index, f, f, (uint8_t)(flags & ~MIDI_SYNTH_LIVE));
+            } else if (b >= 0) {
+                set_slot(index, &SYNTHS[b], NULL, MIDI_SYNTH_BUILTIN);
+            } else {
+                remove_slot(index);
+                if (removed) *removed = true;
+            }
+            return MIDI_SYNTH_OK;
+        case MIDI_SYNTH_OP_REMOVE:
+            if ((flags & MIDI_SYNTH_STORED) && !delete_file(s->id)) return MIDI_SYNTH_ERR_STORAGE;
+            if (b >= 0) {
+                set_slot(index, &SYNTHS[b], NULL, MIDI_SYNTH_BUILTIN); // a built-in: back to the original
+            } else {
+                remove_slot(index);
+                if (removed) *removed = true;
+            }
+            return MIDI_SYNTH_OK;
+        default:
+            return MIDI_SYNTH_ERR_INDEX;
+    }
 }

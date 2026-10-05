@@ -114,6 +114,8 @@ static int s_count = 0;
 EXT_RAM_BSS_ATTR static home_store_t s_import; // staged by the usb task
 static SemaphoreHandle_t s_cfg_mux;             // s_import's commit vs the home task's reload
 static _Atomic bool s_reload = false;
+static _Atomic bool s_patch = false; // an edit: names, icons, order -- the lamps' sessions stay
+EXT_RAM_BSS_ATTR static lamp_t s_tmp[HOME_MAX_LAMPS]; // the home task's, for a patch
 static _Atomic int s_stored_count = 0;
 
 // The screen's copy.
@@ -396,7 +398,12 @@ static void handle_packet(const uint8_t *p, int n, uint32_t from) {
         l->stamp_at = now_ms();
         if (from != l->cfg.ip) {
             ESP_LOGI(TAG, "%s moved to a new address", l->cfg.name);
-            l->cfg.ip = from; // this session only; the next import stores it
+            l->cfg.ip = from; // stored with the next edit or import
+            xSemaphoreTake(s_cfg_mux, portMAX_DELAY);
+            for (uint32_t i = 0; i < s_import.count; i++) {
+                if (s_import.lamps[i].did == l->cfg.did) s_import.lamps[i].ip = from;
+            }
+            xSemaphoreGive(s_cfg_mux);
         }
         return;
     }
@@ -462,6 +469,42 @@ static void load_lamps(const home_store_t *st) {
     s_selected = 0;
     s_last = -1;
     s_ever_scanned = false;
+}
+
+// An edit stored (home_edit): the lamps in the new order, with their new names and icons, each
+// keeping its session (online, its state); the selection stays on the same lamp.
+static void patch_lamps(void) {
+    uint32_t sel = s_selected < s_count ? s_lamps[s_selected].cfg.did : 0;
+    uint32_t last = s_last >= 0 && s_last < s_count ? s_lamps[s_last].cfg.did : 0;
+    int n = (int)s_import.count;
+    for (int i = 0; i < n; i++) {
+        const home_lamp_cfg_t *c = &s_import.lamps[i];
+        lamp_t *old = by_did(c->did);
+        if (old != NULL) {
+            s_tmp[i] = *old;
+            memcpy(s_tmp[i].cfg.name, c->name, HOME_NAME_LEN);
+            s_tmp[i].cfg.kind = c->kind;
+        } else { // not on the knob before (an edit can't add one, but be safe)
+            memset(&s_tmp[i], 0, sizeof(s_tmp[i]));
+            s_tmp[i].cfg = *c;
+            md5(c->token, 16, NULL, 0, NULL, 0, s_tmp[i].key);
+            md5(s_tmp[i].key, 16, c->token, 16, NULL, 0, s_tmp[i].iv);
+            s_tmp[i].proto = c->proto == HOME_PROTO_LEGACY ? HOME_PROTO_LEGACY : HOME_PROTO_MIOT;
+            s_tmp[i].bright = 50;
+            s_tmp[i].ct = 4000;
+        }
+    }
+    memcpy(s_lamps, s_tmp, sizeof(lamp_t) * (size_t)n);
+    s_count = n;
+    s_selected = 0;
+    s_last = -1;
+    for (int i = 0; i < n; i++) {
+        if (s_lamps[i].cfg.did == sel) s_selected = i;
+        if (s_lamps[i].cfg.did == last) s_last = i;
+    }
+    if (s_count == 0) s_phase = HOME_PHASE_EMPTY;
+    else if (s_phase == HOME_PHASE_EDIT && s_lamps[s_selected].cfg.did != sel) s_phase = HOME_PHASE_LIST;
+    memset(s_tmp, 0, sizeof(s_tmp)); // the tokens
 }
 
 static void start_scan(void) {
@@ -667,6 +710,8 @@ static void publish(void) {
         v->hue = l->hue;
         bool colour = (l->cfg.caps & HOME_CAP_COLOR) && (l->color_mode || !(l->cfg.caps & HOME_CAP_TEMP));
         v->rgb = colour ? home_hue_rgb(l->hue) : (l->cfg.caps & HOME_CAP_TEMP) ? home_kelvin_rgb(l->ct) : home_kelvin_rgb(4000);
+        v->ip = l->cfg.ip;
+        v->proto = l->proto;
     }
     // The control loop's walls and feel.
     uint8_t ends = 0;
@@ -700,6 +745,12 @@ static void home_task(void *arg) {
             xSemaphoreGive(s_cfg_mux);
             ESP_LOGI(TAG, "%d lamps imported", s_count);
             was_active = false; // look for the new list at once
+            publish();
+        }
+        if (atomic_exchange(&s_patch, false)) {
+            xSemaphoreTake(s_cfg_mux, portMAX_DELAY);
+            patch_lamps();
+            xSemaphoreGive(s_cfg_mux);
             publish();
         }
         bool active = menu_get_hid_type() == MENU_HID_HOME && !menu_is_open();
@@ -784,16 +835,13 @@ bool home_import_lamp(int slot, const home_lamp_cfg_t *lamp) {
     return true;
 }
 
-bool home_import_commit(int count) {
-    if (count < 0 || count > HOME_MAX_LAMPS || s_cfg_mux == NULL) return false;
+// s_import to NVS. Caller holds s_cfg_mux.
+static bool store_locked(void) {
     // NVS writes from internal RAM: s_import lives in PSRAM.
     home_store_t *st = heap_caps_malloc(sizeof(*st), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (st == NULL) return false;
-    xSemaphoreTake(s_cfg_mux, portMAX_DELAY);
     s_import.version = STORE_VERSION;
-    s_import.count = (uint32_t)count;
     memcpy(st, &s_import, sizeof(*st));
-    xSemaphoreGive(s_cfg_mux);
     nvs_handle_t h;
     bool ok = nvs_open(NVS_NS, NVS_READWRITE, &h) == ESP_OK;
     if (ok) {
@@ -802,11 +850,69 @@ bool home_import_commit(int count) {
     }
     memset(st, 0, sizeof(*st)); // the tokens
     heap_caps_free(st);
+    return ok;
+}
+
+bool home_import_commit(int count) {
+    if (count < 0 || count > HOME_MAX_LAMPS || s_cfg_mux == NULL) return false;
+    xSemaphoreTake(s_cfg_mux, portMAX_DELAY);
+    s_import.count = (uint32_t)count;
+    bool ok = store_locked();
+    xSemaphoreGive(s_cfg_mux);
     if (ok) {
         atomic_store(&s_stored_count, count);
         atomic_store(&s_reload, true);
     }
     ESP_LOGI(TAG, "import of %d lamps %s", count, ok ? "stored" : "NOT stored");
+    return ok;
+}
+
+bool home_edit(int slot, uint32_t did, int what, int value, const char *name) {
+    if (s_cfg_mux == NULL) return false;
+    xSemaphoreTake(s_cfg_mux, portMAX_DELAY);
+    int n = (int)s_import.count;
+    bool ok = slot >= 0 && slot < n && s_import.lamps[slot].did == did;
+    if (ok) {
+        home_lamp_cfg_t *l = &s_import.lamps[slot];
+        switch (what) {
+            case HOME_EDIT_NAME:
+                ok = name != NULL && name[0] != '\0';
+                if (ok) {
+                    memset(l->name, 0, HOME_NAME_LEN);
+                    strncpy(l->name, name, HOME_NAME_LEN - 1);
+                }
+                break;
+            case HOME_EDIT_KIND:
+                ok = value >= 0 && value < HOME_KIND_COUNT;
+                if (ok) l->kind = (uint8_t)value;
+                break;
+            case HOME_EDIT_MOVE: {
+                ok = value >= 0 && value < n;
+                if (!ok || value == slot) break;
+                home_lamp_cfg_t moved = *l;
+                if (value < slot) memmove(&s_import.lamps[value + 1], &s_import.lamps[value], sizeof(moved) * (size_t)(slot - value));
+                else memmove(&s_import.lamps[slot], &s_import.lamps[slot + 1], sizeof(moved) * (size_t)(value - slot));
+                s_import.lamps[value] = moved;
+                memset(&moved, 0, sizeof(moved));
+                break;
+            }
+            case HOME_EDIT_REMOVE:
+                memmove(&s_import.lamps[slot], &s_import.lamps[slot + 1], sizeof(*l) * (size_t)(n - 1 - slot));
+                memset(&s_import.lamps[n - 1], 0, sizeof(*l));
+                s_import.count = (uint32_t)(n - 1);
+                break;
+            default:
+                ok = false;
+        }
+    }
+    if (ok) ok = store_locked();
+    int count = (int)s_import.count;
+    xSemaphoreGive(s_cfg_mux);
+    if (ok) {
+        atomic_store(&s_stored_count, count);
+        atomic_store(&s_patch, true);
+    }
+    ESP_LOGI(TAG, "edit %d of lamp %d %s", what, slot, ok ? "stored" : "refused");
     return ok;
 }
 

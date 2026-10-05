@@ -10,6 +10,9 @@
 #include "net_link.h"
 #include "pd_status.h"
 #include "home.h"
+#include "midi.h"
+#include "cJSON.h"
+#include "esp_heap_caps.h"
 #include "clock.h"
 #include "screen_stream.h"
 #include "tasks_common.h"
@@ -20,6 +23,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <stdatomic.h>
 #include <string.h>
 
@@ -57,6 +61,39 @@ static bool s_pd_write;
 static _Atomic bool s_pd_pending = false; // EXT_CMD_PD (USB): I2C and NVM, in the usb task
 static int s_home_count;
 static _Atomic bool s_home_pending = false; // EXT_HOME_COMMIT (USB): NVS, in the usb task
+// EXT_HOME_EDIT: NVS too, in the usb task; acked on the link that asked.
+EXT_RAM_BSS_ATTR static struct {
+    int slot, what, value;
+    uint32_t did;
+    char name[HOME_NAME_LEN];
+    host_link_t link;
+    uint32_t gen;
+} s_edit;
+static _Atomic bool s_edit_pending = false;
+
+// EXT_CMD_SYNTH. READ: the JSON of one synth, written in the usb task and kept for the pieces
+// asked after it (s_syn_mux: the handlers read it in the TinyUSB / net tasks). A new version of the
+// list (midi_synth_gen) or another synth makes the next offset-0 request write it again.
+static SemaphoreHandle_t s_syn_mux;
+static char *s_syn_json;
+static uint32_t s_syn_len, s_syn_crc, s_syn_gen;
+static int s_syn_index = -1;
+EXT_RAM_BSS_ATTR static struct {
+    int index;
+    host_link_t link;
+    uint32_t gen;
+} s_syn_read;
+static _Atomic bool s_syn_read_pending = false;
+// PUT: one upload at a time, into PSRAM; END hands it to the usb task.
+static char *s_put;
+static uint32_t s_put_len, s_put_crc, s_put_got;
+static bool s_put_save, s_put_bad;
+static host_link_t s_put_link;
+static uint32_t s_put_gen;
+static _Atomic bool s_put_pending = false;
+// OP: bit 31 pending, 16-23 link, 8-15 index, 0-7 op.
+static _Atomic uint32_t s_syn_op = 0;
+static uint32_t s_syn_op_gen;
 // WiFi setup, staged until APPLY (EXT_CMD_NET). The password is wiped once it's stored.
 static char s_net_ssid[NET_SSID_MAX + 1], s_net_pass[64];
 static bool s_net_have_ssid, s_net_have_pass, s_net_on;
@@ -170,6 +207,17 @@ static void build_net(uint8_t *r) {
 }
 
 static uint32_t rd_u32(const uint8_t *p) { return (uint32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24); }
+static void put_u32(uint8_t *b, uint32_t v) { memcpy(b, &v, 4); }
+
+// CRC-32 (IEEE, reflected, zlib.crc32), as host_link.c.
+static uint32_t crc32_ieee(const uint8_t *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
 
 // One of HOME's lamps as the knob sees it now (never its token).
 EXT_RAM_BSS_ATTR static home_snapshot_t s_home_snap;
@@ -190,6 +238,157 @@ static void build_home(uint8_t *r, int slot) {
     r[13] = (uint8_t)l->rgb;
     r[14] = l->caps;
     memcpy(r + 15, l->name, strnlen(l->name, HOME_NAME_LEN - 1));
+    r[35] = l->kind;
+    memcpy(r + 36, &l->ip, 4); // network order: a.b.c.d
+    r[40] = l->proto;
+}
+
+static void synth_list(uint8_t *r, int i) {
+    r[0] = EXT_TAG_SYNTH;
+    r[1] = EXT_SYNTH_LIST;
+    r[2] = (uint8_t)i;
+    r[3] = (uint8_t)midi_synth_count();
+    if (i < 0 || i >= midi_synth_count()) return;
+    const midi_synth_t *sy = midi_synth_get(i);
+    r[4] = midi_synth_flags(i);
+    r[5] = sy->n_params;
+    r[6] = sy->channel;
+    r[7] = sy->prog_scheme;
+    put_u16(r + 8, sy->prog_count);
+    memcpy(r + 10, sy->id, strnlen(sy->id, MIDI_ID_MAX));
+    memcpy(r + 34, sy->maker, strnlen(sy->maker, MIDI_MAKER_MAX));
+    memcpy(r + 46, sy->name, strnlen(sy->name, MIDI_NAME_MAX));
+}
+
+// A piece of the JSON written last. Caller holds s_syn_mux.
+static void synth_piece_locked(uint8_t *r, uint32_t off) {
+    r[0] = EXT_TAG_SYNTH;
+    r[1] = EXT_SYNTH_READ;
+    r[2] = (uint8_t)s_syn_index;
+    put_u32(r + 4, s_syn_len);
+    put_u32(r + 8, s_syn_crc);
+    put_u32(r + 12, off);
+    if (s_syn_json == NULL || off >= s_syn_len) return;
+    uint32_t n = s_syn_len - off < EXT_SYNTH_CHUNK ? s_syn_len - off : EXT_SYNTH_CHUNK;
+    r[3] = (uint8_t)n;
+    memcpy(r + 16, s_syn_json + off, n);
+}
+
+static void synth_result(uint8_t *r, uint8_t what, int err, int index, bool removed, const char *why) {
+    r[0] = EXT_TAG_SYNTH;
+    r[1] = EXT_SYNTH_RESULT;
+    r[2] = what;
+    r[3] = (uint8_t)err;
+    r[4] = (uint8_t)index;
+    r[5] = removed;
+    if (why) memcpy(r + 8, why, strnlen(why, HOST_REPORT_SIZE - 9));
+}
+
+static void synth_status(uint8_t *r) {
+    midi_snapshot_t m;
+    midi_get_snapshot(&m);
+    r[0] = EXT_TAG_SYNTH;
+    r[1] = EXT_SYNTH_STATUS;
+    r[2] = m.active;
+    r[3] = (uint8_t)m.synth;
+    r[4] = (uint8_t)m.param;
+    put_u16(r + 5, (uint16_t)(int16_t)m.value);
+    r[7] = m.browsing;
+    put_u16(r + 8, (uint16_t)(int16_t)m.prog);
+    r[10] = m.channel;
+    r[11] = m.usb;
+    r[12] = m.trs;
+    put_u32(r + 13, m.tx);
+    put_u32(r + 17, m.rx);
+}
+
+static bool handle_synth(host_link_t link, const uint8_t *in, uint8_t *r) {
+    switch (in[1]) {
+        case EXT_SYNTH_LIST:
+            synth_list(r, in[2]);
+            return true;
+        case EXT_SYNTH_STATUS:
+            synth_status(r);
+            return true;
+        case EXT_SYNTH_GOTO:
+            midi_goto(in[2]);
+            ack(r, in[0], EXT_ST_OK);
+            return true;
+        case EXT_SYNTH_READ: {
+            uint32_t off = rd_u32(in + 4);
+            if (s_syn_mux == NULL) { // the usb task's first pass makes it
+                ack(r, in[0], EXT_ST_BAD_PARAM);
+                return true;
+            }
+            xSemaphoreTake(s_syn_mux, portMAX_DELAY);
+            bool have = s_syn_json != NULL && s_syn_index == in[2] && s_syn_gen == midi_synth_gen();
+            if (have && off > 0) {
+                synth_piece_locked(r, off);
+                xSemaphoreGive(s_syn_mux);
+                return true;
+            }
+            xSemaphoreGive(s_syn_mux);
+            if (off > 0 || atomic_load(&s_syn_read_pending)) { // offset 0 first, one at a time
+                ack(r, in[0], EXT_ST_BAD_PARAM);
+                return true;
+            }
+            s_syn_read.index = in[2];
+            s_syn_read.link = link;
+            s_syn_read.gen = host_link_gen(link);
+            atomic_store(&s_syn_read_pending, true); // ext_link_poll writes it and answers
+            return false;
+        }
+        case EXT_SYNTH_PUT_BEGIN: {
+            if (atomic_load(&s_put_pending) || (s_put != NULL && s_put_link != link)) {
+                synth_result(r, EXT_SYNTH_PUT_END, MIDI_SYNTH_ERR_STORAGE, 0, false, "busy");
+                return true;
+            }
+            heap_caps_free(s_put);
+            s_put = NULL;
+            uint32_t len = rd_u32(in + 4);
+            if (len == 0 || len > MIDI_JSON_MAX || (s_put = heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM)) == NULL) {
+                synth_result(r, EXT_SYNTH_PUT_END, MIDI_SYNTH_ERR_INVALID, 0, false, "too big");
+                return true;
+            }
+            s_put_len = len;
+            s_put_crc = rd_u32(in + 8);
+            s_put_got = 0;
+            s_put_save = in[2] & EXT_SYNTH_SAVE;
+            s_put_bad = false;
+            s_put_link = link;
+            s_put_gen = host_link_gen(link);
+            return false;
+        }
+        case EXT_SYNTH_PUT_DATA: {
+            if (s_put == NULL || s_put_link != link || atomic_load(&s_put_pending)) return false;
+            uint32_t off = in[2] | in[3] << 8 | (uint32_t)in[4] << 16, n = in[5];
+            if (off != s_put_got || n > EXT_SYNTH_PUT_CHUNK || off + n > s_put_len) {
+                s_put_bad = true; // reported at END
+                return false;
+            }
+            memcpy(s_put + off, in + 8, n);
+            s_put_got += n;
+            return false;
+        }
+        case EXT_SYNTH_PUT_END:
+            if (s_put == NULL || s_put_link != link) {
+                synth_result(r, EXT_SYNTH_PUT_END, MIDI_SYNTH_ERR_INVALID, 0, false, "no upload");
+                return true;
+            }
+            atomic_store(&s_put_pending, true); // the usb task parses and stores it
+            return false;
+        case EXT_SYNTH_OP:
+            if (atomic_load(&s_syn_op)) {
+                synth_result(r, EXT_SYNTH_OP, MIDI_SYNTH_ERR_STORAGE, in[2], false, "busy");
+                return true;
+            }
+            s_syn_op_gen = host_link_gen(link);
+            atomic_store(&s_syn_op, 0x80000000u | (uint32_t)link << 16 | (uint32_t)in[2] << 8 | in[3]);
+            return false;
+        default:
+            ack(r, in[0], EXT_ST_BAD_PARAM);
+            return true;
+    }
 }
 
 bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
@@ -370,10 +569,28 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             s_pd_write = in[1] == 1;
             atomic_store(&s_pd_pending, true);
             return false;
+        case EXT_CMD_SYNTH:
+            return handle_synth(link, in, r);
         case EXT_CMD_HOME:
             if (in[1] == EXT_HOME_STATUS) {
                 build_home(r, in[2]);
                 return true;
+            }
+            if (in[1] == EXT_HOME_EDIT) { // no tokens: over WiFi too
+                if (atomic_load(&s_edit_pending)) {
+                    ack(r, in[0], EXT_ST_BAD_PARAM);
+                    return true;
+                }
+                s_edit.slot = in[2];
+                s_edit.what = in[3];
+                s_edit.did = rd_u32(in + 4);
+                s_edit.value = in[8];
+                memset(s_edit.name, 0, sizeof(s_edit.name));
+                memcpy(s_edit.name, in + 8, HOME_NAME_LEN - 1);
+                s_edit.link = link;
+                s_edit.gen = host_link_gen(link);
+                atomic_store(&s_edit_pending, true); // NVS: ext_link_poll
+                return false;
             }
             if (link != HOST_LINK_USB) { // the lamps' tokens: someone with the knob on a cable
                 ack(r, in[0], EXT_ST_USB_ONLY);
@@ -475,6 +692,58 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
     }
 }
 
+// The usb task's half of EXT_CMD_SYNTH: the JSON (cJSON, files).
+static void synth_poll(uint8_t *r) {
+    if (s_syn_mux == NULL) s_syn_mux = xSemaphoreCreateMutex();
+    if (atomic_load(&s_syn_read_pending)) {
+        size_t len = 0;
+        uint32_t gen = midi_synth_gen();
+        char *text = midi_synth_json(s_syn_read.index, &len);
+        xSemaphoreTake(s_syn_mux, portMAX_DELAY);
+        cJSON_free(s_syn_json);
+        s_syn_json = text;
+        s_syn_len = text ? (uint32_t)len : 0;
+        s_syn_crc = text ? crc32_ieee((const uint8_t *)text, len) : 0;
+        s_syn_index = s_syn_read.index;
+        s_syn_gen = gen;
+        memset(r, 0, HOST_REPORT_SIZE);
+        synth_piece_locked(r, 0);
+        xSemaphoreGive(s_syn_mux);
+        host_link_queue_to(s_syn_read.link, s_syn_read.gen, r);
+        atomic_store(&s_syn_read_pending, false);
+    }
+    if (atomic_load(&s_put_pending)) {
+        char why[HOST_REPORT_SIZE - 8] = "";
+        int index = 0, err;
+        if (s_put_bad || s_put_got != s_put_len || crc32_ieee((const uint8_t *)s_put, s_put_len) != s_put_crc) {
+            err = MIDI_SYNTH_ERR_INVALID;
+            snprintf(why, sizeof(why), "transfer: got %u of %u bytes", (unsigned)s_put_got, (unsigned)s_put_len);
+        } else {
+            s_put[s_put_len] = '\0';
+            err = midi_synth_put(s_put, s_put_len, s_put_save, &index, why, sizeof(why));
+        }
+        if (err) ESP_LOGW(TAG, "synth upload: %d (%s)", err, why);
+        heap_caps_free(s_put);
+        s_put = NULL;
+        memset(r, 0, HOST_REPORT_SIZE);
+        synth_result(r, EXT_SYNTH_PUT_END, err, index, false, why);
+        host_link_queue_to(s_put_link, s_put_gen, r);
+        atomic_store(&s_put_pending, false);
+    }
+    uint32_t op = atomic_load(&s_syn_op);
+    if (op) {
+        int index = (op >> 8) & 0xFF;
+        bool removed = false;
+        int err = midi_synth_op(index, op & 0xFF, &removed);
+        if (removed) menu_midi_synth_removed(index);
+        memset(r, 0, HOST_REPORT_SIZE);
+        synth_result(r, EXT_SYNTH_OP, err, index, removed, NULL);
+        host_link_queue_to((host_link_t)((op >> 16) & 0xFF), s_syn_op_gen, r);
+        atomic_store(&s_syn_op, 0);
+    }
+    midi_synths_reap();
+}
+
 void ext_link_poll(void) {
     uint8_t r[HOST_REPORT_SIZE];
     if (atomic_load(&s_text_pending)) {
@@ -541,6 +810,16 @@ void ext_link_poll(void) {
         host_link_queue(r);
         atomic_store(&s_home_pending, false);
     }
+    if (atomic_load(&s_edit_pending)) {
+        static const int WHAT[] = {0, HOME_EDIT_NAME, HOME_EDIT_KIND, HOME_EDIT_MOVE, HOME_EDIT_REMOVE};
+        int what = s_edit.what >= 1 && s_edit.what <= 4 ? WHAT[s_edit.what] : 0;
+        bool ok = what && home_edit(s_edit.slot, s_edit.did, what, s_edit.value, s_edit.name);
+        memset(r, 0, sizeof(r));
+        ack(r, EXT_CMD_HOME, ok ? EXT_ST_OK : what ? EXT_ST_STORAGE : EXT_ST_BAD_PARAM);
+        host_link_queue_to(s_edit.link, s_edit.gen, r);
+        atomic_store(&s_edit_pending, false);
+    }
+    synth_poll(r);
     clock_poll();      // stores a changed format / zone
     user_prefs_poll(); // and MUSIC's cover style
     uint16_t id;

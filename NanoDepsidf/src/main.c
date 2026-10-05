@@ -108,6 +108,7 @@ void app_main(void) {
     ui_state_init();
     clock_init();
     app_profiles_init(); // stored profiles: before menu_init() looks up the saved one by id
+    midi_synths_init();  // the synth profiles (LittleFS is mounted now): before menu_init() too
     menu_init();
     icon_store_init(); // before usb_task (producer) and display_task (consumer) start
 

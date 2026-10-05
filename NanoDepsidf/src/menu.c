@@ -1213,6 +1213,14 @@ void menu_profile_removed(int index) {
     portEXIT_CRITICAL(&s_state_mux);
 }
 
+void menu_midi_synth_removed(int index) {
+    atomic_store(&s_ph_midi_synth, after_removal(atomic_load(&s_ph_midi_synth), index));
+    portENTER_CRITICAL(&s_state_mux);
+    s_saved.midi_synth = after_removal(s_saved.midi_synth, index);
+    s_undo.midi_synth = after_removal(s_undo.midi_synth, index);
+    portEXIT_CRITICAL(&s_state_mux);
+}
+
 int32_t menu_get_display_rotation(void) {
     return atomic_load_explicit(&s_ph_rotation, memory_order_relaxed);
 }
