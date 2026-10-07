@@ -110,7 +110,7 @@ shows, at 2× scale.
 - **MUSIC.** The knob is the computer's volume and the keys play, pause and skip, as media
   keys the system handles itself. With the optional Mac service running, the screen shows
   the album cover, title and artist, and a volume ring that moves with the knob.
-- **AGENTS.** Claude Code, Codex and Cursor can show their permission requests on the knob,
+- **AGENTS.** Claude Code, Codex, Cursor and VS Code Copilot can show their permission requests on the knob,
   through the optional Mac service and its hooks. Hold F1 to allow, F3 to deny. A dashboard
   shows which sessions are working or waiting, and a command wheel types their commands.
 - **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
@@ -430,7 +430,7 @@ the keys and knob work the same and the screen shows the MUSIC icon.
   <img src="NanoDepsidf/docs/images/agents-wheel-clear.png" width="200" alt="AGENTS command wheel: CLEAR, drawn as a terminal typing /clear">
 </p>
 
-A console for AI coding agents: Claude Code, Codex and Cursor.
+A console for AI coding agents: Claude Code, Codex, Cursor and GitHub Copilot in VS Code.
 
 | Input | Tap | Hold + turn |
 |---|---|---|
@@ -461,6 +461,13 @@ or defer, but never allow. If the knob doesn't answer within 30 s, or isn't ther
 own window as usual; the service never decides on its own. "Your turn" and "needs input"
 notices also show, and any key dismisses them. The knob and the keys keep their normal jobs
 while a request is up; only the key you answer with is held back from the app.
+
+**Copilot in VS Code** has no approval event, only a hook before every tool call, and VS Code
+holds its own prompt back until that hook answers. So the knob gets Copilot's terminal
+commands, web fetches and MCP calls first, including ones VS Code would have approved by
+itself, and waits 20 s instead of 30 before VS Code asks. File edits are not sent. Copilot
+shows with the generic agent badge. Leave VS Code's `chat.useClaudeHooks` off, or Copilot
+runs the Claude Code hooks as well.
 
 **Dashboard.** In the AGENTS profile the main screen lists the running agent sessions by
 project folder, with their state: WORKING, YOUR TURN, ASKING or IDLE.
@@ -675,7 +682,7 @@ The installer:
   Spotify are read over AppleScript);
 - adds hooks next to your existing ones in `~/.claude/settings.json`, `~/.codex/hooks.json`
   and `~/.cursor/hooks.json`. Each file is backed up first, and `--uninstall` removes exactly
-  those hooks.
+  those hooks. Copilot's hooks go in a file of their own, `~/.copilot/hooks/quadra.json`.
 
 The hooks reach the service over a socket only your user can open. The service's only
 internet traffic is for covers: it downloads artwork from the link the player gives, and when

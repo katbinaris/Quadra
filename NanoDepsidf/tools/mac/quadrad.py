@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """quadrad -- the Quadra knob's companion service on the Mac.
 
-Agents. Hooks in Claude Code, Codex and Cursor (quadra_hook.py) talk to this service over a
+Agents. Hooks in Claude Code, Codex, Cursor and VS Code Copilot (quadra_hook.py) talk to this service over a
 Unix socket (~/.quadra/agentd.sock, owner-only). Approvals show on the knob (vendor HID,
 src/ext_proto.h EXT_CMD_NOTIFY) and wait for its answer: hold F1 = allow, F3 = deny, F2 / F4 =
 answer in the app. Nothing here approves on its own: without a knob, after `approval_wait_s`,
@@ -530,7 +530,9 @@ class Daemon:
         self.sync()
         log(f"ask: {item.source} #{item.id} {item.title!r} {item.body!r}")
         gone = asyncio.ensure_future(reader.read(1))  # EOF: the agent dropped the hook
-        done, _ = await asyncio.wait({item.waiter, gone}, timeout=float(self.cfg["approval_wait_s"]),
+        # "wait": a hook that holds the agent's own prompt back (Copilot) asks for less.
+        wait = min(float(req.get("wait") or self.cfg["approval_wait_s"]), float(self.cfg["approval_wait_s"]))
+        done, _ = await asyncio.wait({item.waiter, gone}, timeout=wait,
                                      return_when=asyncio.FIRST_COMPLETED)
         gone.cancel()
         if item.waiter.done():

@@ -15,6 +15,8 @@ What it does:
       ~/.claude/settings.json   (Claude Code: PermissionRequest, Notification, Stop, ...)
       ~/.codex/hooks.json       (Codex: PermissionRequest, Stop, UserPromptSubmit, PostToolUse)
       ~/.cursor/hooks.json      (Cursor: before/after shell + MCP, stop, beforeSubmitPrompt)
+      ~/.copilot/hooks/quadra.json  (VS Code Copilot: PreToolUse, PostToolUse, Stop, ...; a file
+                                     of its own, written whole and deleted on --uninstall)
     Each file is backed up first (<file>.quadra-backup-<time>). Only entries whose command runs
     quadra_hook.py are ever touched, so re-running updates them in place and --uninstall removes
     exactly those. Codex's single `notify` setting is left alone.
@@ -74,6 +76,16 @@ CURSOR = {
     "beforeSubmitPrompt": "activity",
     "sessionStart": "start",
     "sessionEnd": "end",
+}
+
+
+COPILOT = {
+    # event: (event arg, timeout). PreToolUse waits for the knob (quadra_hook.COPILOT_WAIT_S).
+    "PreToolUse": ("pretool", 30),
+    "PostToolUse": ("tool-done", 10),
+    "Stop": ("stop", 10),
+    "UserPromptSubmit": ("activity", 10),
+    "SessionStart": ("start", 5),
 }
 
 
@@ -167,6 +179,20 @@ def configure(uninstall, dry, only):
                 hooks.setdefault(event, []).append({"command": hook_cmd("cursor", arg), "timeout": 5})
         save(p, s, dry)
         print(("removed from" if uninstall else "hooked into") + " Cursor:", p)
+    if "copilot" in only and os.path.isdir(os.path.join(HOME, ".copilot")):
+        p = os.path.join(HOME, ".copilot/hooks/quadra.json")
+        s = {"hooks": {event: [{"type": "command", "command": hook_cmd("copilot", arg), "timeout": t}]
+                       for event, (arg, t) in COPILOT.items()}}
+        if dry:
+            print(f"--- would {'remove' if uninstall else 'write'} {p} ---" + ("" if uninstall else "\n" + json.dumps(s, indent=2)))
+        elif uninstall:
+            if os.path.exists(p):
+                os.remove(p)
+        else:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(json.dumps(s, indent=2) + "\n")
+        print(("removed from" if uninstall else "hooked into") + " VS Code Copilot:", p)
 
 
 PLIST_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -246,7 +272,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--only", default="claude,codex,cursor", help="comma list of agents to (un)hook")
+    ap.add_argument("--only", default="claude,codex,cursor,copilot", help="comma list of agents to (un)hook")
     args = ap.parse_args()
     if not args.uninstall:
         for mod, pkg in (("hid", "hidapi"), ("PIL", "Pillow")):  # Pillow: MUSIC's cover
@@ -264,7 +290,8 @@ def main():
     configure(args.uninstall, args.dry_run, only)
     if not args.uninstall and not args.dry_run:
         print("\nCodex asks you to trust new hooks once: open codex, run /hooks, and approve the quadra ones.")
-        print("New Claude Code / Cursor sessions pick the hooks up; running ones keep their old set.")
+        print("New Claude Code / Cursor / Copilot sessions pick the hooks up; running ones keep their old set.")
+        print("VS Code: leave chat.useClaudeHooks off, or Copilot runs the Claude Code hooks as well.")
 
 
 if __name__ == "__main__":

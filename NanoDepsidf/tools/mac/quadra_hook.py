@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """quadra_hook -- the hook side of the Quadra agent notifications (stdlib only).
 
-Called by Claude Code, Codex and Cursor hooks as `quadra_hook.py <agent> <event>`, with the
-hook's JSON on stdin. It forwards a summary to quadra_agentd.py over a Unix socket and, for an
+Called by Claude Code, Codex, Cursor and VS Code Copilot hooks as `quadra_hook.py <agent>
+<event>`, with the hook's JSON on stdin. It forwards a summary to quadra_agentd.py over a Unix socket and, for an
 approval, prints the knob's answer in the agent's hook format.
 
 Fail-safe by construction: the only path that prints "allow" is the daemon answering "allow",
@@ -19,7 +19,11 @@ import sys
 SOCK = os.path.join(os.environ.get("QUADRA_HOME") or os.path.expanduser("~/.quadra"), "agentd.sock")
 TITLE_MAX, BODY_MAX = 16, 42
 
-SOURCES = {"claude": "claude", "codex": "codex", "cursor": "cursor"}
+SOURCES = {"claude": "claude", "codex": "codex", "cursor": "cursor", "copilot": "copilot"}
+# Copilot has no approval event, only PreToolUse before every tool call, and VS Code's own
+# prompt waits for the hook: so only these tools (and MCP) go to the knob, and not for long.
+COPILOT_ASKS = ("run_in_terminal", "fetch_webpage")
+COPILOT_WAIT_S = 20
 
 
 def ascii_only(s: str) -> str:
@@ -48,6 +52,10 @@ def summarize(tool: str, inp) -> tuple:
         files = re.findall(r"\*\*\* (?:Add|Update|Delete) File: (\S+)", str(patch))
         names = ", ".join(os.path.basename(f) for f in files) or "files"
         return "PATCH", clip(names, BODY_MAX)
+    if t == "fetch_webpage":
+        urls = inp.get("urls") or [inp.get("url", "")]
+        m = re.match(r"https?://([^/]+)", str(urls[0] if isinstance(urls, list) and urls else urls))
+        return "FETCH", clip(m.group(1) if m else urls, BODY_MAX)
     if t == "WebFetch":
         m = re.match(r"https?://([^/]+)", str(inp.get("url", "")))
         return "FETCH", clip(m.group(1) if m else inp.get("url", ""), BODY_MAX)
@@ -146,6 +154,25 @@ def claude_or_codex(agent: str, event: str, data: dict):
         tell({"op": "clear", **base, "state": "end", "what": "all"})
 
 
+def copilot(event: str, data: dict):
+    if event != "pretool":
+        claude_or_codex("copilot", event, data)
+        return
+    tool, inp = data.get("tool_name", ""), data.get("tool_input", {})
+    if tool not in COPILOT_ASKS and not tool.startswith("mcp_"):
+        return
+    title, body = summarize(tool, inp)
+    r = ask_daemon({"op": "ask", "source": "copilot", "session": str(data.get("session_id", "")),
+                    "cwd": where(data), "state": "asking", "wait": COPILOT_WAIT_S,
+                    "title": title, "body": body, "fp": fingerprint(tool, inp)}, timeout=COPILOT_WAIT_S + 5)
+    decision = (r or {}).get("decision")
+    if decision not in ("allow", "deny"):
+        return  # no decision: VS Code's own prompt (or its auto-approve)
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": decision,
+        "permissionDecisionReason": "Allowed on the Quadra knob." if decision == "allow" else "Denied on the Quadra knob."}}))
+
+
 def cursor(event: str, data: dict):
     base = {"source": "cursor", "session": str(data.get("conversation_id", "")), "cwd": where(data)}
     if event in ("shell", "mcp"):
@@ -187,6 +214,8 @@ def main():
         data = {}
     if agent == "cursor":
         cursor(event, data)
+    elif agent == "copilot":
+        copilot(event, data)
     else:
         claude_or_codex(agent, event, data)
 
@@ -195,7 +224,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception:
-        # Never break the agent. Claude Code / Codex: no output = no decision. Cursor reads
+        # Never break the agent. Claude Code / Codex / Copilot: no output = no decision. Cursor reads
         # empty output as invalid and blocks, so it always gets its neutral answer.
         if sys.argv[1:2] == ["cursor"]:
             print(json.dumps({"continue": True}) if sys.argv[2:3] == ["activity"] else "{}")
