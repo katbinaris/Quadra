@@ -67,7 +67,6 @@ export function SysPage() {
             <KV k="RAM free" v={`${Math.round(b.heapFree / 1024)}K`} />
             <KV k="RAM low" v={`${Math.round(b.heapMin / 1024)}K`} />
             <KV k="HID drops" v={String(b.hidDrops)} amber={b.hidDrops > 0} />
-            <KV k="Audio gaps" v={String(b.audioGaps)} amber={b.audioGaps > 0} />
             <KV k="Sensor CRC errors" v={String(b.sensorCrcErrors)} amber={b.sensorCrcErrors > 0} />
           </Tile>
         </div>

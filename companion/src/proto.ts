@@ -147,7 +147,7 @@ export const Set = {
   FEEL: 3,
   AMP: 4,
   PITCH: 5,
-  SOUND: 6,
+  // 6 was SOUND, the speaker's click timbre: the knob ignores it now
   HID_TYPE: 7,
   MIDI_CH: 8,
   PROFILE: 9,
@@ -168,7 +168,7 @@ export const HidType = { KEYBOARD: 0, MOUSE: 1, MIDI: 2, APP: 3, HOME: 4 } as co
 export const Host = { MAC: 0, PC: 1 } as const;
 export const Boot = { SERIAL: 0, HID: 1 } as const; // boot_usb_mode_t
 
-// Limits, as the firmware clamps them (haptic_params.h, audio_trigger.h).
+// Limits, as the firmware clamps them (haptic_params.h).
 // The haptic profiles (haptic_params.h HAPTIC_PROFILES), by id. KP, KD, SHAPE, FEEL, AMP and
 // PITCH in Settings are the values of one of them (Settings.hapticProfile) in its feel.
 export const HapticProfiles = [
@@ -214,7 +214,6 @@ export interface Settings {
   feel: number;
   amp: number;
   pitch: number;
-  sound: number;
   hidType: number;
   midiChannel: number;
   midiSynth: number; // index into MidiSynths
@@ -286,7 +285,6 @@ export interface SysB {
   heapFree: number;
   heapMin: number;
   hidDrops: number;
-  audioGaps: number;
   uptimeS: number;
   sensorCrcErrors: number;
 }
@@ -681,7 +679,6 @@ export function decode(b: Uint8Array): Message {
           feel: b[16],
           amp: b[17],
           pitch: f32(18),
-          sound: b[22],
           hidType: b[23],
           midiChannel: b[24],
           midiSynth: b[35] ? b[34] : 0, // [35] = how many: 0 from firmware before MIDI synths
@@ -761,7 +758,6 @@ export function decode(b: Uint8Array): Message {
           heapFree: u32(32),
           heapMin: u32(36),
           hidDrops: u32(40),
-          audioGaps: u32(44),
           uptimeS: u32(48),
           sensorCrcErrors: u32(52),
         },

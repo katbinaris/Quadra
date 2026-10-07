@@ -50,7 +50,7 @@ export class MockTransport implements Transport {
 
   private reg: Entry[] = BUILTINS.map((p) => ({ builtin: structuredClone(p), stored: null, live: null }));
   private upload: { buf: Uint8Array; crc: number; got: number; flags: number } | null = null;
-  private live = { detents: 12, kp: 6, kd: 0.01, feel: 0, amp: 100, pitch: 1, sound: 0, hidType: 3, midi: 1, midiSynth: 1, profile: 3, boot: 1, rotation: 0, host: 0, shape: 0 };
+  private live = { detents: 12, kp: 6, kd: 0.01, feel: 0, amp: 100, pitch: 1, hidType: 3, midi: 1, midiSynth: 1, profile: 3, boot: 1, rotation: 0, host: 0, shape: 0 };
   private saved = { ...this.live };
   // ext_proto.h: LIGHTS (saved by SAVE like the rest) and the idle word (stored at once).
   private lights = { src: 0, fx: 0, hue: 200, sat: 80, speed: 5, level: 100 };
@@ -133,7 +133,8 @@ export class MockTransport implements Transport {
         return reply();
       }
       case Cmd.SET: {
-        const keys = ["detents", "kp", "kd", "feel", "amp", "pitch", "sound", "hidType", "midi", "profile", "boot", "rotation", "host", "shape"] as const;
+        // By setting id; 6 was the speaker's click timbre, which the knob ignores now.
+        const keys = ["detents", "kp", "kd", "feel", "amp", "pitch", null, "hidType", "midi", "profile", "boot", "rotation", "host", "shape"] as const;
         const k = keys[r[1]];
         const f = r[1] === Set.KP || r[1] === Set.KD || r[1] === Set.PITCH;
         const val = f ? inV.getFloat32(4, true) : inV.getInt32(4, true);
@@ -545,8 +546,8 @@ export class MockTransport implements Transport {
   private settings(out: Uint8Array) {
     const v = new DataView(out.buffer);
     const l = this.live, s = this.saved;
-    const keys = ["sound", "hidType", "midi", "midiSynth", "profile", "boot", "rotation", "host"] as const;
-    const ids = [Set.SOUND, Set.HID_TYPE, Set.MIDI_CH, Set.MIDI_SYNTH, Set.PROFILE, Set.BOOT, Set.ROTATION, Set.HOST];
+    const keys = ["hidType", "midi", "midiSynth", "profile", "boot", "rotation", "host"] as const;
+    const ids = [Set.HID_TYPE, Set.MIDI_CH, Set.MIDI_SYNTH, Set.PROFILE, Set.BOOT, Set.ROTATION, Set.HOST];
     let dirty = 0;
     keys.forEach((k, i) => {
       if (l[k] !== s[k]) dirty |= 1 << ids[i];
@@ -579,7 +580,6 @@ export class MockTransport implements Transport {
     out[16] = prof.feel;
     out[17] = t.amp;
     v.setFloat32(18, t.pitch, true);
-    out[22] = l.sound;
     out[23] = l.hidType;
     out[24] = l.midi;
     out[25] = l.profile;

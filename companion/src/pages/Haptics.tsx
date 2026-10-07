@@ -63,8 +63,8 @@ export function HapticsPage() {
             <Slider label="Snap" caption="Spring strength (kp)" min={s.kpMin} max={s.kpMax} step={Limits.kp.step} value={s.kp} format={(v) => v.toFixed(2)} on={(v) => send(Set.KP, v)} muted={s.feel === Feel.VISCOSE} dirty={bit(Set.KP)} />
             <Slider label="Damp" caption="Damping (kd)" min={s.kdMin} max={s.kdMax} step={Limits.kd.step} value={s.kd} format={(v) => v.toFixed(3)} on={(v) => send(Set.KD, v)} dirty={bit(Set.KD)} />
             <Slider label="Shape" caption="Saw only" min={Limits.shape.min} max={Limits.shape.max} step={Limits.shape.step} value={s.shape} format={(v) => `${v}%`} on={(v) => send(Set.SHAPE, v)} muted={s.feel !== Feel.SAW} dirty={bit(Set.SHAPE)} />
-            <Slider label="Click volume" caption="Audio click (amp)" min={0} max={s.ampMax} step={Limits.amp.step} value={s.amp} format={(v) => `${v}%`} on={(v) => send(Set.AMP, v)} dirty={bit(Set.AMP)} />
-            <Slider label="Click pitch" caption="Audio click" min={s.pitchMin} max={s.pitchMax} step={Limits.pitch.step} value={s.pitch} format={(v) => `${v.toFixed(2)}×`} on={(v) => send(Set.PITCH, v)} dirty={bit(Set.PITCH)} />
+            <Slider label="Click volume" caption="Motor click (amp)" min={0} max={s.ampMax} step={Limits.amp.step} value={s.amp} format={(v) => `${v}%`} on={(v) => send(Set.AMP, v)} dirty={bit(Set.AMP)} />
+            <Slider label="Click pitch" caption="Motor click" min={s.pitchMin} max={s.pitchMax} step={Limits.pitch.step} value={s.pitch} format={(v) => `${v.toFixed(2)}×`} on={(v) => send(Set.PITCH, v)} dirty={bit(Set.PITCH)} />
           </div>
         </Box>
       </div>
