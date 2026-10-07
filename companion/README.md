@@ -12,7 +12,7 @@ where the app shows the knob itself.
   the keys go to the knob over USB only).
 - **Synths:** MIDI's synth profiles, edited like app profiles (live, then Save; your own too, as
   JSON on the knob), with the knob's screen for the parameter and a monitor of the knob's USB
-  MIDI port (`src-tauri/src/midi.rs`, CoreMIDI through `midir`).
+  MIDI port (`src-tauri/src/midi.rs`, CoreMIDI or WinMM through `midir`).
 - **Haptics:** the five haptic profiles (Wide / Coarse / Medium / Fine / Smooth) and, for the
   one picked, its feel (Saw / Sine / Viscose) and the sliders Snap, Damp, Shape, Click volume
   and Click pitch, and its **Click**, one of the motor's nine click sounds. **Reset to
@@ -93,13 +93,17 @@ come from `src/demo_synths.json` (`scripts/gen_demo_synths.sh`, `tools/midi_synt
 them after a UI change.
 
 The WiFi link with the cable in (the cable is what powers the knob): pair the app over USB,
-then start it with USB hidden, `QUADRA_NO_USB=1 Quadra.app/Contents/MacOS/quadra-companion`.
-The Mac service takes the same variable (`QUADRA_NO_USB=1 python3 tools/mac/quadrad.py`).
+then start it with USB hidden, `QUADRA_NO_USB=1 Quadra.app/Contents/MacOS/quadra-companion`
+(Windows, PowerShell: `$env:QUADRA_NO_USB=1; pnpm tauri dev`). The Mac service takes the same
+variable (`QUADRA_NO_USB=1 python3 tools/mac/quadrad.py`), and so does the Windows one.
 
 The knob's controls over WiFi (no USB host) arrive as `EXT_TAG_HID` reports and are posted
 as macOS events by `src-tauri/src/input.rs`, in the WiFi reader thread. They need the app
 allowed under **Privacy & Security › Accessibility**. An ad-hoc build is a new app to macOS
-each time: after rebuilding, remove Quadra from that list and allow it again.
+each time: after rebuilding, remove Quadra from that list and allow it again. On Windows,
+`src-tauri/src/input_windows.rs` sends them with `SendInput` (keys as scan codes, so any
+layout reads the right key). Windows asks no permission, but keeps them out of apps running as
+administrator unless Quadra runs as administrator too.
 
 ## Building
 
@@ -119,6 +123,24 @@ macOS 27 with Rust 1.93: if the build stops at `can't find crate for phf_macros`
 `bundle.targets` is `["app"]`. Tauri's DMG step styles the disk image by scripting Finder,
 which can hang waiting for a permission prompt. For a DMG, use `CI=true pnpm tauri build
 --bundles dmg`, which skips the Finder styling, or build it in CI.
+
+### On Windows
+
+Needs the same Node, pnpm and Rust (the MSVC toolchain: `rustup` picks it, with the Visual
+Studio Build Tools' **Desktop development with C++**), and WebView2, which Windows 10 and 11
+already have.
+
+```powershell
+pnpm tauri build        # -> src-tauri\target\release\bundle\nsis\Quadra_<version>_x64-setup.exe
+```
+
+`src-tauri/tauri.windows.conf.json` holds what differs from the Mac's build (Tauri merges it on
+Windows only): an NSIS installer that installs for the current user, without administrator
+rights, and fetches WebView2 if it's missing. The window keeps Windows' own title bar. An
+unsigned installer makes SmartScreen warn once (**More info › Run anyway**); signing needs a
+code-signing certificate (`bundle.windows.certificateThumbprint`).
+
+The scripts in `scripts/` that end in `.sh` need a POSIX shell: Git Bash or WSL.
 
 ### Notarizing (for handing it to other people)
 
@@ -167,7 +189,8 @@ src/fonts/          Geist (the app's type) and Silkscreen (the knob's screens), 
 scripts/            screenshots.mjs (the user guide's), gen_demo_builtins.sh and gen_demo_synths.sh (the
                     demo knob's profiles and synths), gen_tzdata.py (the clock's cities)
 src-tauri/          the Rust side: HID list / open / write / close, reports as events; Wi-Fi;
-                    input.rs (the knob's keys over Wi-Fi, posted as macOS events);
+                    input.rs (the knob's keys over Wi-Fi, posted as macOS events) and
+                    input_windows.rs (the same with SendInput);
                     home.rs (the lamp import: the extractor's file, finding and probing lamps,
                     MIoT specs), midi.rs (the knob's USB MIDI port, for the Synths monitor)
 ```

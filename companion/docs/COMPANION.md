@@ -36,7 +36,7 @@ There are two ways to run the companion, with the same screens:
 
 | | Quadra app | Web page |
 |---|---|---|
-| Runs in | Its own window (macOS) | Chrome or Edge |
+| Runs in | Its own window (macOS or Windows) | Chrome or Edge |
 | Connecting | Finds the knob itself, and again after a replug; over Wi-Fi once paired | Click **Connect** once and pick the knob; automatic after that |
 | Safari, Firefox | – | Not supported (no WebHID): the page says **No USB access here** |
 
@@ -55,11 +55,16 @@ they come to this app over Wi-Fi and it types and scrolls on this Mac, once you 
 under **System Settings › Privacy & Security › Accessibility** (**Device › Wi-Fi › Allow**
 asks for it). Keys, the wheel, drags and media keys all work; on a weak signal a drag can
 stutter now and then, and if the link drops, nothing stays held down. The music cover, agent
-requests and the clock's time come from the Mac service, which reaches the knob over Wi-Fi
-too.
+requests and the clock's time come from the Mac service (or the Windows service), which
+reaches the knob over Wi-Fi too.
 
 The app is signed for this Mac only (ad hoc), so macOS forgets that permission when the app is
 rebuilt: remove Quadra from the Accessibility list and allow it again.
+
+On Windows there's nothing to allow: the controls type and scroll on this PC as soon as the
+app is paired. Windows keeps them out of apps running as administrator. Set **Device ›
+Computer** to **PC** there, so shortcuts written with ⌘ arrive as Ctrl; the app says so when
+it isn't. On Windows the app also names keys the PC's way: Ctrl, Alt, Shift, Backspace, Enter.
 
 Neither needs a driver, and macOS doesn't ask for Input Monitoring permission.
 
@@ -191,7 +196,7 @@ These are stored on the knob at once, over USB or Wi-Fi (firmware with extension
 **Import from Xiaomi…** puts the lamps of your Xiaomi account on the knob, in four steps:
 
 1. **Account:** the list of your devices and their keys, saved by the token extractor in
-   `~/.quadra/xiaomi-devices.json`. **Sign in to Xiaomi…** opens the extractor in Terminal for
+   `~/.quadra/xiaomi-devices.json`. **Sign in to Xiaomi…** opens the extractor in Terminal (on Windows, a command window) for
    a new list (sign in with the QR code in Mi Home, or your password, and choose your server);
    **Look again** reads it once it's done. The extractor has to be installed in
    `~/.quadra/token-extractor` (see the README's HOME section).
@@ -203,7 +208,7 @@ These are stored on the knob at once, over USB or Wi-Fi (firmware with extension
    from the model) and order. The knob holds 12.
 4. **Send:** over USB only, since it carries the lamps' keys. It replaces the lamps on the knob.
 
-The keys stay in that file on this Mac and on the knob; the app never shows them. The import
+The keys stay in that file on this computer and on the knob; the app never shows them. The import
 needs the Quadra app (a web page can't read the file or look on the network); in a terminal,
 `quadra.py home import` does the same.
 
@@ -357,7 +362,7 @@ click one to set it up below. Each is set to one of these:
 - **F4** has no press actions: held still, it opens the knob's menu.
 
 To set a shortcut, click its field and press the keys. Hover over it for the ⌃ ⌥ ⇧ ⌘ buttons,
-for shortcuts the system keeps to itself (⌘Q, ⌘Tab); × clears it.
+for shortcuts the system keeps to itself (⌘Q, ⌘Tab; on Windows Alt+Tab, Win+L); × clears it.
 
 ## 10. Command wheel
 
@@ -396,7 +401,7 @@ Build a macro with **+ Key**, **+ Text** and **+ Pause**, or record one:
 2. Click **Record** and type.
 3. Click **Stop**.
 
-Shortcuts the system takes first (⌘Q, ⌘Tab) can't be recorded. Add those with **+ Key**.
+Shortcuts the system takes first (⌘Q, ⌘Tab; on Windows Alt+Tab, Win+L) can't be recorded. Add those with **+ Key**.
 
 To use a macro, set a key to **Tap** and choose **Macro**, set a key's **Quick tap** to
 **Macro**, or set a command to **Macro**. The list says how often each macro is used. Renaming a
@@ -436,7 +441,7 @@ the knob's own Lights screen). Changes made on the knob show up here within a se
 **Clock** (the Clock app, extensions v5 and later): what it shows — **24-hour**, **Seconds**,
 **Date**, **Seconds on the LED ring**, and **Board: every zone at once** (the airline board in
 place of the flap clock) — and up to four world zones besides the local time,
-which is this computer's (the Mac service sends the time and the zone; with Wi-Fi on, the knob
+which is this computer's (the Mac or Windows service sends the time and the zone; with Wi-Fi on, the knob
 also sets its clock from the internet). Each zone follows its own daylight-saving rules. In the
 Clock app on the knob, turning steps through the zones; F1 switches 12 / 24 hours, F2 the
 seconds, F3 the date, and a tap on F4 the screen. Stored on the knob as you change them.
@@ -462,8 +467,8 @@ it. Switch back in the knob's own menu: **BOOT MODE › USB MODE › HID**, then
 USB; the password stays on the knob) and its address, then **This app over Wi-Fi** (the app
 only, not the web page): **Pair this app** (see [Connecting](#1-connecting)), **New key** (asks
 once more: every other paired computer has to pair again) and **Forget**. With firmware that
-has it, **The knob's controls** shows whether they come to this Mac over Wi-Fi (**On**), or
-whether macOS still needs to allow it (**Allow**).
+has it, **The knob's controls** shows whether they come to this computer over Wi-Fi (**On**),
+or whether macOS still needs to allow it (**Allow**; Windows never asks).
 
 ## 14. System info
 
