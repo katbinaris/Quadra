@@ -38,6 +38,10 @@ objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSGraphicsContext", "objc2-core-graphics"] }
 core-foundation = "0.10"
 
+# Windows: the same controls through SendInput (src/input_windows.rs), and an IPv4-only name
+# lookup for the WiFi link (lib.rs resolve_v4).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Networking_WinSock", "Win32_UI_Input_KeyboardAndMouse"] }
 
 [profile.release]
 codegen-units = 1

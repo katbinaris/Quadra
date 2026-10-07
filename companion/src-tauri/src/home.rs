@@ -25,8 +25,13 @@ const HELLO: [u8; 32] = {
     h
 };
 
+// HOME; on Windows (no HOME for an app) the user's profile folder.
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
+}
+
 fn quadra_dir() -> Result<PathBuf, String> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".quadra")).ok_or_else(|| "no home folder".into())
+    home_dir().map(|h| h.join(".quadra")).ok_or_else(|| "no home folder".into())
 }
 
 #[derive(Serialize)]
@@ -204,7 +209,7 @@ pub async fn home_probe(ip: String, token: String, did: String, siid: u32, piid:
 }
 
 // A model's MIoT spec (miot-spec.org), cached in ~/.quadra/miot-spec/ like quadra.py's. None: no
-// spec for that model. Fetched with curl, which every Mac has.
+// spec for that model. Fetched with curl, which every Mac has (and Windows 10 and later).
 #[tauri::command]
 pub async fn miot_spec(model: String) -> Result<Option<String>, String> {
     if !model.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
@@ -246,14 +251,21 @@ pub async fn miot_spec(model: String) -> Result<Option<String>, String> {
 // window: Xiaomi's login asks for a password or a QR scan there. It writes
 // ~/.quadra/xiaomi-devices.json; the app looks again when the window says it's done.
 #[tauri::command]
+#[cfg_attr(windows, allow(unreachable_code))]
 pub fn home_run_extractor() -> Result<(), String> {
     let q = quadra_dir()?;
     let ex = q.join("token-extractor");
+    #[cfg(not(windows))]
     let py = ex.join(".venv/bin/python");
+    #[cfg(windows)]
+    let py = ex.join(".venv").join("Scripts").join("python.exe");
     if !py.exists() || !ex.join("token_extractor.py").exists() {
         return Err("The token extractor isn't installed in ~/.quadra/token-extractor (see the README's HOME section)".into());
     }
     let out = q.join("xiaomi-devices.json");
+    // Windows: a command window instead of Terminal (extractor_windows, below).
+    #[cfg(windows)]
+    return extractor_windows(&ex, &py, &out);
     let script = std::env::temp_dir().join("quadra-xiaomi-login.command");
     let text = format!(
         "#!/bin/zsh\n# Quadra: your Xiaomi account's devices and their keys, for the knob's HOME mode.\ncd {ex:?} || exit 1\n\
@@ -269,11 +281,35 @@ pub fn home_run_extractor() -> Result<(), String> {
     Ok(())
 }
 
+// The extractor in a command window. Its output stays in the user's profile, which only they
+// (and administrators) can read: no chmod needed.
+#[cfg(windows)]
+fn extractor_windows(ex: &std::path::Path, py: &std::path::Path, out: &std::path::Path) -> Result<(), String> {
+    let script = std::env::temp_dir().join("quadra-xiaomi-login.cmd");
+    let text = format!(
+        "@echo off\r\nrem Quadra: your Xiaomi account's devices and their keys, for the knob's HOME mode.\r\n\
+         cd /d \"{}\" || exit /b 1\r\n\
+         \"{}\" token_extractor.py -o \"{}\" && echo. && echo Done: go back to Quadra and press Look again.\r\npause\r\n",
+        ex.display(),
+        py.display(),
+        out.display()
+    );
+    std::fs::write(&script, text).map_err(|e| e.to_string())?;
+    // `start` opens a new window; its first quoted argument is that window's title. Raw: cmd's
+    // quoting isn't the one Command would apply.
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("cmd")
+        .raw_arg(format!("/c start \"Quadra\" \"{}\"", script.display()))
+        .status()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // A synth profile (or anything else the app exports) into ~/Downloads, under a name not taken yet.
 #[tauri::command]
 pub fn save_download(name: String, text: String) -> Result<String, String> {
     let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).collect();
-    let dir = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads")).ok_or("no home folder")?;
+    let dir = home_dir().map(|h| h.join("Downloads")).ok_or("no home folder")?;
     let (stem, ext) = name.rsplit_once('.').unwrap_or((&name, "txt"));
     let mut path = dir.join(format!("{stem}.{ext}"));
     let mut n = 2;

@@ -20,6 +20,9 @@ use tauri::{AppHandle, Emitter, State};
 
 #[cfg(target_os = "macos")]
 mod input;
+#[cfg(windows)]
+#[path = "input_windows.rs"]
+mod input;
 mod home;
 mod midi;
 
@@ -184,6 +187,11 @@ fn resolve_v4(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     if let Ok(ip) = host.parse::<Ipv4Addr>() {
         return Ok(vec![SocketAddr::from((ip, port))]);
     }
+    lookup_v4(host, port)
+}
+
+#[cfg(unix)]
+fn lookup_v4(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     let name = std::ffi::CString::new(host).map_err(|e| e.to_string())?;
     // SAFETY: a zeroed addrinfo is a valid "no hints" value; getaddrinfo's list is only read
     // before freeaddrinfo, which gets exactly what getaddrinfo returned.
@@ -206,6 +214,44 @@ fn resolve_v4(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
             p = ai.ai_next;
         }
         libc::freeaddrinfo(list);
+        Ok(out)
+    }
+}
+
+// The same on Windows (Winsock's GetAddrInfoW, IPv4 only: Windows resolves .local names itself).
+#[cfg(windows)]
+fn lookup_v4(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    use windows_sys::Win32::Networking::WinSock::{FreeAddrInfoW, GetAddrInfoW, WSAStartup, ADDRINFOW, AF_INET, SOCKADDR_IN, SOCK_STREAM, WSADATA};
+    // Rust's std starts Winsock on its first socket; this lookup can come before that.
+    static WSA: std::sync::Once = std::sync::Once::new();
+    WSA.call_once(|| {
+        // SAFETY: WSAStartup only fills the WSADATA it's given.
+        unsafe {
+            let mut data: WSADATA = std::mem::zeroed();
+            WSAStartup(0x0202, &mut data);
+        }
+    });
+    let name: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY: as above -- zeroed hints, and the list is only read before FreeAddrInfoW.
+    unsafe {
+        let mut hints: ADDRINFOW = std::mem::zeroed();
+        hints.ai_family = AF_INET as i32;
+        hints.ai_socktype = SOCK_STREAM;
+        let mut list: *mut ADDRINFOW = std::ptr::null_mut();
+        if GetAddrInfoW(name.as_ptr(), std::ptr::null(), &hints, &mut list) != 0 {
+            return Err(format!("{host}: not found on the network"));
+        }
+        let mut out = Vec::new();
+        let mut p = list;
+        while !p.is_null() {
+            let ai = &*p;
+            if ai.ai_family == AF_INET as i32 && !ai.ai_addr.is_null() {
+                let sin = &*(ai.ai_addr as *const SOCKADDR_IN);
+                out.push(SocketAddr::from((Ipv4Addr::from(u32::from_be(sin.sin_addr.S_un.S_addr)), port)));
+            }
+            p = ai.ai_next;
+        }
+        FreeAddrInfoW(list);
         Ok(out)
     }
 }
@@ -293,7 +339,7 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
 
     let generation = net.generation.clone();
     thread::spawn(move || {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         let mut input = input::Input::new();
         let mut seq = 0u64;
         let mut buf: Vec<u8> = Vec::with_capacity(WIRE * 16);
@@ -320,11 +366,11 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
                 }
                 seq += 1;
                 if generation.load(Ordering::SeqCst) != gen {
-                    #[cfg(target_os = "macos")]
+                    #[cfg(any(target_os = "macos", windows))]
                     input.release_all();
                     return;
                 }
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", windows))]
                 if body[0] == input::TAG_HID {
                     input.report(body);
                     continue;
@@ -333,7 +379,7 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
             }
             buf.drain(..at);
             let quiet = heard.elapsed();
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             if quiet > INPUT_HOLD && input.holding() {
                 input.release_all();
             }
@@ -341,7 +387,7 @@ async fn net_open(hosts: Vec<String>, port: u16, key: Vec<u8>, net: State<'_, Ne
                 break "no word from the knob".into();
             }
         };
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         input.release_all();
         let _ = rd.shutdown(Shutdown::Both);
         if generation.load(Ordering::SeqCst) == gen {
@@ -369,9 +415,9 @@ fn net_close(net: State<Net>) {
 // lists the app in System Settings.
 #[tauri::command]
 fn input_trusted(prompt: bool) -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     return input::trusted(prompt);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", windows)))]
     {
         let _ = prompt;
         false
