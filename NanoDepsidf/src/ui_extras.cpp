@@ -273,6 +273,52 @@ static const NpLayout NP_LAYOUT[4] = {
     {188, 206, CY}, // BLEED: under the sleeve
 };
 
+// The volume ring: a 1px circle all the way round, a 2px arc over it up to the volume, a dot at
+// its end. Every pixel is placed by where its middle is from the middle of the glass, so the
+// steps come out even all the way round.
+constexpr int VOL_RING_R = 113;
+
+// How far round the glass a pixel is, 0..1: from the bottom, clockwise (as the LED arc).
+static float turn_of(float dx, float dy) {
+    float t = (atan2f(dy, dx) - (float)M_PI / 2) / (2 * (float)M_PI);
+    return t - floorf(t);
+}
+// A 1px circle: one pixel per row or column, mirrored into the eight octants (no doubled corners).
+static void ring_thin(int r, uint32_t c) {
+    for (int k = 0;; k++) {
+        float dy = k + 0.5f;
+        int j = (int)floorf(sqrtf(fmaxf(0.0f, (float)r * r - dy * dy)));
+        if (j < k) break;
+        rect(CX + j, CY + k, 1, 1, c), rect(CX - 1 - j, CY + k, 1, 1, c);
+        rect(CX + j, CY - 1 - k, 1, 1, c), rect(CX - 1 - j, CY - 1 - k, 1, 1, c);
+        if (j == k) continue;
+        rect(CX + k, CY + j, 1, 1, c), rect(CX - 1 - k, CY + j, 1, 1, c);
+        rect(CX + k, CY - 1 - j, 1, 1, c), rect(CX - 1 - k, CY - 1 - j, 1, 1, c);
+    }
+}
+// Every pixel whose middle is r0..r1 from the middle of the glass, from the bottom up to turn t1.
+static void arc_band(float r0, float r1, float t1, uint32_t c) {
+    for (int y = (int)floorf(CY - r1); y <= (int)ceilf(CY + r1); y++) {
+        float dy = y + 0.5f - CY;
+        if (fabsf(dy) >= r1) continue;
+        int ho = (int)ceilf(sqrtf(r1 * r1 - dy * dy)), hi = fabsf(dy) < r0 ? (int)floorf(sqrtf(r0 * r0 - dy * dy)) : 0;
+        for (int i = hi > 0 ? hi - 1 : 0; i <= ho; i++) {
+            for (int side = 0; side < 2; side++) {
+                int x = side ? CX - 1 - i : CX + i;
+                float dx = x + 0.5f - CX, d2 = dx * dx + dy * dy;
+                if (d2 >= r0 * r0 && d2 < r1 * r1 && turn_of(dx, dy) <= t1) rect(x, y, 1, 1, c);
+            }
+        }
+    }
+}
+static void vol_ring(int volume, uint32_t track, uint32_t fill, uint32_t head) {
+    ring_thin(VOL_RING_R, track);
+    if (volume <= 0) return;
+    const float v = volume / 100.0f, a = v * 2 * (float)M_PI + (float)M_PI / 2;
+    arc_band(VOL_RING_R - 1, VOL_RING_R + 1, v, fill);
+    cut((int)floorf(CX + cosf(a) * VOL_RING_R - 2), (int)floorf(CY + sinf(a) * VOL_RING_R - 2), 5, 5, head);
+}
+
 void draw_now_playing(const NowPlayingInputs &in) {
     if (!in.has_cover && in.icon48) image565(CX - 48, 46, 48, 48, in.icon48, 1.0f, 2); // stands in for the cover
     const NpLayout &lay = NP_LAYOUT[in.style >= 0 && in.style < 4 ? in.style : 0];
@@ -298,18 +344,7 @@ void draw_now_playing(const NowPlayingInputs &in) {
 
     // Volume: a ring round the glass and the number in the middle, while the knob turns.
     if (in.volume_k > 0 && in.volume >= 0) {
-        const float r = 113;
-        int steps = (int)(2 * (float)M_PI * r), fill = (int)(steps * in.volume / 100.0f);
-        for (int s = 0; s < steps; s += 2) {
-            float a = (float)s / steps * 2 * (float)M_PI + (float)M_PI / 2; // from the bottom, clockwise (as the LED arc)
-            rect(CX + cosf(a) * r - 1, CY + sinf(a) * r - 1, 3, 3, scale_rgb(DARK, in.volume_k));
-        }
-        float a = 0;
-        for (int s = 0; s <= fill; s++) {
-            a = (float)s / steps * 2 * (float)M_PI + (float)M_PI / 2;
-            rect(CX + cosf(a) * r - 2.5f, CY + sinf(a) * r - 2.5f, 5, 5, scale_rgb(in.accent, in.volume_k));
-        }
-        if (fill > 0) disc(CX + cosf(a) * r, CY + sinf(a) * r, 3.5f, scale_rgb(WHITE, in.volume_k));
+        vol_ring(in.volume, scale_rgb(DARK, in.volume_k), scale_rgb(in.accent, in.volume_k), scale_rgb(WHITE, in.volume_k));
         shade_disc(CX, oy - 8, 30, 0.85f * in.volume_k); // fades with the ring: no dark spot left behind
         char v[8];
         snprintf(v, sizeof(v), "%d", in.volume);

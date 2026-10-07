@@ -67,6 +67,8 @@ together.
   back to back, hop, spin-jump and split with a flash; they land side by side with a knock
   and the chime plays.
 - **Idle after 12 s** (was 5), and never in AGENTS while an agent is working or asking.
+- **A finer volume ring in MUSIC:** a 1 px circle with a 2 px arc and a small dot, in place of
+  the thick, uneven one.
 - **More free memory:** about 62 KB of internal RAM in normal use, up from 18.
 
 ## Companion 0.3.0
