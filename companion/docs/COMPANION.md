@@ -286,6 +286,9 @@ that profile and feel, so the sliders' ranges change with them.
 | **Click volume** | The click the motor plays. In Viscose it is off by default and goes up to 20% |
 | **Click pitch** | The click's pitch. In Viscose, 1× to 2× |
 
+The click's sound itself (one of eight waves per haptic profile) is chosen on the knob, under
+F4 menu › Haptics › Click. The app doesn't show or change it yet; saving from the app keeps it.
+
 A slider that doesn't apply in the current feel is greyed out and shows `—`.
 
 **Reset … to factory** puts the chosen haptic profile back to its original feel and values. Like
