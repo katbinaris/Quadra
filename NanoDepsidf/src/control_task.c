@@ -881,9 +881,8 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 ui_state_set_buttons((btn_a_pressed ? UI_BTN_F1 : 0) | (btn_b_pressed ? UI_BTN_F2 : 0)
                                      | (btn_c_pressed ? UI_BTN_F3 : 0) | (btn_d_pressed ? UI_BTN_F4 : 0));
 
-                // While the attract animation runs, a press only wakes the screen (the display
-                // sees the held mask above) -- it must not also open the menu.
-                bool swallow = ui_state_get_screensaver();
+                // A press on the idle screen does its job like any other, and wakes the screen
+                // (the display sees the held mask above): no second press needed.
                 // An agent notification on screen (notify.h) answers to the keys while the menu
                 // is closed. A key that goes down meanwhile is hidden from APP mode and the menu
                 // until it's released, so the press that answers can't also play or skip a
@@ -906,7 +905,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 // again. Both sides keep tracking the buttons every tick, so the press that
                 // opens or closes the menu never also fires on the other side.
                 bool app_active = menu_get_hid_type() == MENU_HID_APP && !menu_is_open();
-                app_mode_update(app_active, esp_timer_get_time(), raw_keys & ~s_notice_keys, swallow);
+                app_mode_update(app_active, esp_timer_get_time(), raw_keys & ~s_notice_keys);
                 // HOME with the menu closed: F1-F3 are its keys (home.h), F4 still opens the menu.
                 bool home_keys = menu_get_hid_type() == MENU_HID_HOME && !menu_is_open();
                 // MIDI likewise (midi.h); F1 also reports its release (a hold picks a parameter).
@@ -925,7 +924,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                         else motor_sound_cal_keys(pressed);
                         if (pressed || close) s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
                     }
-                } else if (!app_active && !swallow && !notice && iterations >= s_menu_btn_cooldown_until_iter) {
+                } else if (!app_active && !notice && iterations >= s_menu_btn_cooldown_until_iter) {
                     if (btn_d_pressed && !s_menu_prev_btn_d_pressed) {
                         menu_input_toggle_open(); // F4
                         s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;

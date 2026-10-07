@@ -505,7 +505,7 @@ static void CONTROL_HOT begin_slot(int slot, int64_t now_us) {
     s_last_motion_us = now_us;
 }
 
-void CONTROL_HOT app_mode_update(bool active, int64_t now_us, uint8_t held, bool swallow) {
+void CONTROL_HOT app_mode_update(bool active, int64_t now_us, uint8_t held) {
     if (held != s_raw_held) {
         s_raw_held = held;
         s_raw_since_us = now_us;
@@ -525,7 +525,7 @@ void CONTROL_HOT app_mode_update(bool active, int64_t now_us, uint8_t held, bool
         macro_stop(); // it points into the old profile
         s_profile = p;
     }
-    s_active = active && !swallow;
+    s_active = active;
     s_swallow_keys &= held; // forget keys once they're up
     if (active) macro_pump();
     else macro_stop();
@@ -535,9 +535,8 @@ void CONTROL_HOT app_mode_update(bool active, int64_t now_us, uint8_t held, bool
         atomic_store(&s_live_slot, APP_SLOT_KNOB);
         return;
     }
-    if (swallow) pressed = 0;
     if (s_param) {
-        param_keys(now_us, pressed, swallow ? 0 : released);
+        param_keys(now_us, pressed, released);
         atomic_store(&s_live_slot, APP_SLOT_KNOB);
         return;
     }

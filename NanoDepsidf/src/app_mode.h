@@ -36,8 +36,8 @@ typedef struct {
 
 // Every control tick. `active` = APP mode selected and the menu closed; when false this just
 // lets go of anything held and tracks the buttons, so no stale press fires on return.
-// `held` is the UI_BTN_* mask; `swallow` = the screensaver is eating presses.
-void app_mode_update(bool active, int64_t now_us, uint8_t held, bool swallow);
+// `held` is the UI_BTN_* mask.
+void app_mode_update(bool active, int64_t now_us, uint8_t held);
 
 // Every control tick with the knob's shaft-angle change since the last tick (radians).
 void app_mode_motion(float delta_rad, int64_t now_us);
