@@ -226,10 +226,10 @@ per step, finest first: free FINE, then MEDIUM, COARSE, WIDE (a number field: FI
 COARSE). Per-tick reads come from RAM; the table itself is in flash and is read only
 when a setting changes.
 
-Factory values (tuned on hardware, 2026-10-02). The stepped profiles offer SAW and SINE;
-SMOOTH is VISCOSE only. A stepped profile's other feel starts from the same numbers. The
-limits are still the full ranges (SNAP 0-20, DAMP 0-0.15) and are to be narrowed per profile
-and feel.
+Factory values (tuned on hardware, read back from a knob 2026-10-07). The stepped profiles
+offer SAW and SINE, each with its own values; SMOOTH is VISCOSE only. SNAP goes up to 4 in SAW
+and up to 2 in SINE, in every stepped profile; a stored value over that is pulled down when it
+is loaded. DAMP still has the full range (0-0.15).
 
 | Profile | Detents | Feel | SNAP | DAMP | SHAPE | AMP | PITCH |
 |---|---|---|---|---|---|---|---|

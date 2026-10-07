@@ -74,22 +74,22 @@ export class MockTransport implements Transport {
   private hpSaved = structuredClone(this.hp);
   // haptic_params.h HAPTIC_PROFILES: factory feel and {kp, kd, shape, amp, pitch} in it.
   private static readonly HP_FACTORY = [
-    { feel: 0, t: [6, 0.005, 25, 100, 0.85] },
+    { feel: 0, t: [4, 0.005, 25, 100, 0.85] },
     { feel: 0, t: [2.7, 0.095, 70, 100, 1.35] },
-    { feel: 0, t: [4.25, 0.115, 55, 90, 1.2] },
+    { feel: 0, t: [4, 0.115, 55, 90, 1.2] },
     { feel: 0, t: [2, 0.15, 0, 100, 1.85] },
     { feel: 2, t: [0, 0.15, 0, 20, 1] },
   ];
   private static hpProfile(p: number) {
     const { feel, t } = MockTransport.HP_FACTORY[p];
     // The other feel of a stepped profile starts from the same numbers (SHAPE is SAW's).
-    return { feel, click: 1, tune: [0, 1, 2].map((f) => ({ kp: t[0], kd: t[1], shape: f === 0 ? t[2] : 0, amp: t[3], pitch: t[4] })) };
+    return { feel, click: 1, tune: [0, 1, 2].map((f) => ({ kp: f === 1 ? Math.min(t[0], 2) : t[0], kd: t[1], shape: f === 0 ? t[2] : 0, amp: t[3], pitch: t[4] })) };
   }
   private static hpFactory() {
     return { edit: 1, mode: [1, 1, 1, 1, 1], profiles: [0, 1, 2, 3, 4].map((p) => MockTransport.hpProfile(p)) };
   }
   private static hpLimits(feel: number) {
-    return feel === 2 ? { kpMin: 0, kpMax: 0, kdMin: 0, kdMax: 0.15, ampMax: 20, pitchMin: 1, pitchMax: 2 } : { kpMin: 0, kpMax: 20, kdMin: 0, kdMax: 0.15, ampMax: 100, pitchMin: 0.5, pitchMax: 2 };
+    return feel === 2 ? { kpMin: 0, kpMax: 0, kdMin: 0, kdMax: 0.15, ampMax: 20, pitchMin: 1, pitchMax: 2 } : { kpMin: 0, kpMax: feel === 1 ? 2 : 4, kdMin: 0, kdMax: 0.15, ampMax: 100, pitchMin: 0.5, pitchMax: 2 };
   }
   private static hpFeels(p: number) {
     return p === 4 ? 0b100 : 0b011;

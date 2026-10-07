@@ -64,8 +64,9 @@ typedef enum {
 //
 // Factory values: the user's, tuned on hardware and read back from their knob's stored
 // settings (2026-10-07), both feels of each stepped profile, with each profile's click.
-// The LIMITS are still the old global ranges (HAPTIC_LIM_TODO) -- to be narrowed per profile
-// and feel.
+// SNAP has a ceiling per feel, the same for every stepped profile: 4 in SAW, 2 in SINE (the
+// user's absolute maximums, 2026-10-07). A stored value over it is pulled down on load
+// (menu.c hp_set_tune). DAMP, AMP and PITCH still have the old global ranges.
 typedef enum {
     HAPTIC_PROFILE_WIDE = 0,
     HAPTIC_PROFILE_COARSE,
@@ -110,8 +111,11 @@ typedef struct {
 #define HAPTIC_FEELS_SMOOTH (1u << HAPTIC_TYPE_VISCOSE)
 // VISCOSE: no SNAP, clicks never louder than 20%, pitch 1-2x.
 #define HAPTIC_LIM_VISCOSE {0.0f, 0.0f, HAPTIC_KD_MIN, HAPTIC_KD_MAX, 20, 1.0f, 2.0f}
-// Placeholder limits for the stepped feels.
-#define HAPTIC_LIM_TODO {HAPTIC_KP_MIN, HAPTIC_KP_MAX, HAPTIC_KD_MIN, HAPTIC_KD_MAX, 100, 0.5f, 2.0f}
+// The stepped feels.
+#define HAPTIC_KP_MAX_SAW 4.0f
+#define HAPTIC_KP_MAX_SINE 2.0f
+#define HAPTIC_LIM_SAW {HAPTIC_KP_MIN, HAPTIC_KP_MAX_SAW, HAPTIC_KD_MIN, HAPTIC_KD_MAX, 100, 0.5f, 2.0f}
+#define HAPTIC_LIM_SINE {HAPTIC_KP_MIN, HAPTIC_KP_MAX_SINE, HAPTIC_KD_MIN, HAPTIC_KD_MAX, 100, 0.5f, 2.0f}
 // A feel a profile doesn't offer: never used, present so the tables stay indexed by feel.
 #define HAPTIC_TUNE_NONE {0.0f, 0.0f, 0, 0, 1.0f}
 
@@ -120,20 +124,20 @@ __attribute__((unused)) static const haptic_profile_t HAPTIC_PROFILES[HAPTIC_PRO
     //   tune {SNAP, DAMP, SHAPE %, AMP %, PITCH}: SAW, SINE, VISCOSE
     //   limits: SAW, SINE, VISCOSE
     {"WIDE", 8, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
-     {{6.00f, 0.005f, 25, 100, 0.85f}, {6.00f, 0.010f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
-     {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
+     {{4.00f, 0.005f, 25, 100, 0.85f}, {2.00f, 0.010f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
+     {HAPTIC_LIM_SAW, HAPTIC_LIM_SINE, HAPTIC_LIM_VISCOSE}},
     {"COARSE", 12, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
      {{2.70f, 0.095f, 70, 100, 1.35f}, {2.00f, 0.055f, 0, 100, 0.85f}, HAPTIC_TUNE_NONE},
-     {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
+     {HAPTIC_LIM_SAW, HAPTIC_LIM_SINE, HAPTIC_LIM_VISCOSE}},
     {"MEDIUM", 24, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
-     {{4.25f, 0.115f, 55, 90, 1.20f}, {1.90f, 0.150f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
-     {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
+     {{4.00f, 0.115f, 55, 90, 1.20f}, {1.90f, 0.150f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
+     {HAPTIC_LIM_SAW, HAPTIC_LIM_SINE, HAPTIC_LIM_VISCOSE}},
     {"FINE", 36, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 2,
      {{2.00f, 0.150f, 0, 100, 1.85f}, {0.50f, 0.145f, 0, 65, 1.00f}, HAPTIC_TUNE_NONE},
-     {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
+     {HAPTIC_LIM_SAW, HAPTIC_LIM_SINE, HAPTIC_LIM_VISCOSE}},
     {"SMOOTH", 24, HAPTIC_FEELS_SMOOTH, HAPTIC_TYPE_VISCOSE, 0,
      {HAPTIC_TUNE_NONE, HAPTIC_TUNE_NONE, {0.0f, 0.150f, 0, 20, 1.00f}},
-     {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
+     {HAPTIC_LIM_SAW, HAPTIC_LIM_SINE, HAPTIC_LIM_VISCOSE}},
 };
 
 // The stepped profile whose spacing is nearest to `detents` per turn.
