@@ -73,7 +73,7 @@ static const char *TAG = "display";
 #define UI_ANIM_DELAY_MS 20    // between frames of a looping animation (+~13ms frame = ~30fps)
 
 #define IRIS_MS 320
-#define ATTRACT_IDLE_MS 5000 // by request: 5s without touching the knob or buttons
+#define ATTRACT_IDLE_MS 12000 // by request (5 s until 2026-10-07): without touching the knob or buttons
 #define TOAST_MS 1300
 #define FEEL_MORPH_MS 250
 #define HID_SLIDE_MS 160
@@ -1247,7 +1247,9 @@ static Pace update_ui(void) {
     // idle animation.
     bool activity = snapshot_changed || buttons_changed || detent != s_last_detent || icon_changed || notice_changed
                  || mode_changed || (music_on && media_changed) || home_changed || midi_changed;
-    if (activity || notice || music_playing || clock_on || home_scan) s_last_activity_us = now; // a clock isn't screensaved
+    // A clock isn't screensaved; nor is AGENTS' dashboard while an agent works or asks (by
+    // request, 2026-10-07): it idles once every agent is idle or waiting for the next prompt.
+    if (activity || notice || music_playing || clock_on || home_scan || board_live) s_last_activity_us = now;
 
     if (snap.save_count != s_last_save_count) {
         s_last_save_count = snap.save_count;

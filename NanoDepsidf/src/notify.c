@@ -130,6 +130,10 @@ static void CONTROL_HOT decide(uint32_t top, uint8_t decision, uint8_t held, int
         s_events[head % EVENT_RING] = (uint32_t)id << 8 | decision;
         atomic_store(&s_ev_head, head + 1);
     }
+    // The answer is heard: allowed, the coin; denied, the low note. If another item is waiting
+    // its own tune takes over on the next tick.
+    if (decision == NOTIFY_ALLOW) motor_sound_jingle(MOTOR_SOUND_JINGLE_ALLOW);
+    else if (decision == NOTIFY_DENY) motor_sound_jingle(MOTOR_SOUND_JINGLE_CANCEL);
     s_ignore = held; // the answering press says nothing about the next item
     s_f1_since = 0;
     s_locked_until = now_us + LOCKOUT_US;
@@ -190,14 +194,15 @@ void CONTROL_HOT notify_keys(uint8_t raw, int64_t now_us) {
 
 float CONTROL_HOT notify_nudge_vq(int64_t now_us, bool shown) {
     uint32_t top = atomic_load_explicit(&s_top, memory_order_relaxed);
-    // Two notes when an item comes on show, whatever its kind and whether it taps or not
-    // (only items that need input do): once per item, in any mode, as soon as the menu is
-    // closed. It hung on the tap at first, and most notifications never tapped.
-    static uint32_t s_chimed = 0; // the s_top the notes were last played for
+    // A tune when an item comes on show, whether it taps or not (only items that need input
+    // do): once per item, in any mode, as soon as the menu is closed. An approval (ASK) gets
+    // the three rising notes, anything else the two soft ones. It hung on the tap at first,
+    // and most notifications never tapped.
+    static uint32_t s_chimed = 0; // the s_top the tune was last played for
     if (!top) s_chimed = 0;
     else if (shown && top != s_chimed) {
         s_chimed = top;
-        motor_sound_jingle(MOTOR_SOUND_JINGLE_AGENT);
+        motor_sound_jingle(((top >> 16) & 0xFF) == NOTIFY_ASK ? MOTOR_SOUND_JINGLE_CHIME : MOTOR_SOUND_JINGLE_AGENT);
     }
     if (!shown || !(top & TOP_NUDGE) || s_f1_since != 0) {
         s_nudge_at = 0; // the next time an item needs input, it taps at once

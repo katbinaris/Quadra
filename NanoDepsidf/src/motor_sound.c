@@ -58,27 +58,56 @@ static struct {
 _Static_assert(MOTOR_SOUND_SINE == MOTOR_TONE_SINE && MOTOR_SOUND_SQUARE == MOTOR_TONE_SQUARE && MOTOR_SOUND_NOISE == MOTOR_TONE_NOISE,
                "a part's wave goes to the driver as it is");
 
-// The little tunes: up to three notes, each starting `step_ms` after the one before and dying
-// away at `decay` per second. All high: at 500 to 800 Hz the motor is nearly silent (the old
-// speaker's chime was C5 E5 G5). Notes overlap, so each gets a share of the voltage. Not
-// const: in RAM, with the rest the loop reads. A MOTOR_TONE_RICH note is given half as much
-// again as a sine would be: its fundamental is two thirds of its peak.
-#define JINGLE_NOTES 3
+// The little tunes: a list of notes, each with its start, length, pitch, wave, level and decay
+// (per second); `slide_pct` is the pitch it glides to by its end (100 = steady). Note n plays
+// on voice n mod 3, taking it from the note three before. All high: at 500 to 800 Hz the motor
+// is nearly silent (the old speaker's chime was C5 E5 G5). Notes that overlap on the q axis
+// share the voltage. Not const: in RAM, with the rest the loop reads. A MOTOR_TONE_RICH note's
+// fundamental is two thirds of its peak, a square's 1.27 of it.
+#define TUNE_VOICES 3
+#define TUNE_NOTES 16
+#define SI MOTOR_TONE_SINE
+#define SQ MOTOR_TONE_SQUARE
+#define RI MOTOR_TONE_RICH
+typedef struct {
+    uint16_t at_ms, len_ms;
+    float hz;
+    uint8_t wave, level_pct, slide_pct;
+    float decay;
+} tune_note_t;
 static struct {
-    uint8_t notes, wave;
-    float hz[JINGLE_NOTES];
-    uint16_t step_ms;
-    float decay, volts;
+    uint8_t notes;
+    float volts;
+    tune_note_t note[TUNE_NOTES];
     // worked out at start-up
-    uint32_t step_ticks, ticks;
-    float decay_tick;
-} s_jingle_def[MOTOR_SOUND_JINGLE_COUNT] = {
-    // The startup chime: C7 E7 G7, with harmonics now that they fit under 10 kHz.
-    [MOTOR_SOUND_JINGLE_CHIME] = {3, MOTOR_TONE_RICH, {2093.0f, 2637.0f, 3136.0f}, 80, 25.0f, SOUND_VMAX_V},
-    [MOTOR_SOUND_JINGLE_SAVE] = {2, MOTOR_TONE_RICH, {3136.0f, 4186.0f}, 70, 35.0f, 1.8f},
-    [MOTOR_SOUND_JINGLE_CANCEL] = {1, MOTOR_TONE_RICH, {1568.0f}, 0, 30.0f, 2.2f},
-    [MOTOR_SOUND_JINGLE_AGENT] = {2, MOTOR_TONE_SINE, {2637.0f, 3520.0f}, 120, 12.0f, 1.6f},
+    uint32_t at[TUNE_NOTES], len[TUNE_NOTES];
+    float decay_tick[TUNE_NOTES], glide[TUNE_NOTES];
+} s_tune[MOTOR_SOUND_JINGLE_COUNT] = {
+    // CHIME: C7 E7 G7, ringing over each other. The startup chime until 2026-10-07; now an
+    // agent asking for approval.
+    [MOTOR_SOUND_JINGLE_CHIME] = {3, SOUND_VMAX_V, {{0, 280, 2093.0f, RI, 100, 100, 25.0f}, {80, 280, 2637.0f, RI, 100, 100, 25.0f},
+                                                    {160, 280, 3136.0f, RI, 100, 100, 25.0f}}},
+    [MOTOR_SOUND_JINGLE_SAVE] = {2, 1.8f, {{0, 200, 3136.0f, RI, 100, 100, 35.0f}, {70, 200, 4186.0f, RI, 100, 100, 35.0f}}},
+    [MOTOR_SOUND_JINGLE_CANCEL] = {1, 2.2f, {{0, 233, 1568.0f, RI, 100, 100, 30.0f}}},
+    [MOTOR_SOUND_JINGLE_AGENT] = {2, 1.6f, {{0, 583, 2637.0f, SI, 100, 100, 12.0f}, {120, 583, 3520.0f, SI, 100, 100, 12.0f}}},
+    // COIN, the startup chime since 2026-10-07: B5, then E6 held; the pair again, quieter, as
+    // an echo. Picked by ear from six in the manner of game sounds. Squares an octave up at
+    // 45 to 75 ms a note were "very high" and "overdriven"; of the plucked rich-wave ones in C6
+    // to C7 the others were too quiet on the d axis, and some cut the USB power on the q axis,
+    // as TOCK did (burst_arm()). Keep a new tune near these two, or try it on both axes.
+    [MOTOR_SOUND_JINGLE_COIN] = {4, SOUND_VMAX_V, {
+        {0, 90, 987.8f, RI, 100, 100, 9.0f}, {100, 450, 1318.5f, RI, 100, 100, 6.0f}, {650, 90, 987.8f, RI, 35, 100, 9.0f},
+        {750, 380, 1318.5f, RI, 35, 100, 6.0f},
+    }},
+    // ALLOW: COIN's two notes with no echo.
+    [MOTOR_SOUND_JINGLE_ALLOW] = {2, SOUND_VMAX_V, {{0, 90, 987.8f, RI, 100, 100, 9.0f}, {100, 400, 1318.5f, RI, 100, 100, 7.0f}}},
 };
+#undef SI
+#undef SQ
+#undef RI
+// A note fades out over its last 2 ms, or a held one would end with a click.
+#define TUNE_FADE_TICKS 20
+#define TUNE_FADE_K 0.8f
 
 // The end-stop knock (motor_sound_thud()): a click shape of its own, low and noisy.
 // On the d axis only (burst_arm()), where parts may stack: both at full level, and long, as
@@ -125,7 +154,7 @@ static portMUX_TYPE s_view_mux = portMUX_INITIALIZER_UNLOCKED;
 // plays with one) and the chime's three notes.
 #define VOICE_CLICK 0
 #define VOICE_JINGLE MOTOR_SOUND_PARTS
-_Static_assert(MOTOR_TONE_VOICES >= VOICE_JINGLE + JINGLE_NOTES, "a voice for each part of a click and for each note");
+_Static_assert(MOTOR_TONE_VOICES >= VOICE_JINGLE + TUNE_VOICES, "a voice for each part of a click and for each note");
 
 static struct {
     struct {
@@ -141,8 +170,14 @@ static _Atomic int s_jingle_request = -1; // a motor_sound_jingle_t to start, fr
 static struct {
     int which; // -1 = not playing
     uint32_t tick;
-    float env[JINGLE_NOTES];
+    int next; // the next note to start
     bool q;
+    struct {
+        uint32_t left; // ticks still to play
+        float hz, env, decay, glide;
+        uint8_t wave;
+        bool fresh;
+    } voice[TUNE_VOICES];
 } s_jingle = {.which = -1};
 
 void CONTROL_HOT motor_sound_jingle(motor_sound_jingle_t which) {
@@ -150,7 +185,7 @@ void CONTROL_HOT motor_sound_jingle(motor_sound_jingle_t which) {
 }
 
 void CONTROL_HOT motor_sound_chime(void) {
-    motor_sound_jingle(MOTOR_SOUND_JINGLE_CHIME);
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_COIN);
 }
 
 static float CONTROL_HOT clamp_hz(float hz) {
@@ -237,21 +272,36 @@ float CONTROL_HOT motor_sound_tick(float vq, struct motor_tone *out) {
     if (request >= 0 && request < MOTOR_SOUND_JINGLE_COUNT) {
         s_jingle.which = request;
         s_jingle.tick = 0;
+        s_jingle.next = 0;
         s_jingle.q = LD(s_click_q);
-        for (int i = 0; i < JINGLE_NOTES; i++) s_jingle.env[i] = s_jingle_def[request].volts;
+        for (int i = 0; i < TUNE_VOICES; i++) s_jingle.voice[i].left = 0;
     }
     if (s_jingle.which >= 0) {
-        for (int i = 0; i < s_jingle_def[s_jingle.which].notes; i++) {
-            uint32_t from = i * s_jingle_def[s_jingle.which].step_ticks;
-            if (s_jingle.tick < from) break; // this note hasn't started
-            voice[VOICE_JINGLE + i] = (motor_tone_voice_t){.hz = s_jingle_def[s_jingle.which].hz[i], .volts = s_jingle.env[i],
-                                                           .q = s_jingle.q, .wave = s_jingle_def[s_jingle.which].wave,
-                                                           .start = s_jingle.tick == from};
-            total += s_jingle.env[i];
-            if (s_jingle.q) on_q += s_jingle.env[i];
-            s_jingle.env[i] *= s_jingle_def[s_jingle.which].decay_tick;
+        int w = s_jingle.which;
+        while (s_jingle.next < s_tune[w].notes && s_jingle.tick >= s_tune[w].at[s_jingle.next]) {
+            int n = s_jingle.next++, v = n % TUNE_VOICES;
+            s_jingle.voice[v].left = s_tune[w].len[n];
+            s_jingle.voice[v].hz = s_tune[w].note[n].hz;
+            s_jingle.voice[v].env = s_tune[w].volts * s_tune[w].note[n].level_pct * 0.01f;
+            s_jingle.voice[v].decay = s_tune[w].decay_tick[n];
+            s_jingle.voice[v].glide = s_tune[w].glide[n];
+            s_jingle.voice[v].wave = s_tune[w].note[n].wave;
+            s_jingle.voice[v].fresh = true;
         }
-        if (++s_jingle.tick >= s_jingle_def[s_jingle.which].ticks) s_jingle.which = -1;
+        bool playing = s_jingle.next < s_tune[w].notes;
+        for (int i = 0; i < TUNE_VOICES; i++) {
+            if (s_jingle.voice[i].left == 0) continue;
+            playing = true;
+            voice[VOICE_JINGLE + i] = (motor_tone_voice_t){.hz = s_jingle.voice[i].hz, .volts = s_jingle.voice[i].env, .q = s_jingle.q,
+                                                           .wave = s_jingle.voice[i].wave, .start = s_jingle.voice[i].fresh};
+            total += s_jingle.voice[i].env;
+            if (s_jingle.q) on_q += s_jingle.voice[i].env;
+            s_jingle.voice[i].fresh = false;
+            s_jingle.voice[i].hz *= s_jingle.voice[i].glide;
+            s_jingle.voice[i].env *= --s_jingle.voice[i].left < TUNE_FADE_TICKS ? TUNE_FADE_K : s_jingle.voice[i].decay;
+        }
+        s_jingle.tick++;
+        if (!playing) s_jingle.which = -1;
     }
     // Voices on the q axis share the voltage: together they are never more than one voice at
     // full level. Stacked past that, the sum is clipped, and clipping two pitches that are
@@ -529,10 +579,13 @@ void motor_sound_init(void) {
         }
     }
     for (int i = 0; i < MOTOR_SOUND_JINGLE_COUNT; i++) {
-        s_jingle_def[i].step_ticks = (uint32_t)(s_jingle_def[i].step_ms / 1000.0f / DT_S);
-        // To about -60 dB after the last note.
-        s_jingle_def[i].ticks = (s_jingle_def[i].notes - 1) * s_jingle_def[i].step_ticks + (uint32_t)(7.0f / s_jingle_def[i].decay / DT_S);
-        s_jingle_def[i].decay_tick = expf(-s_jingle_def[i].decay * DT_S);
+        for (int n = 0; n < s_tune[i].notes; n++) {
+            const tune_note_t *nt = &s_tune[i].note[n];
+            s_tune[i].at[n] = (uint32_t)(nt->at_ms / 1000.0f / DT_S);
+            s_tune[i].len[n] = (uint32_t)(nt->len_ms / 1000.0f / DT_S);
+            s_tune[i].decay_tick[n] = expf(-nt->decay * DT_S);
+            s_tune[i].glide[n] = powf(nt->slide_pct / 100.0f, 1.0f / s_tune[i].len[n]);
+        }
     }
     s_view.best = SNDCAL_NOT_HEARD;
     snd_cal_cfg_t cfg;

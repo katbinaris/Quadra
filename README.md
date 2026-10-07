@@ -112,7 +112,9 @@ shows, at 2× scale.
   keys the system handles itself. With the optional Mac service running, the screen shows
   the album cover, title and artist, and a volume ring that moves with the knob.
 - **AGENTS.** Claude Code, Codex, Cursor and VS Code Copilot can show their permission requests on the knob,
-  through the optional Mac service and its hooks. Hold F1 to allow, F3 to deny. A dashboard
+  through the optional Mac service and its hooks. Hold F1 to allow, F3 to deny. The knob plays
+  three rising notes for a request, two soft ones for other notifications, and answers an
+  allow or a deny with its own sound. A dashboard
   shows which sessions are working or waiting, and a command wheel types their commands.
 - **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
   the internet over WiFi.
@@ -777,13 +779,15 @@ The two ways the value reaches Onshape:
 These animations are recorded from the firmware's own drawing code (JUMP with Onshape, JUMP
 with the QUADRA wordmark), at 20 fps; the device runs them at its full frame rate.
 
-After 5 s without input the screen goes into an arcade-style attract mode: the active app's
+After 12 s without input the screen goes into an arcade-style attract mode: the active app's
 48×48 icon, or the QUADRA wordmark outside APP mode, performs **Jump**. It never leaves the
 screen: two small hops, a crouch and a big jump with afterimages, a hard landing (squash,
 screen shake, dust, debris), a gleam, hops left and right, a spinning jump, then it breathes
 with sparkles around it. While music plays (MUSIC) or the clock is up (CLOCK), those stay on
 screen instead. In HOME the icon is the lamp you changed last, lit in its colour; in MIDI it is
-the synth maker's logo (KORG or Roland), in white at 3×.
+the synth maker's logo (KORG or Roland), in white at 3×. In AGENTS the dashboard also stays up
+while any agent is working or asking; once every agent is idle or waiting for your next
+prompt, the attract mode starts as usual.
 
 A second routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
 built but switched off. Set `ROUTINE_ON[ATTRACT_BOUNCE]` to `true` in `src/ui_fx.cpp` to put

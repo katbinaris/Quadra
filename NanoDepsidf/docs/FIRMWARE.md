@@ -807,12 +807,15 @@ pins low so it stays shut down. The successor board leaves the parts out.
   (`CLICK_DIRECTION_PITCH` in `control_task.c`).
 - **End stop.** A list at its end answers the push with a low knock in place of the click
   (`motor_sound_thud()`: a square at half the click's pitch under noise, both at full level), at the profile's AMP.
-- **Tunes.** `motor_sound_jingle()` plays up to three notes on three voices, from any task
-  (the request is one atomic; the loop starts it on its next tick): the startup chime, two
-  notes up when something is saved (with the SAVED! toast), one low note when an edit or an
-  armed action is cancelled or a save fails, and two notes when an agent notification comes on show (once per item, in any mode,
-  whether it taps or not). `MOTOR_TONE_RICH` is a sine with its second and third harmonics from a second table;
-  the chime, save and cancel use it.
+- **Tunes.** `motor_sound_jingle()` plays a list of notes on three voices, from any task
+  (the request is one atomic; the loop starts it on its next tick). Each note has its start,
+  length, pitch, wave, level and decay, and may slide in pitch; note n takes voice n mod 3.
+  The tunes: the startup chime; two notes up when something is saved (with the SAVED! toast);
+  one low note when an edit or an armed action is cancelled, a save fails, or an agent is
+  denied; three rising notes (C7 E7 G7) when an agent asks for approval and two soft ones for
+  any other agent notification (once per item, in any mode, whether it taps or not); the
+  coin's two notes when an agent is allowed. `MOTOR_TONE_RICH` is a sine with its second and
+  third harmonics from a second table; all but the two soft notes use it.
 - **Shapes.** Six plain ones, in `motor_sound.h`: sine at 2 ms and 4 ms (the envelope's time constant;
   a click lasts 1.5 times that), square at 2 and 4 ms, and two with a **chirp** (sine
   4 ms and square 4 ms), whose pitch falls to 0.6 of its start through the click, like the
@@ -821,10 +824,11 @@ pins low so it stays shut down. The successor board leaves the parts out.
   stretched chirp sounds like a bird). Each shape's decay, glide and length are worked out once
   at start-up, so picking one in the loop is an index.
 - **Heat.** `sysmon` adds Vd² to its coil current and copper heat.
-- **Startup chime.** `motor_sound_chime()`, called when haptics start: three notes, C7 E7 G7,
-  each with two harmonics, 80 ms apart, decaying at 25/s. They are that high because below 1 kHz the motor is nearly
-  silent. Three voices, on the click's
-  axis, about 0.44 s in all.
+- **Startup chime.** `motor_sound_chime()`, called when haptics start: COIN, B5 then E6 held
+  (988 and 1319 Hz, rich wave), and the pair again at a third of the level as an echo; about
+  1.1 s. Picked by ear from six. Loud, low tunes are a risk on the q axis: some of the others,
+  in the same range, cut the USB power there (as the TOCK click did), and were too quiet on
+  the d axis. Try a new tune on both axes.
 
 **DEVICE → SOUND CAL** finds what carries best. F1 starts it; it then owns the motor (no
 spring, no detents) and F1–F3 until it ends. F4, leaving the screen, or the knob turning while
@@ -894,7 +898,7 @@ frames a second. Once the record has stopped, the screen is drawn only on a chan
 shows the frame rate and the draw and push times every 2 s while it moves. The
 motion is a function of the time since the last play or pause, like every other animation. A
 tap of F4 on the now-playing screen (no turn, released within 0.6 s, before the menu's long
-press) picks the next style; the usb task stores it (`user_prefs_poll`). The idle screen starts after 5 seconds without input;
+press) picks the next style; the usb task stores it (`user_prefs_poll`). The idle screen starts after 12 seconds without input (in AGENTS, not while an agent is working or asking);
 the first key press only wakes the screen and is not passed on.
 
 The same UI code compiles on the host: `tools/ui_preview/run.sh` renders every screen to a PNG
