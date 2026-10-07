@@ -3,6 +3,7 @@
 
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
+import { isWindows, thisComputer } from "../platform";
 import { Boot, EXT_CONTROLS_VERSION, EXT_NET_VERSION, EXT_WIFI_LINK_VERSION, Host, NET_STATE, NetState, Set } from "../proto";
 import { device, use } from "../store";
 import { Box, Card, Confirm, PageHead, Row, SubTabs, Text } from "../ui/controls";
@@ -48,6 +49,7 @@ function GeneralTab() {
               <span class="sub">⌘ is sent as Ctrl</span>
             </Card>
           </div>
+          {isWindows && s.host === Host.MAC && <span class="hint amber">This computer runs Windows: choose PC, or ⌘ shortcuts arrive as the Windows key.</span>}
         </Box>
         <Box title="Starts in" note="After the next restart">
           <div class="cards">
@@ -164,7 +166,11 @@ function WifiTab() {
                   </button>
                 )}
               </div>
-              <span class="hint">With no cable in, turning the knob and pressing F1–F4 type and scroll on this Mac over Wi-Fi. macOS asks once to allow Quadra under Accessibility.</span>
+              <span class="hint">
+                {isWindows
+                  ? `With no cable in, turning the knob and pressing F1–F4 type and scroll on ${thisComputer} over Wi-Fi. Windows keeps them away from apps running as administrator.`
+                  : `With no cable in, turning the knob and pressing F1–F4 type and scroll on ${thisComputer} over Wi-Fi. macOS asks once to allow Quadra under Accessibility.`}
+              </span>
             </>
           )}
         </Box>

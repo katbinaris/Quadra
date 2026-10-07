@@ -3,6 +3,7 @@
 // strength are the haptic profile's (tuned under Haptics).
 
 import { BUTTON_NAMES, MAX, MEDIA_USAGES, Mod, type Action, type Kind, type ProfileJson, type SlotName, SLOTS } from "../../profile";
+import { isWindows } from "../../platform";
 import { HapticProfiles } from "../../proto";
 import { href } from "../../store";
 import { Bits, Box, Card, cls, Dial, KeyField, Num, Row, Seg, Text } from "../../ui/controls";
@@ -28,12 +29,20 @@ const KINDS_FOR: Record<SlotName, Kind[]> = {
   f4: ["none", "wheel", "drag", "keys"],
 };
 const FINE = Mod.SHIFT | Mod.ALT; // on a volume key: a quarter step on a Mac
-const MOD_OPTS = [
-  { bit: Mod.CTRL, label: "⌃ Control" },
-  { bit: Mod.ALT, label: "⌥ Option" },
-  { bit: Mod.SHIFT, label: "⇧ Shift" },
-  { bit: Mod.GUI, label: "⌘ Command" },
-];
+// Windows: Cmd says what it becomes there (platform.ts MOD_WORDS).
+const MOD_OPTS = isWindows
+  ? [
+      { bit: Mod.CTRL, label: "Ctrl" },
+      { bit: Mod.ALT, label: "Alt" },
+      { bit: Mod.SHIFT, label: "Shift" },
+      { bit: Mod.GUI, label: "⌘ Cmd → Ctrl" },
+    ]
+  : [
+      { bit: Mod.CTRL, label: "⌃ Control" },
+      { bit: Mod.ALT, label: "⌥ Option" },
+      { bit: Mod.SHIFT, label: "⇧ Shift" },
+      { bit: Mod.GUI, label: "⌘ Command" },
+    ];
 const mediaName = (u: number | undefined) => titleCase(MEDIA_USAGES.find((m) => m.usage === u)?.label ?? "");
 const turns = (k: Kind | undefined) => k !== undefined && k !== "none" && k !== "tap";
 

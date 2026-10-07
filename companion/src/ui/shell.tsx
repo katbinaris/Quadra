@@ -6,6 +6,7 @@ import { useEffect, useRef } from "preact/hooks";
 import deviceUrl from "../assets/device.png";
 import { HidType, MidiSynths, ProfileFlag } from "../proto";
 import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, revertSynth, route, saveAll, saveError, saving, unsaved, unsavedCount, use, type Route } from "../store";
+import { isWindows } from "../platform";
 import { isTauri } from "../transport";
 import { cls } from "./controls";
 import { drawMainScreen } from "./draw";
@@ -17,7 +18,7 @@ const MODE_NAMES: Record<number, string> = { [HidType.APP]: "App", [HidType.HOME
 export function Shell(p: { children: preact.ComponentChildren }) {
   const on = connected.value;
   return (
-    <div class={cls("app", isTauri() ? "tauri" : "web")}>
+    <div class={cls("app", isTauri() ? "tauri" : "web", isTauri() && isWindows && "win")}>
       <Sidebar />
       <div class="col">
         <Topbar />
