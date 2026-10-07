@@ -21,7 +21,7 @@ together.
   draws it as it sounds.
 - **More to hear:** a step one way clicks a little higher than a step the other way; a list
   at its end answers with a low knock; saving plays two rising notes, cancelling an edit one
-  low note; an agent waiting for an answer adds two soft notes to its first double tap.
+  low note; an agent notification arrives with two notes.
 - **A click per haptic profile.** WIDE, COARSE, MEDIUM, FINE and SMOOTH each keep their own,
   next to their volume and pitch.
 - **DEVICE → SOUND CAL** tunes the click to the pitch your knob rings at: it plays a sweep

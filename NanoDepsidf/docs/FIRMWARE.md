@@ -217,7 +217,9 @@ profile**. There are five (`HAPTIC_PROFILES` in `haptic_params.h`): WIDE 8, COAR
 MEDIUM 24, FINE 36 and SMOOTH (VISCOSE only). Each has factory values and limits per feel;
 `menu.c` holds the live values (atomics, one set per profile and feel) and clamps every
 change into the profile's limits for that feel. Each tick the loop names the active profile
-(`menu_haptic_set_active`): the one the Haptics screen shows while the menu is open,
+(`menu_haptic_set_active`): MEDIUM while the menu is open, so the menu feels the same from
+every mode (the Haptics screen runs on the profile it shows, except while STEPS is being
+edited, which stays on MEDIUM so picking a profile is even steps);
 otherwise the HID type's own; in APP mode the live input's (`app_mode_haptics`: VISCOSE maps
 to SMOOTH, a detent count to the nearest stepped profile). Parameter mode picks a profile
 per step, finest first: free FINE, then MEDIUM, COARSE, WIDE (a number field: FINE, MEDIUM,
@@ -808,8 +810,8 @@ pins low so it stays shut down. The successor board leaves the parts out.
 - **Tunes.** `motor_sound_jingle()` plays up to three notes on three voices, from any task
   (the request is one atomic; the loop starts it on its next tick): the startup chime, two
   notes up when something is saved (with the SAVED! toast), one low note when an edit or an
-  armed action is cancelled or a save fails, and two soft notes with an agent's first double
-  tap. `MOTOR_TONE_RICH` is a sine with its second and third harmonics from a second table;
+  armed action is cancelled or a save fails, and two notes when an agent notification comes on show (once per item, in any mode,
+  whether it taps or not). `MOTOR_TONE_RICH` is a sine with its second and third harmonics from a second table;
   the chime, save and cancel use it.
 - **Shapes.** Six plain ones, in `motor_sound.h`: sine at 2 ms and 4 ms (the envelope's time constant;
   a click lasts 1.5 times that), square at 2 and 4 ms, and two with a **chirp** (sine

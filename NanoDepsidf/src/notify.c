@@ -190,12 +190,19 @@ void CONTROL_HOT notify_keys(uint8_t raw, int64_t now_us) {
 
 float CONTROL_HOT notify_nudge_vq(int64_t now_us, bool shown) {
     uint32_t top = atomic_load_explicit(&s_top, memory_order_relaxed);
+    // Two notes when an item comes on show, whatever its kind and whether it taps or not
+    // (only items that need input do): once per item, in any mode, as soon as the menu is
+    // closed. It hung on the tap at first, and most notifications never tapped.
+    static uint32_t s_chimed = 0; // the s_top the notes were last played for
+    if (!top) s_chimed = 0;
+    else if (shown && top != s_chimed) {
+        s_chimed = top;
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_AGENT);
+    }
     if (!shown || !(top & TOP_NUDGE) || s_f1_since != 0) {
         s_nudge_at = 0; // the next time an item needs input, it taps at once
         return 0.0f;
     }
-    // With the first double tap, two soft notes; the taps that follow are silent.
-    if (s_nudge_at == 0) motor_sound_jingle(MOTOR_SOUND_JINGLE_AGENT);
     if (s_nudge_at == 0 || now_us - s_nudge_at >= (int64_t)NOTIFY_NUDGE_PERIOD_MS * 1000) s_nudge_at = now_us;
     int64_t t = now_us - s_nudge_at;
     if (t >= NUDGE_BURST_US + NUDGE_GAP_US) t -= NUDGE_BURST_US + NUDGE_GAP_US; // the second tap

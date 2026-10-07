@@ -1029,8 +1029,9 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 // num_detents is clamped >=HAPTIC_NUM_DETENTS_MIN (3) by menu.c's
                 // rotate_detents(), same bound this file always enforced -- never 0, which
                 // would make detent_spacing below divide-by-zero.
-                // Haptic profiles (haptic_params.h): the profile in force is the one the
-                // Haptics screen shows while the menu is open (tune by feel), otherwise the
+                // Haptic profiles (haptic_params.h): the profile in force is MEDIUM while
+                // the menu is open (on the Haptics screen the profile it shows, except while
+                // STEPS is edited: menu_haptic_profile()), otherwise the
                 // HID type's -- or, in APP mode, the live input's own. Its values are then
                 // read once for this tick.
                 bool app_on = menu_get_hid_type() == MENU_HID_APP && !menu_is_open();

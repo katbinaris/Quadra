@@ -122,7 +122,7 @@ typedef enum {
     MOTOR_SOUND_JINGLE_CHIME = 0,
     MOTOR_SOUND_JINGLE_SAVE,   // two notes up: something was saved
     MOTOR_SOUND_JINGLE_CANCEL, // one low note: an edit was put back, or a save failed
-    MOTOR_SOUND_JINGLE_AGENT,  // two soft notes: an agent is waiting for an answer
+    MOTOR_SOUND_JINGLE_AGENT,  // two notes: an agent notification came on show
     MOTOR_SOUND_JINGLE_COUNT,
 } motor_sound_jingle_t;
 void motor_sound_jingle(motor_sound_jingle_t which);

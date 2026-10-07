@@ -77,7 +77,7 @@ static struct {
     [MOTOR_SOUND_JINGLE_CHIME] = {3, MOTOR_TONE_RICH, {2093.0f, 2637.0f, 3136.0f}, 80, 25.0f, SOUND_VMAX_V},
     [MOTOR_SOUND_JINGLE_SAVE] = {2, MOTOR_TONE_RICH, {3136.0f, 4186.0f}, 70, 35.0f, 1.8f},
     [MOTOR_SOUND_JINGLE_CANCEL] = {1, MOTOR_TONE_RICH, {1568.0f}, 0, 30.0f, 2.2f},
-    [MOTOR_SOUND_JINGLE_AGENT] = {2, MOTOR_TONE_SINE, {2637.0f, 3520.0f}, 120, 12.0f, 0.8f},
+    [MOTOR_SOUND_JINGLE_AGENT] = {2, MOTOR_TONE_SINE, {2637.0f, 3520.0f}, 120, 12.0f, 1.6f},
 };
 
 // The end-stop knock (motor_sound_thud()): a click shape of its own, low and noisy.

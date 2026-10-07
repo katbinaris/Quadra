@@ -1209,7 +1209,22 @@ void CONTROL_HOT menu_haptic_set_active(int profile) {
 }
 
 int CONTROL_HOT menu_haptic_profile(void) {
-    if (menu_is_open()) return hp_edit(); // tune by feel: the menu runs on the profile it shows
+    if (menu_is_open()) {
+        // The menu has a feel of its own, MEDIUM as saved, so it is the same whatever mode
+        // it was opened from. One exception, to tune by feel: the Haptics screen runs on
+        // the profile it shows, around the ring and while a value is edited. Not while
+        // STEPS is edited: turning there picks the profile, and taking each on as it passed
+        // changed the step size under the hand (COARSE to FINE overshot). The one picked
+        // takes over when the edit is confirmed.
+        int p = HAPTIC_PROFILE_MEDIUM;
+        portENTER_CRITICAL(&s_state_mux);
+        if (s_stack_depth > 0) {
+            const menu_stack_frame_t *top = &s_stack[s_stack_depth - 1];
+            if (top->screen->id == MENU_SCREEN_HAPTIC && !(s_editing && top->selected_index == MENU_HAPTIC_ROW_STEPS)) p = hp_edit();
+        }
+        portEXIT_CRITICAL(&s_state_mux);
+        return p;
+    }
     return (int)LD(s_mode_hp[atomic_load_explicit(&s_ph_hid_type, memory_order_relaxed)]);
 }
 
