@@ -54,11 +54,11 @@ static menu_render_snapshot_t haptic_snap(int selected, bool editing, bool dirty
     s.editing = editing;
     s.dirty = dirty;
     s.selected = selected;
-    const char *L[7][3] = {{"STEPS", "PROFILE", "COARSE"}, {"SNAP", "KP", "6.00"}, {"DAMP", "KD", ".010"},
+    const char *L[8][3] = {{"STEPS", "PROFILE", "COARSE"}, {"SNAP", "KP", "6.00"}, {"DAMP", "KD", ".010"},
                            {"SHAPE", "RAMP", "40%"}, {"FEEL", "TYPE", "VISCOSE"}, {"AMP", "AMPLITUDE", "80%"},
-                           {"PITCH", "CLICK", "1.00X"}};
-    for (int i = 0; i < 7; i++) s.rows[i] = row(L[i][0], L[i][1], L[i][2], i == selected);
-    s.row_count = 7;
+                           {"PITCH", "CLICK", "1.00X"}, {"CLICK", "WAVE", "SQR 4C"}};
+    for (int i = 0; i < 8; i++) s.rows[i] = row(L[i][0], L[i][1], L[i][2], i == selected);
+    s.row_count = 8;
     return s;
 }
 
@@ -87,37 +87,37 @@ int main() {
         keep(strdup((snprintf(n, sizeof(n), "boot %ums", e), n)));
     }
 
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_MOUSE, HAPTIC_TYPE_SINE, 0, nullptr});
+    ui::draw_main({false, 6, MENU_HID_MOUSE, HAPTIC_TYPE_SINE, 0, nullptr});
     keep("main mouse");
-    ui::draw_main({true, AUDIO_TIMBRE_TICK_THUD, MENU_HID_KEYBOARD, HAPTIC_TYPE_VISCOSE, UI_BTN_F4, nullptr});
+    ui::draw_main({true, 3, MENU_HID_KEYBOARD, HAPTIC_TYPE_VISCOSE, UI_BTN_F4, nullptr});
     keep("main keyboard, F4 held");
     ui::AppView figma = {"FIGMA", app_icon_figma_24, {"UNDO", "DEPTH", "WHEEL", "FRAME"}, "ZOOM", "KNOB"};
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &figma});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &figma});
     keep("main APP figma");
     ui::AppView figma_f1 = figma;
     figma_f1.action = "UNDO/REDO";
     figma_f1.action_via = "F1 + KNOB";
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F1, nullptr, &figma_f1});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F1, nullptr, &figma_f1});
     keep("main APP figma, F1 held");
     // Plasticity's micro-interaction: an isometric pyramid in each scene.
     ui::ShapeView sv = {ui::SHAPE_PYRAMID, ui::STYLE_THICK, ui::SCENE_ZOOM, (float)M_PI / 4, 0.375f, 0, false};
     ui::AppView plast = {"PLASTICITY", app_icon_plasticity_24, {"ZOOM", "ORBIT", "WHEEL", "PAN"}, "ZOOM", "KNOB", "KNOB", &sv, false};
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &plast});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &plast});
     keep("plasticity ZOOM");
     sv.scene = ui::SCENE_ORBIT;
     plast.action = "ORBIT";
     plast.action_key = "F2";
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F2, nullptr, &plast});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F2, nullptr, &plast});
     keep("plasticity ORBIT at rest (45 deg)");
     sv.yaw = (float)M_PI / 4 + 2 * (float)M_PI / 32 * 3; // a stepped pose
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F2, nullptr, &plast});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F2, nullptr, &plast});
     keep("plasticity ORBIT turning");
     sv.yaw = (float)M_PI / 4;
     sv.scene = ui::SCENE_PAN;
     sv.pan = 20;
     plast.action = "PAN";
     plast.action_key = "F4";
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F4, nullptr, &plast});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F4, nullptr, &plast});
     keep("plasticity PAN");
     // Uploaded icon: raw RGB565 BE written by run.sh from tools/icons/figma_pixel_48.png.
     if (FILE *f = fopen(getenv("ICON_RAW") ? getenv("ICON_RAW") : "", "rb")) {
@@ -125,7 +125,7 @@ int main() {
         size_t n = fread(icon, 1, sizeof(icon), f);
         fclose(f);
         if (n == sizeof(icon)) {
-            ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_MOUSE, HAPTIC_TYPE_SINE, 0, icon});
+            ui::draw_main({false, 6, MENU_HID_MOUSE, HAPTIC_TYPE_SINE, 0, icon});
             keep("main + uploaded icon");
         }
     }
@@ -144,16 +144,25 @@ int main() {
     ui::draw_menu_list(root, 0);
     keep("menu");
 
-    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_FEEL, true, true), {HAPTIC_TYPE_SINE, 700, -1, 1, true, 12});
+    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_FEEL, true, true), {HAPTIC_TYPE_SINE, 700, -1, 1, true, 12, 6});
     keep("orbit FEEL editing");
     ui::set_saw_shape(0.9f);
-    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_SHAPE, true, false), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12});
+    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_SHAPE, true, false), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12, 6});
     ui::set_saw_shape(0.0f);
     keep("orbit SHAPE editing");
-    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_AMP, true, true), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12});
+    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_AMP, true, true), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12, 6});
     keep("orbit AMP editing");
-    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_STEPS, true, false), {HAPTIC_TYPE_SAW, 900, -1, 1, true, 12});
+    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_STEPS, true, false), {HAPTIC_TYPE_SAW, 900, -1, 1, true, 12, 6});
     keep("orbit STEPS editing");
+    // CLICK: each of the eight shapes, the dot part way along.
+    for (int k = 0; k < SNDCAL_CLICK_COUNT; k++) {
+        menu_render_snapshot_t m = haptic_snap(MENU_HAPTIC_ROW_CLICK, true, k == 0);
+        snprintf(m.rows[MENU_HAPTIC_ROW_CLICK].value, sizeof(m.rows[0].value), "%s", MOTOR_SOUND_SHAPE_SHORT[k]);
+        ui::draw_orbit(m, {HAPTIC_TYPE_SAW, 250, -1, 1, true, 12, k});
+        char n[32];
+        snprintf(n, sizeof(n), "orbit CLICK %s", MOTOR_SOUND_SHAPE_NAME[k]);
+        keep(strdup(n));
+    }
     {
         // SMOOTH: VISCOSE only -- SNAP, SHAPE and FEEL are muted.
         menu_render_snapshot_t m = haptic_snap(MENU_HAPTIC_ROW_STEPS, true, false);
@@ -164,12 +173,12 @@ int main() {
         }
         m.rows[MENU_HAPTIC_ROW_FEEL].muted = true;
         snprintf(m.rows[MENU_HAPTIC_ROW_AMP].value, sizeof(m.rows[0].value), "0%%");
-        ui::draw_orbit(m, {HAPTIC_TYPE_VISCOSE, 900, -1, 1, true, 0});
+        ui::draw_orbit(m, {HAPTIC_TYPE_VISCOSE, 900, -1, 1, true, 0, 6});
         keep("orbit SMOOTH");
         ui::draw_saved_toast("FACTORY");
         keep("orbit FACTORY toast");
     }
-    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_STEPS, false, false), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12});
+    ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_STEPS, false, false), {HAPTIC_TYPE_SAW, 0, -1, 1, true, 12, 6});
     ui::draw_saved_toast();
     keep("orbit + SAVED!");
 
@@ -309,7 +318,7 @@ int main() {
     ui::draw_app_profile(prof, {profiles, 8, 6, 0, true});
     keep("profile BLENDER (empty template), unsaved");
     ui::AppView empty = {"BLENDER", app_icon_blender_24, {"-", "-", "-", "MENU"}, "SCROLL", "KNOB"};
-    ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &empty});
+    ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &empty});
     keep("main APP blender (empty template)");
     ui::draw_app_profile(prof, {profiles, 8, 7, 0, true});
     keep("profile AUTOCAD (empty template), unsaved");
@@ -429,7 +438,7 @@ int main() {
             v.prev = prev;
             v.prev_valid = slide < 1;
             v.t_ms = c && t == UINT32_MAX ? rest_ms(c->scene) : t;
-            ui::MainInputs in = {false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F3, nullptr, nullptr, &v};
+            ui::MainInputs in = {false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F3, nullptr, nullptr, &v};
             ui::draw_main(in);
         };
         for (int ring = 0; ring < p.ring_count; ring++)
@@ -448,7 +457,7 @@ int main() {
         echo.echo_scene = p.rings[0].cmds[2].scene;
         echo.echo_name = p.rings[0].cmds[2].name;
         echo.echo_ms = rest_ms(echo.echo_scene);
-        ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &echo});
+        ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &echo});
         keep("echo after run");
     }
 
@@ -478,7 +487,7 @@ int main() {
             v.name = c.name; v.label = c.label; v.value = c.v; v.drawn = c.drawn; v.decimals = 2;
             v.steps[0] = 0.01f; v.steps[1] = 0.1f; v.steps[2] = 1; v.step = c.step; v.visual = c.vis;
             v.field = true; v.typed = c.typed; v.f3 = c.f3;
-            ui::MainInputs in = {false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, nullptr, nullptr, &v};
+            ui::MainInputs in = {false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, nullptr, nullptr, &v};
             ui::draw_main(in);
             keep(c.name);
         }
@@ -487,7 +496,7 @@ int main() {
             v.name = c.name; v.label = c.label; v.value = c.v; v.decimals = c.dec; v.degrees = c.deg;
             v.steps[0] = c.s0; v.steps[1] = c.s1; v.steps[2] = c.s2; v.step = c.step; v.visual = c.vis;
             v.modes = c.modes; v.axes = c.axes; v.axis_bits = c.bits; v.axis = c.axis; v.f3 = c.f3;
-            ui::MainInputs in = {false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, nullptr, nullptr, &v};
+            ui::MainInputs in = {false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, nullptr, nullptr, &v};
             ui::draw_main(in);
             keep(c.name);
         }
@@ -508,7 +517,9 @@ int main() {
     dev.rows[0] = row("SYS INFO", "", "", true);
     dev.rows[1] = row("BINDINGS", "", "", false);
     dev.rows[2] = row("RECALIBRATE", "", "", false);
-    dev.row_count = 3;
+    dev.rows[3] = row("CLICK", "", "", false);
+    dev.rows[4] = row("SOUND CAL", "", "", false);
+    dev.row_count = 5;
     ui::draw_menu_list(dev, 0);
     keep("device list");
 
@@ -532,7 +543,7 @@ int main() {
     si.coil_ma = 180; si.coil_peak_ma = 640; si.copper_w = 0.13f;
     si.load[0] = 88; si.load[1] = 41; si.load_peak[0] = 93; si.load_peak[1] = 77;
     si.loop_khz = 10.0f; si.work_avg_us = 38.4f; si.work_max_us = 212.7f; si.jitter_max_us = 131.2f; si.missed = 3;
-    si.heap_free = 186 * 1024; si.heap_min = 151 * 1024; si.hid_drops = 1; si.audio_gaps = 0; si.uptime_s = 5025;
+    si.heap_free = 186 * 1024; si.heap_min = 151 * 1024; si.hid_drops = 1; si.uptime_s = 5025;
     menu_render_snapshot_t sys = {};
     sys.open = true;
     sys.screen = MENU_SCREEN_SYSINFO;
@@ -565,6 +576,44 @@ int main() {
     snprintf(rc.rows[0].value, sizeof(rc.rows[0].value), "%s", MENU_RECAL_ARMED);
     ui::draw_recalibrate(rc);
     keep("recalibrate, armed");
+
+    menu_render_snapshot_t clk = {};
+    clk.open = true;
+    clk.screen = MENU_SCREEN_CLICK;
+    clk.row_count = 1;
+    clk.selected = 0;
+    clk.rows[0] = row("AXIS", "", "Q", true);
+    clk.dirty = true;
+    ui::draw_click(clk, true);
+    keep("click, unsaved");
+
+    // SOUND CAL: before any calibration, mid-sweep, a tone being asked, a click shape, the
+    // result, and the stop when the knob turns.
+    sndcal_view_t cal = {};
+    cal.best = SNDCAL_NOT_HEARD;
+    cal.click_hz = 3500;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, not calibrated");
+    cal.stage = SNDCAL_SWEEP; cal.step = 6; cal.freq_hz = 1149; cal.playing = 1;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, sweep");
+    cal.stage = SNDCAL_AXIS_ASK; cal.playing = 0;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, which axis");
+    const uint8_t cal_part[SNDCAL_TONE_COUNT] = {SNDCAL_NOT_HEARD, 4, 4, 3, 3, 2, 3, 2, 1, 2, 0, 0, 0, 0, 0, 0};
+    memcpy(cal.heard, cal_part, sizeof(cal_part));
+    cal.stage = SNDCAL_TONES; cal.step = 10; cal.level = 1; cal.freq_hz = 2000;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, tone asked");
+    const uint8_t cal_all[SNDCAL_TONE_COUNT] = {SNDCAL_NOT_HEARD, 4, 4, 3, 3, 2, 3, 2, 1, 2, 2, 3, 3, 4, 4, SNDCAL_NOT_HEARD};
+    memcpy(cal.heard, cal_all, sizeof(cal_all));
+    cal.best = 8; cal.axis = 1; cal.freq_hz = 1516;
+    cal.stage = SNDCAL_DONE; cal.playing = 0; cal.calibrated = 1; cal.click_hz = 1516; cal.click_axis = 1;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, stored");
+    cal.stage = SNDCAL_MOVED;
+    ui::draw_sound_cal(cal);
+    keep("sound cal, knob moved");
 
     // Idle screen: each routine pinned, at a few telling moments. Each call restarts the
     // routine (time goes back between them), so frames are independent.
@@ -679,7 +728,7 @@ int main() {
                 v.slide = 1;
                 v.slide_dir = 1;
                 v.t_ms = 2600;
-                ui::MainInputs in = {false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F1, nullptr, nullptr, &v};
+                ui::MainInputs in = {false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, UI_BTN_F1, nullptr, nullptr, &v};
                 ui::draw_main(in);
                 keep(c.name);
             }
@@ -738,11 +787,11 @@ int main() {
         // AGENTS dashboard over the APP main screen (middle cleared).
         const app_profile_t &ap = app_profile_agents;
         ui::AppView av = {ap.name, ap.icon24, {ap.legend[0], ap.legend[1], ap.legend[2], ap.legend[3]}, "", "", "KNOB"};
-        ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &av});
+        ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &av});
         const ui::AgentRowView rows[] = {{0xE8825F, "binaris", 1}, {0x4F9DFF, "api-server", 2}, {0xB98CFF, "web", 3}};
         ui::draw_agent_board(rows, 3, 900);
         keep("agents: board");
-        ui::draw_main({false, AUDIO_TIMBRE_WOOD_TOCK, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &av});
+        ui::draw_main({false, 6, MENU_HID_APP, HAPTIC_TYPE_SAW, 0, nullptr, &av});
         ui::draw_agent_board(rows, 0, 0);
         keep("agents: none");
     }

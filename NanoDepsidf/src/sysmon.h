@@ -58,7 +58,6 @@ typedef struct {
     // System
     uint32_t heap_free, heap_min; // internal RAM, bytes
     uint32_t hid_drops;           // HID reports that never reached the host since the last reset
-    uint32_t audio_gaps;          // I2S DMA ran dry (an audible gap) since the last reset
     uint32_t uptime_s;
 } sysmon_info_t;
 
@@ -75,8 +74,8 @@ void sysmon_reset_peaks(void);
 
 // control_task.c, every tick (Core 0): cycles spent on the last iteration, cycles since the
 // previous wake-up, the notification count ulTaskNotifyTake() returned (above 1 = ticks were
-// missed), and the q-axis voltage currently applied to the motor.
-void sysmon_control_tick(uint32_t work_cycles, uint32_t period_cycles, uint32_t notified, float vq);
+// missed), and the q- and d-axis voltages currently applied to the motor.
+void sysmon_control_tick(uint32_t work_cycles, uint32_t period_cycles, uint32_t notified, float vq, float vd);
 
 // control_task.c (Core 0): cycles one part of the current iteration took.
 void sysmon_control_section(sysmon_section_t sec, uint32_t cycles);

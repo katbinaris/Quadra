@@ -7,7 +7,7 @@
 #include "foc_math.h"
 #include "foc_calibration.h"
 #include "board_pins.h"
-#include "audio_trigger.h"
+#include "motor_sound.h"
 #include "ui_state.h"
 #include "menu.h"
 #include "haptic_params.h"
@@ -65,6 +65,7 @@ static foc_calibration_t s_cal;
 static float s_base_mech_rad = 0.0f;
 static float s_last_vq = 0.0f;
 static float s_applied_vq = 0.0f; // haptic mode's q-axis voltage last sent to the driver (SYS INFO)
+static float s_applied_vd = 0.0f; // and the d axis: the motor's sound (motor_sound.h)
 static float s_prev_mech_rad = 0.0f;
 static bool s_prev_mech_rad_valid = false;
 
@@ -511,6 +512,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                     s_menu_btn_cooldown_until_iter = 0;
                     s_haptic_phase = HAPTIC_RUN;
                     s_haptic_start_us = esp_timer_get_time();
+                    motor_sound_chime(); // the startup chime
                     // Kp/Kd/detent-count come from menu.c (live-adjustable, NVS-persisted) --
                     // not reset to compile-time defaults here anymore, so a saved setting from
                     // a previous session survives this arm just like calibration does.
@@ -570,7 +572,8 @@ static void CONTROL_HOT control_task_fn(void *arg) {
         uint32_t wake = esp_cpu_get_cycle_count();
         if (iterations > 0) {
             sysmon_control_tick(done - prev_wake, wake - prev_wake, notified,
-                                s_haptic_phase == HAPTIC_RUN ? s_applied_vq : 0.0f);
+                                s_haptic_phase == HAPTIC_RUN ? s_applied_vq : 0.0f,
+                                s_haptic_phase == HAPTIC_RUN ? s_applied_vd : 0.0f);
         }
         prev_wake = wake;
 
@@ -888,7 +891,19 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 bool midi_keys = menu_get_hid_type() == MENU_HID_MIDI && !menu_is_open();
                 if (midi_keys && !btn_a_pressed && s_menu_prev_btn_a_pressed) midi_input_key(UI_BTN_F1, false);
 
-                if (!app_active && !swallow && !notice && iterations >= s_menu_btn_cooldown_until_iter) {
+                if (motor_sound_cal_active()) {
+                    // DEVICE -> SOUND CAL is running: F1-F3 answer it, F4 closes the menu,
+                    // which stops it.
+                    if (iterations >= s_menu_btn_cooldown_until_iter) {
+                        uint8_t pressed = (btn_a_pressed && !s_menu_prev_btn_a_pressed ? UI_BTN_F1 : 0)
+                                        | (btn_b_pressed && !s_menu_prev_btn_b_pressed ? UI_BTN_F2 : 0)
+                                        | (btn_c_pressed && !s_menu_prev_btn_c_pressed ? UI_BTN_F3 : 0);
+                        bool close = btn_d_pressed && !s_menu_prev_btn_d_pressed;
+                        if (close) menu_input_toggle_open();
+                        else motor_sound_cal_keys(pressed);
+                        if (pressed || close) s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
+                    }
+                } else if (!app_active && !swallow && !notice && iterations >= s_menu_btn_cooldown_until_iter) {
                     if (btn_d_pressed && !s_menu_prev_btn_d_pressed) {
                         menu_input_toggle_open(); // F4
                         s_menu_btn_cooldown_until_iter = iterations + MENU_BTN_COOLDOWN_ITERS;
@@ -957,6 +972,28 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 ESP_LOGE(TAG, "sensor read failed mid-test -- aborting haptic demo");
                 s_haptic_phase = HAPTIC_DONE;
                 motor_driver_enable(false);
+            } else if (motor_sound_cal_active()) {
+                // DEVICE -> SOUND CAL: no spring and no detents, only the tones and clicks
+                // under test. The knob is free; turning it while one plays stops the
+                // calibration (motor_sound.c).
+                float mech_rad = raw_to_rad(raw);
+                float elec_rad = wrap_pi(s_cal.direction * mech_rad * MOTOR_POLE_PAIRS - s_cal.electrical_offset_rad);
+                motor_sound_cal_angle(mech_rad);
+                float vd, vq;
+                motor_sound_dq(0.0f, &vd, &vq);
+                SECTION_DONE(SYSMON_SEC_FORCE);
+                foc_dq_t dq = { .d = vd, .q = vq };
+                foc_ab_t ab = foc_inverse_park(dq, elec_rad);
+                foc_abc_t abc = foc_inverse_clarke(ab);
+                motor_driver_set_phase_voltages(abc.a, abc.b, abc.c);
+                s_applied_vq = vq;
+                s_applied_vd = vd;
+                SECTION_DONE(SYSMON_SEC_MOTOR);
+                // Haptics start over from wherever the knob is when it ends: no step, no click.
+                s_haptic_prev_detent_index_valid = false;
+                s_prev_mech_rad_valid = false;
+                s_haptic_filtered_velocity = 0.0f;
+                s_haptic_pulse_ticks_remaining = 0;
             } else {
                 float mech_rad = raw_to_rad(raw);
                 float elec_rad = wrap_pi(s_cal.direction * mech_rad * MOTOR_POLE_PAIRS - s_cal.electrical_offset_rad);
@@ -1192,7 +1229,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                         // clipped kick on top of it fights its own character and was reported
                         // as an audible noise burst -- excluded here. Viscose excludes it too
                         // (no positional spring at all, nothing to "click" for). The audible
-                        // (I2S) click is a separate, distinct sound source -- still fires for
+                        // click (motor_sound.h) is a separate burst -- still fires for
                         // Sine (a bump still benefits from a feedback cue) and for Viscose,
                         // on its virtual steps, at its profile's AMP (0 by default, 20% at
                         // most -- haptic_params.h). The HID scroll/menu-
@@ -1210,12 +1247,11 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                             }
                         }
                         if (audio_click_enabled) {
-                            // Phase 7: same detent-index edge that triggers the electrical
-                            // click pulse above also triggers the audible one. Non-blocking,
-                            // safe from this real-time loop -- see audio_trigger.h. Fires
-                            // unconditionally, menu open or not -- same physical click either
-                            // way, only what the crossing *means* (below) changes.
-                            audio_trigger_click(AUDIO_CLICK_NORMAL);
+                            // The same detent-index edge that triggers the electrical click
+                            // pulse above also triggers the audible one, a burst on the motor
+                            // (motor_sound.h). Fires menu open or not -- same physical click
+                            // either way, only what the crossing *means* (below) changes.
+                            motor_sound_click(menu_get_haptic_pitch(), menu_get_click_amplitude(), menu_get_click_shape());
                             ui_state_note_click();
                         }
 
@@ -1296,11 +1332,15 @@ static void CONTROL_HOT control_task_fn(void *arg) {
 
                     SECTION_DONE(SYSMON_SEC_FORCE);
                     if (s_haptic_phase != HAPTIC_DONE) {
-                        foc_dq_t dq = { .d = 0.0f, .q = vq_out };
+                        // The motor's sound, on the d or the q axis, in the voltage the haptics leave.
+                        float vd_out;
+                        motor_sound_dq(vq_out, &vd_out, &vq_out);
+                        foc_dq_t dq = { .d = vd_out, .q = vq_out };
                         foc_ab_t ab = foc_inverse_park(dq, elec_rad);
                         foc_abc_t abc = foc_inverse_clarke(ab);
                         motor_driver_set_phase_voltages(abc.a, abc.b, abc.c);
                         s_applied_vq = vq_out;
+                        s_applied_vd = vd_out;
                     }
                     SECTION_DONE(SYSMON_SEC_MOTOR);
                     // No periodic logging here (there was a 5 Hz "haptic:" line and a 1 Hz

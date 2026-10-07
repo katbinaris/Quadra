@@ -3,14 +3,13 @@
 #include "nvs_flash.h"
 #include "board_pins.h"
 #include "ipc.h"
-#include "audio_trigger.h"
+#include "motor_sound.h"
 #include "ui_state.h"
 #include "menu.h"
 #include "app_profiles/app_profiles.h"
 #include "icon_store.h"
 #include "control_task.h"
 #include "usb_task.h"
-#include "i2s_task.h"
 #include "display_task.h"
 #include "led_task.h"
 #include "pd_status.h"
@@ -104,7 +103,16 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_err);
 
     ipc_init();
-    audio_trigger_init();
+    motor_sound_init(); // after nvs_flash_init(): it loads SOUND CAL's result
+    // The I2S amp isn't driven any more (board_pins.h): its inputs low, not floating.
+    const gpio_config_t amp_cfg = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = (1ULL << PIN_I2S_DOUT) | (1ULL << PIN_I2S_BCLK) | (1ULL << PIN_I2S_LRC),
+    };
+    gpio_config(&amp_cfg);
+    gpio_set_level(PIN_I2S_DOUT, 0);
+    gpio_set_level(PIN_I2S_BCLK, 0);
+    gpio_set_level(PIN_I2S_LRC, 0);
     ui_state_init();
     clock_init();
     app_profiles_init(); // stored profiles: before menu_init() looks up the saved one by id
@@ -165,9 +173,6 @@ void app_main(void) {
     } else {
         ESP_LOGI(TAG, "usb task not started (USB serial mode active this boot)");
     }
-    // Diagnostic disable (DEVELOPMENT_PLAN.md Phase 8) confirmed I2S was NOT the cause of
-    // the laggy roller animation -- re-enabled.
-    i2s_task_start();
     display_task_start();
     led_task_start();
     pd_status_start(); // one-shot STUSB4500 read (SYS INFO shows it); a 9 V contract is asked again for 5 V

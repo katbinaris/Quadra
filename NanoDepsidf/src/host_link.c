@@ -159,7 +159,7 @@ static void build_settings(uint8_t *r) {
     r[16] = (uint8_t)s.feel;
     r[17] = (uint8_t)s.amp;
     put_f32(r + 18, s.pitch);
-    r[22] = (uint8_t)s.sound;
+    r[22] = 0; // was the speaker's click timbre
     r[23] = (uint8_t)s.hid_type;
     r[24] = (uint8_t)s.midi_channel;
     r[25] = (uint8_t)s.profile;
@@ -427,7 +427,7 @@ static void build_sys(uint8_t *a, uint8_t *b) {
     put_u32(b + 32, s.heap_free);
     put_u32(b + 36, s.heap_min);
     put_u32(b + 40, s.hid_drops);
-    put_u32(b + 44, s.audio_gaps);
+    put_u32(b + 44, 0); // was the I2S audio gaps
     put_u32(b + 48, s.uptime_s);
     put_u32(b + 52, s.sensor_crc_errors);
 }

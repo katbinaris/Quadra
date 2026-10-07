@@ -84,6 +84,10 @@ typedef struct {
     float pitch;   // click pitch multiplier
 } haptic_tune_t;
 
+// AMP: percent, in steps of 5; each profile and feel has its own ceiling (amp_max).
+#define HAPTIC_CLICK_AMP_MIN 0
+#define HAPTIC_CLICK_AMP_STEP 5
+
 typedef struct {
     float kp_min, kp_max;
     float kd_min, kd_max;

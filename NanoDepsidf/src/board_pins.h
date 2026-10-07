@@ -34,7 +34,8 @@
 #define PIN_BTN_C 45
 #define PIN_BTN_D 46
 
-// I2S transducer (audio) -- Phase 7, MAX98357A amp
+// The MAX98357A I2S amp and its transducer: on the board, not used. Sound comes from the motor
+// (motor_sound.h); main.c holds these low, so the amp sees no clock and stays shut down.
 #define PIN_I2S_DOUT 9
 #define PIN_I2S_BCLK 10
 #define PIN_I2S_LRC  11

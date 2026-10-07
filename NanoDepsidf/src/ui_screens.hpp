@@ -9,10 +9,10 @@
 #include "ui_cards.hpp"
 extern "C" {
 #include "menu.h"
-#include "audio_trigger.h"
 #include "boot_mode.h"
 #include "pd_status.h"
 #include "sysmon.h"
+#include "motor_sound.h"
 }
 
 namespace ui {
@@ -37,7 +37,7 @@ struct AppView {
 
 struct MainInputs {
     bool usb_serial;          // this boot's USB personality (status strip)
-    audio_click_timbre_t tone;
+    int click_shape;          // the motor click (motor_sound.h), named on the status strip
     menu_hid_type_t mode;     // knob's job: keyboard / mouse / MIDI
     haptic_type_t feel;
     uint8_t buttons_held;     // UI_BTN_* -- lit keycaps
@@ -58,6 +58,7 @@ struct OrbitInputs {
     float morph_blend; // 0..1
     bool blink_on;     // "F2 SAVE" blink phase
     int steps;         // detents per turn, for the STEPS dial
+    int click_shape;   // the shown profile's click (motor_sound.h), for the CLICK wave
 };
 void draw_orbit(const menu_render_snapshot_t &snap, const OrbitInputs &in);
 
@@ -104,6 +105,13 @@ void draw_bindings(const menu_render_snapshot_t &snap, menu_host_t host, bool bl
 
 // DEVICE -> RECALIBRATE: takes a second F1 to run (its row value is MENU_RECAL_ARMED in between).
 void draw_recalibrate(const menu_render_snapshot_t &snap);
+
+// DEVICE -> CLICK: the axis the motor's sounds play on, D or Q; turning switches it.
+void draw_click(const menu_render_snapshot_t &snap, bool blink_on);
+
+// DEVICE -> SOUND CAL: the motor's click, tuned by ear (motor_sound.h). The bars are the 16
+// tones, taller the quieter each was heard.
+void draw_sound_cal(const sndcal_view_t &v);
 
 void draw_saved_toast(const char *msg = "SAVED!");
 

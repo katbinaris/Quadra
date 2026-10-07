@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "haptic_params.h"
-#include "audio_trigger.h"
 #include "boot_mode.h"
 
 // Phase 8: real configuration menu, replacing the Phase 4 mock (three static labels,
@@ -37,11 +36,13 @@ typedef enum {
     MENU_SCREEN_BOOT,
     MENU_SCREEN_APP_PROFILE, // PROFILES = APP -> F1: choose the app profile
     MENU_SCREEN_DISPLAY,     // screen rotation
-    MENU_SCREEN_DEVICE,      // a list: SYS INFO, BINDINGS, RECALIBRATE
+    MENU_SCREEN_DEVICE,      // a list: SYS INFO, BINDINGS, RECALIBRATE, CLICK, SOUND CAL
     MENU_SCREEN_SYSINFO,     // live readings (sysmon.h), one page per row; F1 resets the peaks
     MENU_SCREEN_RECALIBRATE, // forget the motor calibration and restart
     MENU_SCREEN_BINDINGS,    // which computer: MAC or PC (Cmd <-> Ctrl)
     MENU_SCREEN_LIGHTS,      // LED colour, effect, speed, level (user_prefs.h)
+    MENU_SCREEN_CLICK,       // the axis the motor's sounds play on (motor_sound.h)
+    MENU_SCREEN_SOUND_CAL,   // the motor's click: find the frequency the knob rings at (motor_sound.h)
 } menu_screen_id_t;
 
 // Rows of the LIGHTS screen -- display_task.cpp draws each by index.
@@ -86,8 +87,9 @@ enum {
     MENU_HAPTIC_ROW_DAMP,
     MENU_HAPTIC_ROW_SHAPE,
     MENU_HAPTIC_ROW_FEEL,
-    MENU_HAPTIC_ROW_AMP,   // click amplitude; TONE (timbre) is hidden for now, see menu.c
+    MENU_HAPTIC_ROW_AMP,   // click amplitude
     MENU_HAPTIC_ROW_PITCH,
+    MENU_HAPTIC_ROW_CLICK, // the click's wave (motor_sound.h), per profile
     MENU_HAPTIC_ROW_COUNT,
 };
 
@@ -165,6 +167,8 @@ menu_screen_id_t menu_current_screen(void); // MENU_SCREEN_NONE when closed; che
 // DEVICE -> RECALIBRATE confirmed: true once, then false again. control_task.c polls it and
 // does the work (motor off, forget the calibration, restart -- the next boot recalibrates).
 bool menu_take_recalibrate_request(void);
+// SOUND CAL stored the axis itself: DEVICE -> CLICK's saved baseline follows. Core 1.
+void menu_click_saved(void);
 
 // True when turning `direction` would push a non-wrapping value past its end (the PROFILE
 // list): control_task.c makes that detent a haptic wall instead of a step. Core 0.
@@ -193,10 +197,9 @@ float menu_get_haptic_kd(void);
 float menu_get_haptic_shape(void); // 0..0.9, the Haptics SHAPE setting
 haptic_type_t menu_get_haptic_type(void);
 
-// Phase 8 step 5: live click timbre, adjustable via the Haptic Configurator's "Haptic Sound"
-// field and read directly by i2s_task.c (Core 1) when a new detent click starts. Same
-// lock-free atomic-load convention as the getters above, just consumed by a different task.
-audio_click_timbre_t menu_get_haptic_sound(void);
+// The click (motor_sound.h) at the active profile's settings.
+int menu_get_click_shape(void);      // its wave, 0..SNDCAL_CLICK_COUNT-1
+int menu_get_edit_click_shape(void); // the wave of the profile the Haptics screen shows; any core
 float menu_get_haptic_pitch(void);
 float menu_get_click_amplitude(void); // 0..1, the Haptics AMP setting
 
@@ -233,7 +236,7 @@ typedef struct {
     float kp, kd;
     int32_t feel, amp;
     float pitch;
-    int32_t sound, hid_type, midi_channel, profile, boot_mode, rotation, host;
+    int32_t hid_type, midi_channel, profile, boot_mode, rotation, host;
     int32_t midi_synth;
     int32_t shape;
     // The haptic values above are those of `haptic_profile` (the one the Haptics screen

@@ -1,7 +1,6 @@
 #include "net.h"
 #include "sysmon.h"
 #include "sdkconfig.h"
-#include "i2s_task.h"
 #include "motor_config.h"
 #include "mt6701.h"
 #include "tasks_common.h"
@@ -69,7 +68,7 @@ void CONTROL_HOT sysmon_control_section(sysmon_section_t sec, uint32_t cycles) {
     if (cycles > s_win.sec_max[sec]) s_win.sec_max[sec] = cycles;
 }
 
-void CONTROL_HOT sysmon_control_tick(uint32_t work_cycles, uint32_t period_cycles, uint32_t notified, float vq) {
+void CONTROL_HOT sysmon_control_tick(uint32_t work_cycles, uint32_t period_cycles, uint32_t notified, float vq, float vd) {
     atomic_store_explicit(&s_ticks_total, ++s_ticks_local, memory_order_relaxed);
     s_win.ticks++;
     s_win.work_sum += work_cycles;
@@ -79,7 +78,7 @@ void CONTROL_HOT sysmon_control_tick(uint32_t work_cycles, uint32_t period_cycle
                                                       : LOOP_PERIOD_CYCLES - period_cycles;
     if (dev > s_win.dev_max) s_win.dev_max = dev;
     if (notified > 1) s_win.missed += notified - 1;
-    s_win.vq2_sum += vq * vq;
+    s_win.vq2_sum += vq * vq + vd * vd; // the motor's sound (motor_sound.h) is on the d axis
     if (s_win.ticks < CONTROL_WINDOW_TICKS) return;
 
     float mean = s_win.vq2_sum / s_win.ticks;
@@ -171,7 +170,7 @@ static void sysmon_task_fn(void *arg) {
 
     sysmon_info_t info = {0};
     info.chip_peak_c = -100.0f;
-    uint32_t hid_base = 0, gap_base = 0, crc_base = 0;
+    uint32_t hid_base = 0, crc_base = 0;
     uint32_t ticks_prev = atomic_load_explicit(&s_ticks_total, memory_order_relaxed);
     uint32_t idle_prev[2] = {ulTaskGetIdleRunTimeCounterForCore(0), ulTaskGetIdleRunTimeCounterForCore(1)};
     int64_t t_prev = esp_timer_get_time();
@@ -186,11 +185,9 @@ static void sysmon_task_fn(void *arg) {
 
         bool reset = atomic_exchange_explicit(&s_reset_request, false, memory_order_relaxed);
         uint32_t hid_now = atomic_load_explicit(&s_hid_drops, memory_order_relaxed);
-        uint32_t gap_now = i2s_task_gap_count();
         uint32_t crc_now = mt6701_crc_errors();
         if (reset) {
             hid_base = hid_now;
-            gap_base = gap_now;
             crc_base = crc_now;
             info.total_peak_ma = 0;
             info.chip_peak_c = -100.0f;
@@ -262,7 +259,6 @@ static void sysmon_task_fn(void *arg) {
         info.heap_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         info.heap_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
         info.hid_drops = hid_now - hid_base;
-        info.audio_gaps = gap_now - gap_base;
         info.sensor_crc_errors = crc_now - crc_base;
         info.uptime_s = (uint32_t)(now / 1000000);
         info.version++;
@@ -297,12 +293,12 @@ static void sysmon_task_fn(void *arg) {
         if (++n % SYSMON_LOG_EVERY == 0) {
             ESP_LOGI(TAG, "load %u/%u%% | loop %.2f kHz work %.1f/%.1f us jitter %.1f us missed %lu spikes %.0f/s | "
                           "chip %.1f C | est %u mA (motor %u, led %u, board %u) coil %u mA | "
-                          "heap %lu/%lu | hid drops %lu, audio gaps %lu | "
+                          "heap %lu/%lu | hid drops %lu | "
                           "input %.1f sensor %.1f force %.1f motor %.1f other %.1f us, sensor crc errors %lu",
                      info.load[0], info.load[1], info.loop_khz, info.work_avg_us, info.work_max_us,
                      info.jitter_max_us, (unsigned long)info.missed, info.spikes_per_s, info.chip_c, info.total_ma, info.motor_ma,
                      info.led_ma, info.board_ma, info.coil_ma, (unsigned long)info.heap_free,
-                     (unsigned long)info.heap_min, (unsigned long)info.hid_drops, (unsigned long)info.audio_gaps,
+                     (unsigned long)info.heap_min, (unsigned long)info.hid_drops,
                      info.sec_avg_us[SYSMON_SEC_INPUT], info.sec_avg_us[SYSMON_SEC_SENSOR],
                      info.sec_avg_us[SYSMON_SEC_FORCE], info.sec_avg_us[SYSMON_SEC_MOTOR], info.other_avg_us,
                      (unsigned long)info.sensor_crc_errors);

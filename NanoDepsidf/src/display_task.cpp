@@ -39,6 +39,7 @@ extern "C" {
 #include "app_colors.h"
 #include "home.h"
 #include "midi.h"
+#include "motor_sound.h"
 }
 
 static const char *TAG = "display";
@@ -138,7 +139,7 @@ void display_frame_reserve(void) {
 
 enum View : uint8_t {
     V_BOOT, V_MAIN, V_ROOT, V_HAPTIC, V_HID, V_BOOTMODE, V_APP_PROFILE, V_DISPLAY, V_DEVICE, V_SYSINFO, V_RECAL, V_BINDINGS, V_ATTRACT,
-    V_LIGHTS, V_NOTIFY
+    V_LIGHTS, V_NOTIFY, V_SOUNDCAL, V_CLICK
 };
 
 static View view_for(const menu_render_snapshot_t &s) {
@@ -154,13 +155,15 @@ static View view_for(const menu_render_snapshot_t &s) {
         case MENU_SCREEN_RECALIBRATE: return V_RECAL;
         case MENU_SCREEN_BINDINGS: return V_BINDINGS;
         case MENU_SCREEN_LIGHTS: return V_LIGHTS;
+        case MENU_SCREEN_SOUND_CAL: return V_SOUNDCAL;
+        case MENU_SCREEN_CLICK: return V_CLICK;
         default: return V_MAIN;
     }
 }
 
 static inline bool is_settings_view(View v) {
     return v == V_HAPTIC || v == V_HID || v == V_BOOTMODE || v == V_APP_PROFILE || v == V_DISPLAY || v == V_BINDINGS
-        || v == V_LIGHTS;
+        || v == V_LIGHTS || v == V_CLICK;
 }
 
 // --- MUSIC: the now-playing cover (media.h) ---
@@ -926,7 +929,7 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
                 }
             }
             ui::MainInputs in = {
-                ui_state_get_usb_serial_active(), menu_get_haptic_sound(), menu_get_hid_type(),
+                ui_state_get_usb_serial_active(), menu_get_click_shape(), menu_get_hid_type(),
                 menu_get_haptic_type(), // the feel line isn't shown in APP mode
                 ui_state_get_buttons(), s_icon_set ? s_icon : nullptr, app ? &av : nullptr,
                 wheel ? &wv : nullptr, param ? &pv : nullptr,
@@ -956,6 +959,7 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
                 menu_get_haptic_type(), (uint32_t)(now / 1000),
                 morphing ? s_morph_from : -1, morphing ? ease_out3(m / (FEEL_MORPH_MS * 1000.0f)) : 1.0f, blink_on,
                 menu_haptic_edit_profile() == HAPTIC_PROFILE_SMOOTH ? 0 : (int)HAPTIC_PROFILES[menu_haptic_edit_profile()].detents,
+                menu_get_edit_click_shape(),
             };
             ui::draw_orbit(snap, in);
             break;
@@ -1000,6 +1004,15 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
         case V_RECAL:
             ui::draw_recalibrate(snap);
             break;
+        case V_CLICK:
+            ui::draw_click(snap, blink_on);
+            break;
+        case V_SOUNDCAL: {
+            sndcal_view_t cal;
+            motor_sound_cal_view(&cal);
+            ui::draw_sound_cal(cal);
+            break;
+        }
         case V_BINDINGS:
             ui::draw_bindings(snap, menu_get_host(), blink_on);
             break;
@@ -1317,7 +1330,13 @@ static Pace update_ui(void) {
     bool sys_changed = memcmp(&power, &s_last_power, sizeof(power)) != 0 || sys.version != s_last_sysmon;
     s_last_power = power;
     s_last_sysmon = sys.version;
-    bool redraw = first || snapshot_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
+    // SOUND CAL moves on by itself (motor_sound.c): each step, and each sound starting or ending.
+    static sndcal_view_t s_last_sndcal = {};
+    sndcal_view_t sndcal;
+    motor_sound_cal_view(&sndcal);
+    bool sndcal_changed = s_view == V_SOUNDCAL && memcmp(&sndcal, &s_last_sndcal, sizeof(sndcal)) != 0;
+    s_last_sndcal = sndcal;
+    bool redraw = first || snapshot_changed || sndcal_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
                || rotation_changed || (sys_changed && s_view == V_SYSINFO) || text_changed || notice_changed
                || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed)
                || home_changed || midi_changed || midi_prog_ended;
@@ -1361,7 +1380,7 @@ static Pace update_ui(void) {
                 || (s_view == V_MAIN && midi_prog) // MIDI's program badge, until it goes
                 || (s_view == V_HAPTIC
                     && (snap.selected == MENU_HAPTIC_ROW_FEEL || snap.selected == MENU_HAPTIC_ROW_SHAPE
-                        || snap.selected == MENU_HAPTIC_ROW_STEPS));
+                        || snap.selected == MENU_HAPTIC_ROW_STEPS || snap.selected == MENU_HAPTIC_ROW_CLICK));
     bool blink_on = ((now / 1000) % 900) < 600;
     bool blink_edge = is_settings_view(s_view) && snap.dirty && blink_on != s_drawn_blink;
     bool toast_on = is_settings_view(s_view) && now < s_toast_until_us;
@@ -1434,7 +1453,7 @@ static void display_task_fn(void *arg) {
             case PACE_FAST:
                 // Short transition in flight: next frame right away. The 100Hz tick makes
                 // even vTaskDelay(1) cost up to 10ms/frame; a yield still round-robins with
-                // the same-priority I2S task, and lower-priority tasks wait at most one
+                // any same-priority task, and lower-priority tasks wait at most one
                 // transition (IRIS_MS).
                 taskYIELD();
                 break;

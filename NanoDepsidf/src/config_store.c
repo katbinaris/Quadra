@@ -1,6 +1,5 @@
 #include "config_store.h"
 #include "haptic_params.h"
-#include "audio_trigger.h"
 #include "boot_mode.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -14,9 +13,10 @@ static const char *TAG = "config_store";
 #define NS_BOOT   "boot_cfg"
 #define NS_DISPLAY "disp_cfg"
 #define NS_BINDINGS "bind_cfg"
+#define NS_SND_CAL "snd_cal"
 #define KEY       "cfg" // one blob per namespace, same shape as foc_calibration.c's "foc_cal"/"cal"
 
-// HAPTIC_TYPE_COUNT (haptic_params.h), AUDIO_TIMBRE_COUNT (audio_trigger.h), and now
+// HAPTIC_TYPE_COUNT (haptic_params.h) and
 // BOOT_USB_MODE_COUNT (boot_mode.h) all come from their own real, shared enums (Phase 8
 // steps 4/5/6). ph_hid_type_t still doesn't have one of its own (stays menu.c-private), so
 // HID_TYPE_COUNT below is still kept in sync by hand. A mismatch there would only make the
@@ -104,6 +104,25 @@ bool config_store_load_hid(hid_cfg_t *out) {
 
 void config_store_save_hid(const hid_cfg_t *cfg) {
     nvs_save_blob(NS_HID, cfg, sizeof(*cfg), "hid_cfg");
+}
+
+bool config_store_load_snd_cal(snd_cal_cfg_t *out) {
+    snd_cal_cfg_t stored;
+    if (!nvs_load_blob(NS_SND_CAL, &stored, sizeof(stored)) || stored.version != SND_CAL_CFG_VERSION) {
+        return false;
+    }
+    if (stored.freq_hz < 300 || stored.freq_hz > 5000 || stored.shape >= 8 || stored.axis > 1) {
+        ESP_LOGW(TAG, "stored snd_cal failed sanity check, ignoring");
+        return false;
+    }
+    *out = stored;
+    ESP_LOGI(TAG, "loaded snd_cal from NVS: %u Hz, shape %u, axis %u", (unsigned)stored.freq_hz,
+             (unsigned)stored.shape, (unsigned)stored.axis);
+    return true;
+}
+
+void config_store_save_snd_cal(const snd_cal_cfg_t *cfg) {
+    nvs_save_blob(NS_SND_CAL, cfg, sizeof(*cfg), "snd_cal");
 }
 
 #define KEY_APP_PROFILE "app"

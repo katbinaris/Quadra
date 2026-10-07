@@ -136,11 +136,11 @@ void draw_main(const MainInputs &in) {
     draw_legend(in);
 }
 
-// Status strip (USB mode, click tone) + the knob's job: the non-APP main screen.
+// Status strip (USB mode, the click) + the knob's job: the non-APP main screen.
 static void draw_status_and_middle(const MainInputs &in) {
-    // Status strip: USB mode, click tone -- 1.5x icons, 10px text, vertically centered on y=36.
+    // Status strip: USB mode, the click's wave -- 1.5x icons, 10px text, vertically centered on y=36.
     const char *usb = in.usb_serial ? "SERIAL" : "HID";
-    const char *tone = (in.tone == AUDIO_TIMBRE_WOOD_TOCK) ? "WOOD" : "THUD";
+    const char *tone = MOTOR_SOUND_SHAPE_SHORT[in.click_shape >= 0 && in.click_shape < SNDCAL_CLICK_COUNT ? in.click_shape : 0];
     int w_usb = text_width(usb), w_tone = text_width(tone);
     int total = SPR_USB_M.w + 5 + w_usb + 16 + SPR_SPK_M.w + 5 + w_tone;
     float x = lroundf(CX - total / 2.0f);
@@ -200,7 +200,46 @@ void draw_menu_list(const menu_render_snapshot_t &snap, float scroll) {
 static const float ORBIT_R = 82;
 static const float ORBIT_STEP_DEG = 360.0f / (int)MENU_HAPTIC_ROW_COUNT;
 
-static void orbit_icon(int row, haptic_type_t feel, float cx, float cy, uint32_t c) {
+// The motor click as it is played, left to right: a sine or a square dying away, its cycles
+// widening where the pitch falls (a chirp), and as wide as it is long (3, 6 or 12 ms). The
+// real click has some twenty cycles; these are fewer, so they can be seen. `icon`: three
+// cycles across the whole width, for the ring. Returns the click's width.
+static float click_level(const motor_sound_shape_t &sh, float cycles, float u) {
+    float end = MOTOR_SOUND_CHIRP_END;
+    float ph = sh.chirp ? cycles * (1.0f - powf(end, u)) / -logf(end) : cycles * u;
+    float v = sinf(2.0f * (float)M_PI * ph);
+    if (sh.square) v = v >= 0 ? 1.0f : -1.0f;
+    return v * expf(-u * sh.len_us / sh.tau_us);
+}
+static int click_wave(int shape, bool icon, int x, int y, int w, float amp, uint32_t c, int thick) {
+    const motor_sound_shape_t &sh = MOTOR_SOUND_SHAPE[shape >= 0 && shape < SNDCAL_CLICK_COUNT ? shape : 0];
+    float cycles = icon ? 3 : sh.len_us <= 3000 ? 3 : sh.len_us <= 6000 ? 5 : 8;
+    int span = icon ? w : sh.len_us <= 3000 ? w / 2 : sh.len_us <= 6000 ? w * 3 / 4 : w;
+    int prev = y;
+    for (int px = 0; px < span; px++) {
+        int yy = y - (int)lroundf(click_level(sh, cycles, (px + 0.5f) / span) * amp);
+        int top = yy < prev ? yy : prev, bot = yy < prev ? prev : yy;
+        rect(x + px, top, thick, bot - top + thick, c);
+        prev = yy;
+    }
+    if (span < w) rect(x + span, y, w - span, 1, DARK); // silence after it
+    return span;
+}
+
+// CLICK animation: a dot runs along the wave as the click plays, then waits.
+static void click_anim(int shape, int x, int y, int w, float amp, uint32_t t, uint32_t c) {
+    int span = click_wave(shape, false, x, y, w, amp, c, 2);
+    const motor_sound_shape_t &sh = MOTOR_SOUND_SHAPE[shape >= 0 && shape < SNDCAL_CLICK_COUNT ? shape : 0];
+    const uint32_t play_ms = 700, loop_ms = 1300;
+    uint32_t at = t % loop_ms;
+    if (at >= play_ms) return;
+    float u = (float)at / play_ms;
+    float cycles = sh.len_us <= 3000 ? 3 : sh.len_us <= 6000 ? 5 : 8;
+    float px = x + u * span;
+    rect(px - 2, y - click_level(sh, cycles, u) * amp - 2, 5, 5, AMBER);
+}
+
+static void orbit_icon(int row, haptic_type_t feel, int click_shape, float cx, float cy, uint32_t c) {
     const Sprite *s = nullptr;
     switch (row) {
         case MENU_HAPTIC_ROW_STEPS: s = &SPR_STEPS_M; break;
@@ -210,6 +249,10 @@ static void orbit_icon(int row, haptic_type_t feel, float cx, float cy, uint32_t
         case MENU_HAPTIC_ROW_AMP: s = &SPR_SPK_M; break;
         case MENU_HAPTIC_ROW_PITCH: s = &SPR_PITCH_M; break;
         default: break;
+    }
+    if (row == MENU_HAPTIC_ROW_CLICK) { // its wave, three cycles of it
+        click_wave(click_shape, true, (int)lroundf(cx - 12), (int)lroundf(cy), 24, 5, c, 1);
+        return;
     }
     if (s == nullptr) { // FEEL: its own curve
         plot_curve(feel, (int)lroundf(cx - 12), (int)lroundf(cy), 24, 5, 1, 0, c, 2, -1, 1);
@@ -276,7 +319,7 @@ void draw_orbit(const menu_render_snapshot_t &snap, const OrbitInputs &in) {
         float x = CX + ORBIT_R * cosf(a), y = CY + ORBIT_R * sinf(a);
         bool f = (i == snap.selected);
         bool muted = snap.rows[i].muted; // not usable in this feel: all grey, "--"
-        orbit_icon(i, in.feel, x, y - 14, muted ? GREY : f ? AMBER : WHITE);
+        orbit_icon(i, in.feel, in.click_shape, x, y - 14, muted ? GREY : f ? AMBER : WHITE);
         text(snap.rows[i].label, x, y - 6, f ? AMBER : GREY, 1, CENTER);
         text(snap.rows[i].value, x, y + 4, muted ? GREY : WHITE, 1, CENTER);
     }
@@ -303,6 +346,13 @@ void draw_orbit(const menu_render_snapshot_t &snap, const OrbitInputs &in) {
     } else if (snap.selected == MENU_HAPTIC_ROW_STEPS) {
         text(p.caption, CX, 72, GREY, 1, CENTER);
         steps_dial(in.steps, CX, 101, 15, in.t_ms, WHITE);
+        int sc = fit_scale(p.value, 70, 2);
+        int w = text(p.value, CX, 124, vc, sc, CENTER);
+        if (snap.editing) edit_arrows(CX, 124, w, cap_height(sc), AMBER);
+        save_hint(146, snap.dirty, in.blink_on);
+    } else if (snap.selected == MENU_HAPTIC_ROW_CLICK) {
+        text(p.caption, CX, 72, GREY, 1, CENTER);
+        click_anim(in.click_shape, 86, 102, 68, 11, in.t_ms, vc);
         int sc = fit_scale(p.value, 70, 2);
         int w = text(p.value, CX, 124, vc, sc, CENTER);
         if (snap.editing) edit_arrows(CX, 124, w, cap_height(sc), AMBER);
@@ -611,8 +661,6 @@ static void sysinfo_system(const sysmon_info_t &in) {
     kv("RAM LOW", buf, 80);
     snprintf(buf, sizeof(buf), "%lu", (unsigned long)in.hid_drops);
     kv("HID DROPS", buf, 104, in.hid_drops ? AMBER : WHITE);
-    snprintf(buf, sizeof(buf), "%lu", (unsigned long)in.audio_gaps);
-    kv("AUDIO GAPS", buf, 120, in.audio_gaps ? AMBER : WHITE);
     unsigned long s = in.uptime_s;
     snprintf(buf, sizeof(buf), "%lu:%02lu:%02lu", s / 3600, (s / 60) % 60, s % 60);
     kv("UPTIME", buf, 144);
@@ -687,6 +735,96 @@ void draw_recalibrate(const menu_render_snapshot_t &snap) {
         text("F1 RECALIBRATE", CX, 124, GREY, 1, CENTER);
         text("RESTARTS, THEN", CX, 142, GREY, 1, CENTER);
         text("REALIGNS THE MOTOR", CX, 155, GREY, 1, CENTER);
+    }
+}
+
+// --- Device -> Sound Cal ---
+
+// The tones as bars: a stub until asked, taller the quieter the tone was heard, the best one
+// amber. `at` marks the tone playing or being asked (-1 none).
+static void sound_cal_bars(const sndcal_view_t &v, int at) {
+    const int x0 = 57, base = 142, bw = 6, pitch = 8, unit = 6;
+    for (int i = 0; i < SNDCAL_TONE_COUNT; i++) {
+        int x = x0 + i * pitch;
+        uint8_t h = v.heard[i];
+        if (h >= 1 && h <= SNDCAL_LEVEL_COUNT) {
+            int bh = (SNDCAL_LEVEL_COUNT + 1 - h) * unit;
+            rect(x, base - bh, bw, bh, i == v.best ? AMBER : WHITE);
+        } else {
+            rect(x, base - 2, bw, 2, h == SNDCAL_NOT_HEARD ? GREY : DARK);
+        }
+        if (i == at) rect(x, base + 3, bw, 2, AMBER);
+    }
+}
+
+// --- Device -> Click ---
+
+void draw_click(const menu_render_snapshot_t &snap, bool blink_on) {
+    header("CLICK");
+    if (snap.row_count > 0) {
+        const menu_render_row_t &r = snap.rows[0];
+        text(r.label, CX, 58, GREY, 1, CENTER);
+        int w = text(r.value, CX, 76, WHITE, 3, CENTER);
+        edit_arrows(CX, 76, w + 16, cap_height(3), AMBER);
+        bool q = r.value[0] == 'Q';
+        text(q ? "SHAKES THE KNOB" : "RINGS THE HOUSING", CX, 112, GREY, 1, CENTER);
+    }
+    text("TURN TO HEAR", CX, 140, GREY, 1, CENTER);
+    text("WAVE: HAPTICS, CLICK", CX, 153, GREY, 1, CENTER);
+    save_hint(174, snap.dirty, blink_on);
+}
+
+void draw_sound_cal(const sndcal_view_t &v) {
+    header("SOUND CAL");
+    char big[16], line[40];
+    snprintf(big, sizeof(big), "%u HZ", (unsigned)v.freq_hz);
+    switch (v.stage) {
+        case SNDCAL_SWEEP:
+            text(big, CX, 54, v.playing ? WHITE : GREY, 2, CENTER);
+            snprintf(line, sizeof(line), "SWEEP %d OF 2  %d/%d", v.axis + 1, v.step + 1, SNDCAL_TONE_COUNT);
+            text(line, CX, 84, GREY, 1, CENTER);
+            text(v.axis ? "Q AXIS" : "D AXIS", CX, 100, WHITE, 1, CENTER);
+            sound_cal_bars(v, v.step);
+            text("LISTEN", CX, 158, GREY, 1, CENTER);
+            break;
+        case SNDCAL_AXIS_ASK:
+            text("LOUDER?", CX, 62, WHITE, 2, CENTER);
+            text("WHICH SWEEP", CX, 92, GREY, 1, CENTER);
+            sound_cal_bars(v, -1);
+            text("F1 FIRST  F3 SECOND", CX, 158, AMBER, 1, CENTER);
+            text("F2 AGAIN", CX, 174, GREY, 1, CENTER);
+            break;
+        case SNDCAL_TONES:
+            text(big, CX, 54, v.playing ? WHITE : GREY, 2, CENTER);
+            snprintf(line, sizeof(line), "%s %d/%d  LEVEL %d/%d", v.axis ? "Q" : "D", v.step + 1, SNDCAL_TONE_COUNT, v.level + 1, SNDCAL_LEVEL_COUNT);
+            text(line, CX, 84, GREY, 1, CENTER);
+            sound_cal_bars(v, v.step);
+            text("F1 HEARD  F3 NO", CX, 158, v.playing ? GREY : AMBER, 1, CENTER);
+            text("F2 AGAIN", CX, 174, GREY, 1, CENTER);
+            break;
+        case SNDCAL_MOVED:
+            text("KNOB MOVED", CX, 62, AMBER, 2, CENTER);
+            text("STOPPED", CX, 92, GREY, 1, CENTER);
+            text("HANDS OFF THE KNOB", CX, 124, WHITE, 1, CENTER);
+            text("F1 START AGAIN", CX, 158, GREY, 1, CENTER);
+            text("F3 BACK", CX, 174, GREY, 1, CENTER);
+            break;
+        default: { // SNDCAL_IDLE and SNDCAL_DONE: the click in use
+            bool done = v.stage == SNDCAL_DONE;
+            if (done && v.best == SNDCAL_NOT_HEARD) {
+                text("NOT HEARD", CX, 62, AMBER, 2, CENTER);
+                text("NOTHING STORED", CX, 92, GREY, 1, CENTER);
+            } else {
+                snprintf(big, sizeof(big), "%u HZ", (unsigned)v.click_hz);
+                text(big, CX, 54, WHITE, 2, CENTER);
+                text(v.click_axis ? "Q AXIS" : "D AXIS", CX, 84, GREY, 1, CENTER);
+                text(done ? "STORED" : v.calibrated ? "CALIBRATED" : "NOT CALIBRATED", CX, 100, done ? AMBER : GREY, 1, CENTER);
+            }
+            sound_cal_bars(v, -1);
+            text(done ? "F1 START AGAIN" : "F1 START", CX, 158, done ? GREY : AMBER, 1, CENTER);
+            text("HANDS OFF THE KNOB", CX, 174, GREY, 1, CENTER);
+            break;
+        }
     }
 }
 

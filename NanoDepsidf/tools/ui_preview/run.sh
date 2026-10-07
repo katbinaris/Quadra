@@ -13,7 +13,7 @@ mkdir -p "$BUILD/fonts" "$(dirname "$OUT")"
 # first, which would pick up the real lgfx_config.hpp from src/ instead of the stub.
 cp "$SRC"/ui_gfx.cpp "$SRC"/ui_gfx.hpp "$SRC"/ui_screens.cpp "$SRC"/ui_screens.hpp "$SRC"/ui_extras.cpp "$SRC"/ui_extras.hpp \
    "$SRC"/ui_fx.cpp "$SRC"/ui_fx.hpp "$SRC"/ui_vinyl.cpp "$SRC"/ui_vinyl.hpp "$SRC"/user_prefs.h "$SRC"/ui_shape.cpp "$SRC"/ui_shape.hpp "$SRC"/menu.h "$SRC"/pd_status.h "$SRC"/sysmon.h "$SRC"/ui_state.h "$SRC"/haptic_params.h \
-   "$SRC"/audio_trigger.h "$SRC"/boot_mode.h "$SRC"/home.h "$SRC"/midi.h "$SRC"/midi_synths.c "$SRC"/tasks_common.h "$BUILD/"
+   "$SRC"/motor_sound.h "$SRC"/boot_mode.h "$SRC"/home.h "$SRC"/midi.h "$SRC"/midi_synths.c "$SRC"/tasks_common.h "$BUILD/"
 cp "$SRC"/fonts/*.cpp "$SRC"/fonts/*.h "$BUILD/fonts/"
 mkdir -p "$BUILD/icons"
 cp "$SRC"/app_profiles/icons/*.c "$SRC"/app_profiles/icons/*.h "$BUILD/icons/"
@@ -23,7 +23,12 @@ cp "$HERE"/stub/class/hid/hid.h "$BUILD/class/hid/"
 cp "$SRC"/ui_cards.cpp "$SRC"/ui_cards.hpp "$BUILD/"
 cp "$SRC"/app_colors.c "$SRC"/app_colors.h "$BUILD/"
 cc -std=gnu11 -O2 -I"$BUILD" -c -o "$BUILD/app_colors.o" "$BUILD/app_colors.c"
-cc -std=gnu11 -O2 -I"$BUILD" -c -o "$BUILD/midi_synths.o" "$BUILD/midi_synths.c" # the synth profiles MIDI's screens read
+# midi_synths.c reads its profiles from JSON: cJSON from the component, the rest stubbed as in tools/midi_synth_test.
+CJSON="$HERE/../../managed_components/espressif__cjson/cJSON"
+cc -std=gnu11 -O2 -I"$BUILD" -I"$HERE/../midi_synth_test/stub" -I"$CJSON" -c -o "$BUILD/midi_synths.o" "$BUILD/midi_synths.c" # the synth profiles MIDI's screens read
+cc -std=gnu11 -O2 -I"$CJSON" -c -o "$BUILD/cJSON.o" "$CJSON/cJSON.c"
+printf '#include <stdint.h>\nint64_t g_test_now_us = 0; /* the clock of the stub esp_timer.h */\n' > "$BUILD/stub_clock.c"
+cc -std=gnu11 -O2 -c -o "$BUILD/stub_clock.o" "$BUILD/stub_clock.c"
 cp "$SRC"/app_profiles/app_profile.h "$SRC"/app_profiles/figma.c "$SRC"/app_profiles/plasticity.c "$SRC"/app_profiles/onshape.c "$SRC"/app_profiles/agents.c "$BUILD/app_profiles/"
 cp "$SRC"/app_profiles/icons/app_icons.h "$BUILD/app_profiles/icons/"
 # Profile data is C (compound literals), so it builds as C and links in.
@@ -71,7 +76,7 @@ for y in range(240):
 open(sys.argv[1], 'wb').write(out)" "$BUILD/cover.raw" "$BUILD/cover_plain.raw"
 
 c++ -std=c++17 -O2 -I"$BUILD" -o "$BUILD/preview" "$HERE/preview.cpp" \
-    "$BUILD"/ui_gfx.cpp "$BUILD"/ui_screens.cpp "$BUILD"/ui_extras.cpp "$BUILD"/ui_fx.cpp "$BUILD"/ui_vinyl.cpp "$BUILD"/ui_shape.cpp "$BUILD"/ui_cards.cpp "$BUILD"/fonts/*.cpp "$BUILD/figma.o" "$BUILD/plasticity.o" "$BUILD/onshape.o" "$BUILD/agents.o" "$BUILD/app_colors.o" "$BUILD/midi_synths.o" \
+    "$BUILD"/ui_gfx.cpp "$BUILD"/ui_screens.cpp "$BUILD"/ui_extras.cpp "$BUILD"/ui_fx.cpp "$BUILD"/ui_vinyl.cpp "$BUILD"/ui_shape.cpp "$BUILD"/ui_cards.cpp "$BUILD"/fonts/*.cpp "$BUILD/figma.o" "$BUILD/plasticity.o" "$BUILD/onshape.o" "$BUILD/agents.o" "$BUILD/app_colors.o" "$BUILD/midi_synths.o" "$BUILD/cJSON.o" "$BUILD/stub_clock.o" \
     -x c++ "$BUILD"/icons/*.c
 ICON_RAW="$BUILD/icon.raw" COVER_RAW="$BUILD/cover.raw" COVER_PLAIN_RAW="$BUILD/cover_plain.raw" "$BUILD/preview" > "$BUILD/preview.ppm"
 "$HERE/../.venv/bin/python" -c "from PIL import Image; import sys; Image.open(sys.argv[1]).save(sys.argv[2])" \

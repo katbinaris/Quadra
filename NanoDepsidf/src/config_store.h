@@ -18,7 +18,8 @@
 typedef struct {
     uint32_t version;
     int32_t edit;  // the profile last shown on the Haptics screen
-    int32_t sound; // audio_trigger.h's audio_click_timbre_t
+    int32_t click; // each profile's click shape, packed (menu.c HP_CLICK_STORED). It was the
+                   // speaker's timbre, 0 or 1: a blob from then has no shapes in it
     int32_t feel[HAPTIC_PROFILE_COUNT];
     haptic_tune_t tune[HAPTIC_PROFILE_COUNT][HAPTIC_TYPE_COUNT];
 } haptic_profiles_cfg_t;
@@ -46,6 +47,19 @@ typedef struct {
     int32_t host; // menu.h's menu_host_t: 0 MAC, 1 PC
 } bind_cfg_t;
 
+// The motor's click (motor_sound.h): its frequency from DEVICE -> SOUND CAL, its axis from
+// there or DEVICE -> CLICK, and the calibration's answers (per tone: the quietest level heard, 1 up; 0xFF never).
+#define SND_CAL_CFG_VERSION 4 // 4: the shape by index
+typedef struct {
+    uint32_t version;
+    uint16_t freq_hz;
+    uint8_t shape;      // the click shape from when the device had one for all profiles: what
+                        // profiles stored before then start from
+    uint8_t axis;       // 0 d, 1 q
+    uint8_t calibrated; // freq_hz came from SOUND CAL, not the default
+    uint8_t heard[16];
+} snd_cal_cfg_t;
+
 // Each returns false (leaving *out untouched) if the namespace doesn't exist yet (normal on
 // first boot) or the stored blob fails a basic sanity check (wrong size, non-finite float,
 // enum field out of range) -- callers should keep their own compiled-in default in that case,
@@ -57,6 +71,7 @@ bool config_store_load_hid(hid_cfg_t *out);
 bool config_store_load_boot(boot_cfg_t *out);
 bool config_store_load_display(display_cfg_t *out);
 bool config_store_load_bindings(bind_cfg_t *out);
+bool config_store_load_snd_cal(snd_cal_cfg_t *out);
 
 void config_store_save_haptic_profiles(const haptic_profiles_cfg_t *cfg);
 void config_store_save_mode_haptic(const mode_haptic_cfg_t *cfg);
@@ -64,6 +79,7 @@ void config_store_save_hid(const hid_cfg_t *cfg);
 void config_store_save_boot(const boot_cfg_t *cfg);
 void config_store_save_display(const display_cfg_t *cfg);
 void config_store_save_bindings(const bind_cfg_t *cfg);
+void config_store_save_snd_cal(const snd_cal_cfg_t *cfg);
 
 // APP mode's profile, stored by its id string ("figma") next to hid_cfg -- a separate key
 // rather than a new hid_cfg field, so blobs saved before profiles existed still load. The

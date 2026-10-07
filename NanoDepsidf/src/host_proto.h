@@ -59,7 +59,7 @@ enum {
     HOST_SET_FEEL = 3,      // i32 haptic_type_t
     HOST_SET_AMP = 4,       // i32 percent
     HOST_SET_PITCH = 5,     // f32 multiplier
-    HOST_SET_SOUND = 6,     // i32 audio_click_timbre_t
+    HOST_SET_SOUND = 6,     // unused: was the speaker's click timbre; ignored
     HOST_SET_HID_TYPE = 7,  // i32 menu_hid_type_t
     HOST_SET_MIDI_CH = 8,   // i32 1..16
     HOST_SET_PROFILE = 9,   // i32 app profile index
@@ -82,7 +82,7 @@ enum {
     // [1..3]=dirty bits (1 << HOST_SET_*: live differs from NVS), 24 bits ([3] was 0 before
     // HOST_SET_MIDI_SYNTH)
     // [4..7]=detents i32 [8..11]=kp f32 [12..15]=kd f32 [16]=feel [17]=amp % [18..21]=pitch f32
-    // [22]=sound [23]=hid type [24]=midi ch [25]=profile [26]=boot [27]=rotation [28]=host
+    // [22]=0 (was sound) [23]=hid type [24]=midi ch [25]=profile [26]=boot [27]=rotation [28]=host
     // [29]=shape % (0 from firmware before SHAPE existed)
     // Haptic profiles (protocol 3): KP, KD, SHAPE, FEEL, AMP and PITCH are the values of one
     // haptic profile in its current feel, and are clamped to that profile's limits.
@@ -115,7 +115,7 @@ enum {
     // [8..11]=loop kHz f32 [12..15]=work avg us f32 [16..19]=work max us f32
     // [20..23]=jitter max us f32 [24..27]=missed u32 [28..31]=spikes/s f32
     // [32..35]=heap free u32 [36..39]=heap min u32 [40..43]=hid drops u32
-    // [44..47]=audio gaps u32 [48..51]=uptime s u32 [52..55]=sensor CRC errors u32
+    // [44..47]=0 (was audio gaps) [48..51]=uptime s u32 [52..55]=sensor CRC errors u32
     HOST_TAG_PROFILE_BEGIN = 0xB8,
     // [1]=index [4..7]=length [8..11]=CRC-32 of the JSON text
     HOST_TAG_PROFILE_DATA = 0xB9,
