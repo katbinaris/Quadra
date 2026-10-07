@@ -1,7 +1,7 @@
 // A pretend knob for working on the UI without hardware: open the page with ?demo. Answers
 // the protocol like host_link.c does and streams a slowly turning knob.
 
-import { CLOCK_SLOTS, ClockOp, Cmd, EXT_SYNTH_VERSION, ExtCmd, ExtStatus, ExtTag, HomeCap, HomeEdit, HomeFlag, HomeKind, HomeOp, HomeProto, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SynthEdit, SynthFlag, SynthOp, Tag, TEXT_CHUNK, crc32 } from "./proto";
+import { CLOCK_SLOTS, ClickWaves, ClockOp, Cmd, EXT_SYNTH_VERSION, ExtCmd, ExtStatus, ExtTag, HomeCap, HomeEdit, HomeFlag, HomeKind, HomeOp, HomeProto, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SynthEdit, SynthFlag, SynthOp, Tag, TEXT_CHUNK, crc32 } from "./proto";
 import { tidySynth, type SynthJson } from "./synth";
 import synthBuiltins from "./demo_synths.json";
 import { b64ToBytes, ID_RE, type ProfileJson } from "./profile";
@@ -83,7 +83,7 @@ export class MockTransport implements Transport {
   private static hpProfile(p: number) {
     const { feel, t } = MockTransport.HP_FACTORY[p];
     // The other feel of a stepped profile starts from the same numbers (SHAPE is SAW's).
-    return { feel, tune: [0, 1, 2].map((f) => ({ kp: t[0], kd: t[1], shape: f === 0 ? t[2] : 0, amp: t[3], pitch: t[4] })) };
+    return { feel, click: 1, tune: [0, 1, 2].map((f) => ({ kp: t[0], kd: t[1], shape: f === 0 ? t[2] : 0, amp: t[3], pitch: t[4] })) };
   }
   private static hpFactory() {
     return { edit: 1, mode: [1, 1, 1, 1, 1], profiles: [0, 1, 2, 3, 4].map((p) => MockTransport.hpProfile(p)) };
@@ -128,12 +128,12 @@ export class MockTransport implements Transport {
         out[1] = 1;
         out[1] = 3;
         out[2] = this.reg.length;
-        out.set(new TextEncoder().encode("v2.0.0"), 4);
-        out.set(new TextEncoder().encode("SEP 30 2026"), 36);
+        out.set(new TextEncoder().encode("v2.1.0"), 4);
+        out.set(new TextEncoder().encode("OCT 07 2026"), 36);
         return reply();
       }
       case Cmd.SET: {
-        // By setting id; 6 was the speaker's click timbre, which the knob ignores now.
+        // By setting id; 6 is the click's wave, set on the haptic profile below.
         const keys = ["detents", "kp", "kd", "feel", "amp", "pitch", null, "hidType", "midi", "profile", "boot", "rotation", "host", "shape"] as const;
         const k = keys[r[1]];
         const f = r[1] === Set.KP || r[1] === Set.KD || r[1] === Set.PITCH;
@@ -150,6 +150,7 @@ export class MockTransport implements Transport {
         else if (r[1] === Set.SHAPE) tune.shape = clamp(val, 0, 90);
         else if (r[1] === Set.AMP) tune.amp = clamp(val, 0, lim.ampMax);
         else if (r[1] === Set.PITCH) tune.pitch = clamp(val, lim.pitchMin, lim.pitchMax);
+        else if (r[1] === Set.CLICK) prof.click = clamp(val, 0, ClickWaves.length - 1);
         else if (r[1] === Set.MIDI_SYNTH) this.live.midiSynth = clamp(val, 0, this.synths.length - 1);
         else if (r[1] === Set.MIDI_CH) this.live.midi = clamp(val, 1, 16);
         else if (k) (this.live as any)[k] = val;
@@ -563,12 +564,13 @@ export class MockTransport implements Transport {
     if (prof.feel !== was.feel) dirty |= 1 << Set.FEEL;
     if (t.amp !== st.amp) dirty |= 1 << Set.AMP;
     if (ne(t.pitch, st.pitch)) dirty |= 1 << Set.PITCH;
+    if (prof.click !== was.click) dirty |= 1 << Set.CLICK;
     this.hp.profiles.forEach((p, q) => {
       const ps = this.hpSaved.profiles[q];
       p.tune.forEach((x, g) => {
         if ((q !== e || g !== prof.feel) && JSON.stringify(x) !== JSON.stringify(ps.tune[g])) dirty |= 1 << Set.HAPTIC_PROFILE;
       });
-      if (q !== e && p.feel !== ps.feel) dirty |= 1 << Set.HAPTIC_PROFILE;
+      if (q !== e && (p.feel !== ps.feel || p.click !== ps.click)) dirty |= 1 << Set.HAPTIC_PROFILE;
     });
     if (this.hp.mode.join() !== this.hpSaved.mode.join()) dirty |= 1 << Set.MODE_HAPTIC;
     out[0] = Tag.SETTINGS;
@@ -580,6 +582,7 @@ export class MockTransport implements Transport {
     out[16] = prof.feel;
     out[17] = t.amp;
     v.setFloat32(18, t.pitch, true);
+    out[22] = 0x80 | prof.click;
     out[23] = l.hidType;
     out[24] = l.midi;
     out[25] = l.profile;

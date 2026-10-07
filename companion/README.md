@@ -15,8 +15,8 @@ where the app shows the knob itself.
   MIDI port (`src-tauri/src/midi.rs`, CoreMIDI through `midir`).
 - **Haptics:** the five haptic profiles (Wide / Coarse / Medium / Fine / Smooth) and, for the
   one picked, its feel (Saw / Sine / Viscose) and the sliders Snap, Damp, Shape, Click volume
-  and Click pitch. **Reset to factory** puts that profile back. (The click's wave is picked on
-  the knob; the app doesn't show it yet.)
+  and Click pitch, and its **Click**, one of the motor's nine click sounds. **Reset to
+  factory** puts that profile back.
 - **App profiles:** one page per profile, built-ins included, with four tabs. **General:** name,
   icon (import any picture), key labels, the main screen, and a preview drawn the way the knob
   draws it. **Knob & keys:** what the knob and F1–F4 send, and the one haptic profile each uses

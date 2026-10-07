@@ -1,6 +1,6 @@
 [package]
 name = "quadra-companion"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop companion for the Quadra haptic knob"
 license = "PolyForm-Noncommercial-1.0.0"
 edition = "2021"

@@ -286,8 +286,12 @@ that profile and feel, so the sliders' ranges change with them.
 | **Click volume** | The click the motor plays. In Viscose it is off by default and goes up to 20% |
 | **Click pitch** | The click's pitch. In Viscose, 1× to 2× |
 
-The click's sound itself (one of eight waves per haptic profile) is chosen on the knob, under
-F4 menu › Haptics › Click. The app doesn't show or change it yet; saving from the app keeps it.
+**Click**, under the sliders, is the sound the motor makes on each step: nine to pick from,
+sine or square, 2 or 4 ms, with a steady or a falling pitch, and Tick, Ting and Tap, each
+drawn as it sounds. Every
+haptic profile has its own, and the knob plays it as you pick. (On the knob: F4 menu ›
+Haptics › Click.) The box is missing with firmware before 2.1.0, which played its clicks
+through a speaker.
 
 A slider that doesn't apply in the current feel is greyed out and shows `—`.
 

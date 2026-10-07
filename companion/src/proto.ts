@@ -147,7 +147,7 @@ export const Set = {
   FEEL: 3,
   AMP: 4,
   PITCH: 5,
-  // 6 was SOUND, the speaker's click timbre: the knob ignores it now
+  CLICK: 6, // the click's wave, an index into ClickWaves (it was the speaker's timbre)
   HID_TYPE: 7,
   MIDI_CH: 8,
   PROFILE: 9,
@@ -187,6 +187,25 @@ export const MidiSynths = [
   { id: "ju-06a", maker: "ROLAND", name: "JU-06A", channel: 1, params: 33 },
   { id: "tr-8s", maker: "ROLAND", name: "TR-8S", channel: 10, params: 54 },
 ] as const;
+
+// The click's waves (motor_sound.h MOTOR_SOUND_SHAPE), by index. A click is one or two parts,
+// each a wave dying away: `tau` is the envelope's time constant and `len` how long it plays
+// (ms), `pitch` and `level` are fractions of the click's own, `delay` is when it starts (ms),
+// `chirp` lets the pitch fall through it (to 0.6 of where it starts).
+export type ClickPart = { wave: "sine" | "square" | "noise"; tau: number; len: number; chirp?: boolean; pitch?: number; level?: number; delay?: number };
+export type ClickWaveDef = { name: string; sub: string; parts: ClickPart[] };
+const plain = (wave: "sine" | "square", tau: number, chirp = false): ClickWaveDef => ({
+  name: `${wave === "sine" ? "Sine" : "Square"} ${tau} ms`,
+  sub: chirp ? "Falling pitch" : "Steady pitch",
+  parts: [{ wave, tau, len: tau * 1.5, chirp }],
+});
+export const ClickWaves: ClickWaveDef[] = [
+  plain("sine", 2), plain("sine", 4), plain("square", 2), plain("square", 4),
+  plain("sine", 4, true), plain("square", 4, true),
+  { name: "Tick", sub: "Short, an octave up", parts: [{ wave: "sine", tau: 1.5, len: 2.5, pitch: 2 }] },
+  { name: "Ting", sub: "Two pitches, a small bell", parts: [{ wave: "sine", tau: 6, len: 9 }, { wave: "sine", tau: 6, len: 9, pitch: 2.7, level: 0.7 }] },
+  { name: "Tap", sub: "A knock, noise only", parts: [{ wave: "noise", tau: 2, len: 3 }] },
+];
 
 // The widest ranges; a profile's own limits come with Settings.
 export const Limits = {
@@ -232,6 +251,7 @@ export interface Settings {
   ampMax: number;
   pitchMin: number;
   pitchMax: number;
+  click: number | null; // index into ClickWaves; null from firmware that has no motor click
 }
 
 export interface Profile {
@@ -679,6 +699,7 @@ export function decode(b: Uint8Array): Message {
           feel: b[16],
           amp: b[17],
           pitch: f32(18),
+          click: b[22] & 0x80 ? b[22] & 0x7f : null, // without 0x80 it is the old speaker timbre
           hidType: b[23],
           midiChannel: b[24],
           midiSynth: b[35] ? b[34] : 0, // [35] = how many: 0 from firmware before MIDI synths

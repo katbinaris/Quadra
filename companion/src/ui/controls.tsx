@@ -6,6 +6,7 @@ import type { ComponentChildren, HTMLAttributes } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { hidFromCode, keyName, Mod, modifiersFromEvent, type Key } from "../profile";
 import { waveY } from "./draw";
+import type { ClickWaveDef } from "../proto";
 
 type Style = HTMLAttributes<HTMLElement>["style"];
 
@@ -391,6 +392,42 @@ export function Dial(p: { steps: number; size?: number }) {
 }
 
 // One feel's wave, two periods (SAW bends with SHAPE).
+// A motor click as it is played, left to right (the knob draws the same on Haptics > Click):
+// its parts summed, each a sine, a square or noise dying away, as wide as it is long, its
+// cycles widening where the pitch falls. Fewer cycles than the real click has, so they can be seen.
+const NOISE_FLIP = [1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0];
+export function ClickWave(p: { wave: ClickWaveDef; on?: boolean; w?: number; h?: number }) {
+  const w = p.w ?? 80, h = p.h ?? 28;
+  const total = Math.max(...p.wave.parts.map((q) => (q.delay ?? 0) + q.len));
+  const cycles = total <= 3 ? 3 : total <= 6 ? 5 : 8;
+  const span = total <= 3 ? w / 2 : total <= 6 ? (w * 3) / 4 : w;
+  const end = 0.6;
+  let d = "";
+  for (let x = 0; x <= span; x += 0.5) {
+    const t = (x / span) * total;
+    let v = 0;
+    p.wave.parts.forEach((q, i) => {
+      const from = q.delay ?? 0;
+      if (t < from || t > from + q.len) return;
+      const u = (t - from) / q.len;
+      const n = ((cycles * q.len) / total) * (q.pitch ?? 1);
+      const ph = q.chirp ? (n * (1 - Math.pow(end, u))) / -Math.log(end) : n * u;
+      let s = Math.sin(2 * Math.PI * ph);
+      if (q.wave === "square") s = s >= 0 ? 1 : -1;
+      if (q.wave === "noise") s *= NOISE_FLIP[(Math.floor(ph) + i * 5) & 15] ? 1 : -1; // each cycle upside down or not
+      v += s * (q.level ?? 1) * Math.exp(-(t - from) / q.tau);
+    });
+    v = Math.max(-1, Math.min(1, v));
+    d += `${x ? "L" : "M"}${x.toFixed(1)} ${(h / 2 - v * (h / 2 - 3)).toFixed(1)}`;
+  }
+  if (span < w) d += `L${span.toFixed(1)} ${h / 2}L${w} ${h / 2}`;
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <path d={d} fill="none" stroke={p.on ? "var(--amber)" : "currentColor"} stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+    </svg>
+  );
+}
+
 export function Wave(p: { feel: number; shape?: number; on?: boolean; w?: number; h?: number }) {
   const w = p.w ?? 80, h = p.h ?? 28;
   let d = "";

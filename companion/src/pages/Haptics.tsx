@@ -2,9 +2,9 @@
 // own values per feel, inside limits the knob sets, so it can't be tuned into instability.
 // Live on the knob while you drag; Save (or F2 on the knob) keeps them.
 
-import { Feel, HapticProfiles, Limits, Set, type SetId } from "../proto";
+import { ClickWaves, Feel, HapticProfiles, Limits, Set, type SetId } from "../proto";
 import { device, use } from "../store";
-import { Box, Card, Dial, PageHead, Slider, Wave } from "../ui/controls";
+import { Box, Card, ClickWave, Dial, PageHead, Slider, Wave } from "../ui/controls";
 import { titleCase } from "../ui/shell";
 import { throttled } from "../ui/throttle";
 
@@ -68,6 +68,19 @@ export function HapticsPage() {
           </div>
         </Box>
       </div>
+      {s.click !== null && (
+        <Box title={`Click · ${name}`} note="The sound the motor makes on each step; the knob plays it as you pick">
+          <div class="cards">
+            {ClickWaves.map((c, i) => (
+              <Card on={s.click === i} dirty={s.click === i && bit(Set.CLICK)} onClick={() => device.set(Set.CLICK, i)}>
+                <ClickWave wave={c} on={s.click === i} />
+                <span class="nm">{c.name}</span>
+                <span class="sub">{c.sub}</span>
+              </Card>
+            ))}
+          </div>
+        </Box>
+      )}
     </>
   );
 }
