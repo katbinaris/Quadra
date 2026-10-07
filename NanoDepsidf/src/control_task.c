@@ -134,7 +134,7 @@ static float s_cl_target_offsets[CL_NUM_TARGETS];
                                             // calibration/control problem -- target 1 held to
                                             // <0.01 rad both times before this fired)
 
-#define OL_ENABLE_NEUTRAL_ITERS MS_TO_ITERS(300) // 0.3s at 0V before calibration starts
+#define ENABLE_NEUTRAL_MS 300 // at 0 V after enabling, before calibration or haptics start
 
 // --- Reconstructed open-loop diagnostic (BTN_C at boot) ---
 // The original open-loop rotation test from earlier this session's bring-up (proven strong,
@@ -441,14 +441,6 @@ static void CONTROL_HOT dispatch_turn(int8_t dir, bool app_on) {
 static void CONTROL_HOT control_task_fn(void *arg) {
     ESP_LOGI(TAG, "control task started on core %d, prio %d", xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
-    // Deliberate delay before anything time-sensitive (button check, motor init) so there's
-    // generous slack for a serial monitor to reattach after a physical unplug/replug --
-    // macOS/host USB-CDC re-enumeration plus a monitor script's reconnect can easily eat
-    // the first couple seconds after reset, which was repeatedly causing the actual
-    // arm-check and test-run log lines to be missed entirely during bring-up.
-    ESP_LOGI(TAG, "Waiting 3s before BTN_A arm check (attach a serial monitor now if you want to watch)...");
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
     esp_err_t sensor_err = mt6701_init();
     if (sensor_err != ESP_OK) {
         ESP_LOGE(TAG, "MT6701 init failed, angle reads will fail");
@@ -477,14 +469,14 @@ static void CONTROL_HOT control_task_fn(void *arg) {
         .pull_up_en = GPIO_PULLUP_ENABLE,
     };
     gpio_config(&btn_cfg);
-    // Poll for a few seconds rather than sampling once ~20ms after boot -- a single-shot
-    // sample requires catching an exact split-second right at boot, which is impractical
-    // when arming via unplug/replug (no way to see the log in real time to know when that
-    // window is). This gives a few seconds of slack: hold BTN_A any time during the window.
+    // Watch the keys for half a second: long enough for a key held while plugging in to read
+    // low, short enough that the knob is live before the boot animation ends. (This and two
+    // other waits were 3 s each until 2026-10-07, for a serial monitor to attach during
+    // bring-up; the chime came about 9 s after power-on.)
     bool armed = false;
     bool force_recal = false;
     int last_level = -1;
-    for (int i = 0; i < 60; i++) { // 60 x 50ms = 3s
+    for (int i = 0; i < 10; i++) { // 10 x 50 ms
         last_level = gpio_get_level(PIN_BTN_A);
         if (last_level == 0) { // assumed active-low; see diagnostic log below if this never arms
             armed = true;
@@ -509,7 +501,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
             motor_driver_set_phase_voltages(0.0f, 0.0f, 0.0f); // neutral duty before enabling
             motor_driver_enable(true);
             s_cl_start_us = esp_timer_get_time();
-            vTaskDelay(pdMS_TO_TICKS(OL_ENABLE_NEUTRAL_ITERS));
+            vTaskDelay(pdMS_TO_TICKS(ENABLE_NEUTRAL_MS));
 
             if (armed && s_open_loop_mode) {
                 s_ol_phase = OL_RAMP;

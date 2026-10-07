@@ -45,10 +45,9 @@ static const char *TAG = "nanod";
 // (confirmed default from every prior phase's bring-up) -- normal flashing/console just
 // works, exactly as it always did, at the cost of HID being unavailable for that boot.
 // Release both (normal boot) to get the composite HID+CDC device instead.
-#define USB_MODE_SELECT_POLL_ITERS 40 // 40 x 50ms = 2s -- long enough to reliably catch a
-                                      // held combo without needing exact boot-instant
-                                      // timing (same lesson control_task.c's own BTN_A
-                                      // arm-window comment documents)
+#define USB_MODE_SELECT_POLL_ITERS 10 // 10 x 50 ms: keys held while plugging in read low from
+                                      // the first sample; the screen stays dark meanwhile
+                                      // (2 s until 2026-10-07)
 
 static bool usb_serial_mode_requested(void) {
     gpio_config_t btn_cfg = {

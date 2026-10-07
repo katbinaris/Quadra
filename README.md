@@ -160,7 +160,7 @@ shows, at 2× scale.
    rest a finger on it.
 2. **Plug in USB.** Keep your hands off the keys; some key combinations held at power-on
    start other modes (see below).
-3. **Wait about 8 seconds.** The firmware waits 3 s, then watches the keys for 3 s, then
+3. **Wait about 3 seconds.** The firmware watches the keys for half a second, then
    calibrates. During calibration:
    - the knob **snaps to a position** and holds it for about 1 s (alignment);
    - then it **makes a small, visible step** (direction check).
@@ -191,7 +191,7 @@ reflashing. The knob-direction setting (`KNOB_DIRECTION`) is unrelated to calibr
   3. It then calibrates exactly like a first boot (the knob twitches briefly), saves the
      result and goes straight back to normal use. No replug needed.
 - **F1 + F2 at power-on (diagnostic mode).**
-  1. Hold **F1 and F2**, plug in USB, and keep holding for at least 6 s.
+  1. Hold **F1 and F2**, plug in USB, and keep holding for a second.
   2. The device calibrates afresh, ignoring the saved result, and saves the new one.
   3. It then runs a **bench test**: the knob moves by itself through 30 positions, about
      1.5 s each (about 45 s in all). Keep your hands off.
