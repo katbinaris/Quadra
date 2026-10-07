@@ -1,8 +1,8 @@
 # Quadra
 
-[![Firmware 2.0.0](https://img.shields.io/badge/firmware-2.0.0-f5a623)](RELEASE_NOTES.md#firmware-200)
-[![Companion 0.2.0](https://img.shields.io/badge/companion-0.2.0-f5a623)](RELEASE_NOTES.md#companion-020)
-[![Release notes](https://img.shields.io/badge/release%20notes-2.0.0-555555)](RELEASE_NOTES.md)
+[![Firmware 2.1.0](https://img.shields.io/badge/firmware-2.1.0-f5a623)](RELEASE_NOTES.md#firmware-210)
+[![Companion 0.3.0](https://img.shields.io/badge/companion-0.3.0-f5a623)](RELEASE_NOTES.md#companion-030)
+[![Release notes](https://img.shields.io/badge/release%20notes-2.1.0-555555)](RELEASE_NOTES.md)
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE.md)
 <br>
 [![C](https://img.shields.io/badge/C-A8B9CC?logo=c&logoColor=white)](NanoDepsidf/src)
@@ -93,7 +93,7 @@ shows, at 2× scale.
 - **Audible clicks, from the motor.** Every detent plays a short burst through the motor's
   own windings, so the knob itself is what sounds; there is no speaker in the path. It plays
   at the pitch and amplitude of the haptic profile in use, so a fine step sounds different
-  from a coarse one, in the wave that profile has chosen from eight (HAPTICS → CLICK), tuned to the pitch the knob
+  from a coarse one, in the wave that profile has chosen from nine (HAPTICS → CLICK), tuned to the pitch the knob
   rings at (DEVICE → SOUND CAL). The startup chime is the motor too.
 - **USB composite device:**
   - a keyboard, mouse, gamepad and media-key HID interface (in MIDI mode, a class-compliant
@@ -249,7 +249,7 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
 | Screen | Settings |
 |---|---|
 | **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel, then to **SYNTH**, the synth profile. |
-| **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. Each profile also keeps its own CLICK, the wave the motor plays: eight to choose from, sine or square, 2 to 8 ms, a C for a falling pitch, each drawn as it sounds. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
+| **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. Each profile also keeps its own CLICK, the wave the motor plays: nine to choose from: sine or square, 2 or 4 ms, a C for a falling pitch, and TICK (short and high), TING (a small bell) and TAP (a knock of noise), each drawn as it sounds. A step one way clicks a little higher than a step the other way; a list at its end answers with a low knock; saving plays two rising notes, cancelling an edit one low note. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
 | **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°. The screen turns live while you turn the knob. |
 | **LIGHTS** | The LED look. COLOR: APP (the profile's colours, or the album cover's while music plays) or CUSTOM, with HUE and SAT. EFFECT at rest: GRADIENT, SOLID, BREATHE, SPIN, RAINBOW or OFF, with SPEED for the moving ones. LEVEL: brightness, 10–200% of the standard level. The screen's rim mirrors the ring while you tune. |
 | **BOOT MODE** | USB MODE: HID (the normal composite device) or SERIAL (for flashing). Applies after a restart. |

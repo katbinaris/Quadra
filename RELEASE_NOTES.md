@@ -1,3 +1,93 @@
+# Quadra 2.1.0
+
+**Firmware 2.1.0 · Companion 0.3.0 (macOS) · Mac service**
+
+Two big things since 2.0.0: MIDI mode now really sends MIDI, and the knob makes its own sound.
+The clicks come from the motor, louder than the speaker they replace. HOME, for the lamps on
+your network, is new as well.
+
+Install the firmware and the companion from the same release; they are built to work
+together.
+
+## Firmware 2.1.0
+
+### Sound from the motor
+
+- **The knob is the speaker.** Every detent plays a short burst through the motor's own
+  windings, and so does the startup chime. On the two units tested it is louder than the old
+  speaker, rings at the same pitch on both, and a hand on the knob doesn't muffle it.
+- **Nine click sounds:** sine or square, 2 or 4 ms, some with a falling pitch, and TICK (short
+  and high), TING (a small bell) and TAP (a knock of noise). **HAPTICS → CLICK** picks one and
+  draws it as it sounds.
+- **More to hear:** a step one way clicks a little higher than a step the other way; a list
+  at its end answers with a low knock; saving plays two rising notes, cancelling an edit one
+  low note; an agent waiting for an answer adds two soft notes to its first double tap.
+- **A click per haptic profile.** WIDE, COARSE, MEDIUM, FINE and SMOOTH each keep their own,
+  next to their volume and pitch.
+- **DEVICE → SOUND CAL** tunes the click to the pitch your knob rings at: it plays a sweep
+  two ways, asks which was louder, then asks about each tone. A few minutes, hands off the
+  knob. **DEVICE → CLICK** switches between the two ways afterwards: D rings the housing, Q
+  shakes the knob.
+- **The speaker path is gone.** The amplifier and transducer on current boards are no longer
+  driven, the WOOD / THUD timbre and SYS INFO's audio gaps went with them, and the firmware is
+  about 20 KB smaller.
+
+### MIDI
+
+- **MIDI mode sends MIDI.** Pick a synth, turn the knob, and the synth follows.
+- **Synth profiles** built from each maker's own MIDI documentation: KORG minilogue xd (48
+  parameters at its full 10-bit resolution, all 500 programs), Roland JU-06A (33), Roland
+  TR-8S (54), and GENERIC, standard controllers for any synth or a DAW's MIDI learn.
+- **Feels like the synth's own panel:** fine steps when you turn slowly, big ones on a flick,
+  a click per option on switches, and walls at the ends of the range.
+- **Keys:** F1 for the next parameter (hold F1 and turn to pick from the list), F2 / F3 to
+  step the synth's programs.
+- **Two ports at once:** class-compliant USB MIDI (no driver on Mac, Windows, Linux or iPad)
+  and the 3.5 mm TRS jacks, so it plays a synth with no computer at all.
+- **Stays in sync:** if the synth sends its own knob moves back, the knob's value follows.
+- **Synths are data.** Each synth profile is a JSON file on the knob, and the companion can
+  edit them or add your own.
+- In MIDI mode the knob is a MIDI device instead of a keyboard and mouse, so switching into
+  or out of MIDI reconnects USB for about a second.
+
+### Also new
+
+- **HOME:** the knob as a remote for the Xiaomi lamps on your network, with no cloud and no
+  computer: power, brightness, colour and white, per lamp.
+- **The knob's controls over WiFi.** With no USB host, the companion types and scrolls for
+  the knob. Two WiFi clients can be connected at once (the app and the Mac service).
+- **MUSIC:** the album cover on a spinning record, in three styles (RECORD, SLIDE, BLEED).
+- **USB power is 5 V 3 A only.** The knob asks again if a charger offers more, and
+  `quadra.py pd` sets the USB-PD chip to 5 V 3 A for good.
+- **More free memory:** about 62 KB of internal RAM in normal use, up from 18.
+
+## Companion 0.3.0
+
+- **Mode:** HOME and MIDI, with the synth and channel for MIDI.
+- **Lamps:** import your Xiaomi lamps and name them.
+- **Synths:** edit a synth profile's parameters and programs, or make your own, with the
+  knob's screen for the parameter and a monitor of what the knob sends.
+- **Haptics:** a **Click** picker, the nine click sounds drawn as they sound, for the
+  haptic profile you are tuning. The knob plays each as you pick it.
+- **Over WiFi:** the profile list loads in about 5 s, and changes made on the knob show in
+  the app.
+- The speaker's timbre and the audio gaps counter are gone, with the speaker.
+
+## Mac service
+
+- Works over **WiFi** as well as USB (music, covers, agents, the clock).
+- **GitHub Copilot in VS Code** joins Claude Code, Codex and Cursor in AGENTS.
+
+## Updating from 2.0.0
+
+- Flash the firmware as usual; the partition table is the same.
+- **Run DEVICE → SOUND CAL once.** Clicks work before that, at a default pitch.
+- Your tuned haptic profiles are kept. All five start with the same click sound; change them
+  one by one and save.
+- Install Companion 0.3.0 with it. An older companion still connects, but has no Click picker.
+
+---
+
 # Companion 0.2.0
 
 **Companion 0.2.0 (macOS) · works with firmware 2.0.0**
@@ -232,7 +322,10 @@ To build it yourself, see [companion/README.md](companion/README.md).
   Windows, use the companion in Chrome or Edge.
 - **Icons uploaded with `send_icon.py`** are cleared on restart. Icons imported into a
   profile in the companion are kept.
-- **MIDI** stores a channel only; there is no MIDI output yet.
+- **MIDI:** Roland's switch values and the minilogue xd's Sync / Ring polarity are still to be
+  checked against the synths themselves.
+- **Sound:** the built-in speaker of 2.0.0 is not used from 2.1.0 on; the motor plays clicks
+  from 500 Hz to 10 kHz.
 
 ---
 

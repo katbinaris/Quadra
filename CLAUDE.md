@@ -14,10 +14,12 @@
   `npx tsc --noEmit` in `companion/`.
 - Code in the 10 kHz control loop must not block and must run from IRAM (`CONTROL_HOT`);
   see FIRMWARE.md section 17.
-- Sound comes from the motor: clicks and the chime are bursts added to the motor voltage in the
-  control loop (`motor_sound.c`; FIRMWARE.md section 11). There is no I2S or speaker path, and
-  the board's amplifier is held off. The loop plays 500 Hz to 4 kHz; a click's wave is per
-  haptic profile, its frequency and axis are per device (DEVICE → SOUND CAL).
+- Sound comes from the motor: clicks and the chime are bursts added to the motor voltage
+  (`motor_sound.c`; FIRMWARE.md section 11). The loop sets pitch and level each tick; an
+  interrupt on the PWM timer steps the wave at 32 kHz while a sound plays (`motor_driver.c`,
+  integers only: no FPU in interrupts). There is no I2S or speaker path, and the board's
+  amplifier is held off. Clicks play 500 Hz to 10 kHz; a click's wave is per haptic profile,
+  its frequency and axis are per device (DEVICE → SOUND CAL).
 - Internal RAM is tight (~62 KB free in HID mode; the 115 KB frame sprite stays internal for
   frame rate). Put new buffers in PSRAM (`heap_caps_malloc(..., MALLOC_CAP_SPIRAM)`,
   `EXT_RAM_BSS_ATTR`, `xQueueCreateWithCaps`); `tasks_common.h` says which task stacks may live

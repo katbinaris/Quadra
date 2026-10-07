@@ -159,11 +159,19 @@ average and maximum.
 | Section | What it does | Typical |
 |---|---|---|
 | INPUT | Reads the four keys, publishes the held mask, runs the APP-mode engine (`app_mode_update`), handles menu key presses | 3.4 µs |
-| SENSOR | One SPI transaction to the MT6701 encoder at 10 MHz; checks the CRC | 13.5 µs |
+| SENSOR | One 24-bit read of the MT6701 encoder at 10 MHz, on the SPI2 registers directly; checks the CRC | About 5 µs (2026-10-07; one read alone 3.8 µs). Through the driver it was 13.5 µs |
 | FORCE | Finds the nearest detent, computes velocity, applies the haptic law, handles a detent crossing | 4.1 µs |
 | MOTOR | Inverse Park and inverse Clarke, then three PWM compare updates | 3.9 µs |
 
 A whole iteration averages about 26 µs of its 100 µs budget.
+
+**The sensor read skips the SPI driver.** The 24 bits take 2.4 µs on the wire; the rest of the
+driver's 13.5 µs was setting the same transaction up again every tick. The sensor is alone on
+SPI2 and holds the bus, so `mt6701.c` lets the driver program the registers once and then
+starts each read itself: clear the done flag, start, wait, take the data word. At boot, eight
+direct reads must pass the CRC and agree with a driver read taken just before each; if not, or
+if a direct read ever times out, it stays with the driver. Ten seconds after boot, next to the
+memory report, two `mt6701:` lines say which it is, why, and what one read of each kind took.
 
 ### 4.4 From angle to motor voltage
 
@@ -739,7 +747,7 @@ The extensions, WiFi, MUSIC, AGENTS, CLOCK, LIGHTS and the idle word were contri
 ## 11. Sound
 
 The motor is the speaker. `motor_sound.c` plays every sound as a voltage on the motor's
-windings, added in the control loop: the detent click, a short decaying burst
+windings, on top of what the control loop sends: the detent click, a short decaying burst
 `A·e^(−t/τ)·sin(2πft)` or its square wave, next to the q-axis click pulse; and the startup
 chime. On the **d axis** a sound makes no torque; the windings and magnets push on the
 housing. On the **q axis** it shakes the rotor and the knob with it. There are no audio files
@@ -754,23 +762,66 @@ pins low so it stays shut down. The successor board leaves the parts out.
   d-axis sound gets what Vq (capped at 2.0 V) leaves inside that circle, so a SAW click pulse
   still leaves 1.5 V; the limit follows the chord of the circle, which needs no square root in
   the loop. A q-axis sound adds to Vq, up to 2.5 V.
-- **Frequency.** The 10 kHz loop plays 500 Hz to 4 kHz; above that there are too few samples
-  per cycle. A click is the calibrated frequency times the profile's PITCH, clamped to that
-  range.
+- **Rate.** Sounds are stepped at the PWM rate, 32 kHz, not the loop's 10 kHz (which reaches
+  4 kHz at best: 2.5 samples a cycle). While anything sounds, an interrupt on the PWM timer
+  writes the three compare values every period (`motor_driver_tone()` and `tone_on_period()`
+  in `motor_driver.c`). The loop still decides everything, each tick: the phase voltages
+  without the sound, each voice's pitch and level (so envelopes and the chirp move in 100 µs
+  steps), the clip limits, and what 1 V on the d and on the q axis is on each phase. The
+  interrupt steps up to five voices (a 256-entry sine table, the sign for a square, or for
+  noise whole cycles of the sine, each upside down or not at random),
+  sums them per axis, clips, and adds them to the phases. Integers only: interrupts don't get
+  the FPU (`CONFIG_FREERTOS_FPU_IN_ISR` is off). It is switched on when a sound starts and off
+  when it ends, so a silent knob pays nothing.
+- **Frequency.** A click is the calibrated frequency times the profile's PITCH, clamped to
+  500 Hz to 10 kHz. On hardware (2026-10-07) tones up to 10 kHz were about as loud as the
+  3–4 kHz ones.
 - **Loudness.** The profile's AMP sets the voltage on a curve, `a·(2 − a)` of the maximum
   (15% gives 28%, 50% gives 75%): the motor is faint, so the low settings get more than a
   straight line would give them. 0 is silent.
-- **Shapes.** Eight, in `motor_sound.c`: sine at 2 ms and 4 ms (the envelope's time constant;
-  a click lasts 1.5 times that), square at 2, 4 and 8 ms, and three with a **chirp** (sine
-  4 ms, square 4 and 8 ms), whose pitch falls to 0.6 of its start through the click, like the
+- **Parts.** A click is one or two parts (`motor_sound_part_t` in `motor_sound.h`), sounding
+  together or one after the other: each has a wave (sine, square, noise), a time constant and
+  length, a pitch and a level as fractions of the click's, and a delay. Two voices are the
+  click's, three the chime's.
+- **Shapes since 32 kHz (2026-10-07).** TICK (sine, 1.5 ms, an octave up), TING (two sines
+  1 : 2.7, 6 ms) and TAP (2 ms of noise), after the six plain ones below. Fourteen were
+  tried on hardware; SQR 8MS, SQR 8MS CH, SNAP, TOCK and DOUBLE were dropped. Profiles that stored one
+  of the fourteen (or of the first eight) are mapped to today's list on load
+  (`MOTOR_SOUND_SHAPE_FROM_14` and `_FROM_10`; the stored word carries flags for which list it indexes).
+- **Voices on the q axis share the voltage.** Together they get no more than one voice at
+  full level (`motor_sound_tick()` scales them); on the d axis they may stack and clip, which
+  is louder. Reason: TOCK, a full square at 0.75 of the pitch under full noise at the pitch,
+  cut the USB power with a single click on the q axis (reset reason POWERON, no panic or
+  brownout), while the same square alone on q, and TOCK on the d axis, were fine
+  (2026-10-07). Clipping two close pitches makes their difference tone, a slow one, and on q
+  that is torque. That this is the mechanism is a reading of those three results, not a
+  measurement.
+- **The end-stop knock plays on the d axis only.** With the voltage shared, TOCK on q was
+  fine with the SAW feel and still cut the power with SINE (AMP 100%, or 50% on a fast spin).
+  So sharing was not the whole answer and the cause is open: something between a q-axis
+  sound with a low part and the SINE feel's control. TOCK was dropped; the knock, built the
+  same way, stays on d. A new click with a low part is untested on q.
+- **Direction.** A step one way clicks 2% higher, the other way 2% lower
+  (`CLICK_DIRECTION_PITCH` in `control_task.c`).
+- **End stop.** A list at its end answers the push with a low knock in place of the click
+  (`motor_sound_thud()`: a square at half the click's pitch under noise, both at full level), at the profile's AMP.
+- **Tunes.** `motor_sound_jingle()` plays up to three notes on three voices, from any task
+  (the request is one atomic; the loop starts it on its next tick): the startup chime, two
+  notes up when something is saved (with the SAVED! toast), one low note when an edit or an
+  armed action is cancelled or a save fails, and two soft notes with an agent's first double
+  tap. `MOTOR_TONE_RICH` is a sine with its second and third harmonics from a second table;
+  the chime, save and cancel use it.
+- **Shapes.** Six plain ones, in `motor_sound.h`: sine at 2 ms and 4 ms (the envelope's time constant;
+  a click lasts 1.5 times that), square at 2 and 4 ms, and two with a **chirp** (sine
+  4 ms and square 4 ms), whose pitch falls to 0.6 of its start through the click, like the
   old speaker click did. A steady pitch rings hollow; the chirp crosses more of the body's
   resonances. Lengths are times, not cycle counts, so a low PITCH does not stretch a click (a
   stretched chirp sounds like a bird). Each shape's decay, glide and length are worked out once
   at start-up, so picking one in the loop is an index.
 - **Heat.** `sysmon` adds Vd² to its coil current and copper heat.
 - **Startup chime.** `motor_sound_chime()`, called when haptics start: three notes, C7 E7 G7,
-  80 ms apart, decaying at 25/s. They are that high because below 1 kHz the motor is nearly
-  silent. Three voices mixed in the loop, on the click's
+  each with two harmonics, 80 ms apart, decaying at 25/s. They are that high because below 1 kHz the motor is nearly
+  silent. Three voices, on the click's
   axis, about 0.44 s in all.
 
 **DEVICE → SOUND CAL** finds what carries best. F1 starts it; it then owns the motor (no
@@ -780,7 +831,8 @@ which is torque and lets the free knob creep. (A q-axis tone starts at its peak,
 from zero its torque sets the knob drifting one way for the whole tone, which stopped the
 first q sweep on hardware.)
 
-1. **Sweep.** 16 log-spaced tones, 500 Hz to 4 kHz, 300 ms each at 1.4 V, on the d axis and
+1. **Sweep.** 16 log-spaced tones, 1 to 10 kHz (500 Hz to 4 kHz until the sound moved to the
+   PWM rate; answers stored then are dropped on load, the click itself is kept), 300 ms each at 1.4 V, on the d axis and
    then again on the q axis. Then: which sweep was louder? F1 the first (d), F3 the second
    (q), F2 plays both again. The rest uses that axis.
 2. **Tones.** Each tone from 0.3 V up through 0.7, 1.4 and 2.5 V until F1 (heard); F3 is "not
@@ -795,10 +847,13 @@ play on the d axis at 3.5 kHz. Every answer is a console line, e.g.
 FINE a short sine. **HAPTICS → CLICK** (the eighth item on the ring) picks it for the profile
 shown and draws it: the wave as it is played, as wide as it is long, a dot running along it.
 F2 saves it with the profile; holding F2 puts it back to the factory one (SIN 4MS) with the
-rest. The five shapes are packed, three bits each, into the one spare word of the stored
+rest. The five shapes are packed, four bits each (three in blobs from when there were eight;
+a flag bit tells them apart), into the one spare word of the stored
 profiles (`hprof_cfg`; it held the speaker's timbre), with a flag bit to say they are there,
 so profiles tuned before this still load: they all start from the one shape the device had
-then (`snd_cal` still carries it). The companion does not show or change the wave yet.
+then (`snd_cal` still carries it). The companion sets it too: `HOST_SET_CLICK`, id 6, and
+byte 22 of the settings report with bit 7 set (the id and the byte were the speaker's timbre,
+so an app can tell which it is talking to).
 
 **DEVICE → CLICK** switches the axis, D or Q, without a new calibration: a direct screen,
 turning switches it and, being a detent, plays it; F2 saves.
