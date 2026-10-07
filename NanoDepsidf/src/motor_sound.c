@@ -82,6 +82,7 @@ static struct {
     // worked out at start-up
     uint32_t at[TUNE_NOTES], len[TUNE_NOTES];
     float decay_tick[TUNE_NOTES], glide[TUNE_NOTES];
+    bool d_only; // never on the q axis, whatever DEVICE -> CLICK says
 } s_tune[MOTOR_SOUND_JINGLE_COUNT] = {
     // CHIME: C7 E7 G7, ringing over each other. The startup chime until 2026-10-07; now an
     // agent asking for approval.
@@ -101,6 +102,10 @@ static struct {
     }},
     // ALLOW: COIN's two notes with no echo.
     [MOTOR_SOUND_JINGLE_ALLOW] = {2, SOUND_VMAX_V, {{0, 90, 987.8f, RI, 100, 100, 9.0f}, {100, 400, 1318.5f, RI, 100, 100, 7.0f}}},
+    // LAND: the loading screen's tiles hit the ground: a square falling an octave from G6 under
+    // a burst of noise. Low and loud, so on the d axis only, like the end-stop knock.
+    [MOTOR_SOUND_JINGLE_LAND] = {.notes = 2, .volts = SOUND_VMAX_V, .d_only = true,
+                                 .note = {{0, 90, 1568.0f, SQ, 100, 50, 30.0f}, {0, 40, 3136.0f, MOTOR_TONE_NOISE, 100, 100, 60.0f}}},
 };
 #undef SI
 #undef SQ
@@ -273,7 +278,7 @@ float CONTROL_HOT motor_sound_tick(float vq, struct motor_tone *out) {
         s_jingle.which = request;
         s_jingle.tick = 0;
         s_jingle.next = 0;
-        s_jingle.q = LD(s_click_q);
+        s_jingle.q = LD(s_click_q) && !s_tune[request].d_only;
         for (int i = 0; i < TUNE_VOICES; i++) s_jingle.voice[i].left = 0;
     }
     if (s_jingle.which >= 0) {

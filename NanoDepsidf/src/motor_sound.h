@@ -114,7 +114,7 @@ void motor_sound_click(float pitch, float amp, int shape);
 // A list hit its end (control_task.c's wall): a low knock in place of the click, at the
 // profile's AMP.
 void motor_sound_thud(float amp);
-// The startup chime (COIN), once haptics are up. On the click's axis.
+// The startup chime (COIN), asked for by the loading screen. On the click's axis.
 void motor_sound_chime(void);
 // The other little tunes, from any task: they play on the next tick, in place of one playing.
 typedef enum {
@@ -124,6 +124,7 @@ typedef enum {
     MOTOR_SOUND_JINGLE_AGENT,  // two soft notes: an agent notification with nothing to approve
     MOTOR_SOUND_JINGLE_COIN,   // two notes and their echo: the startup chime
     MOTOR_SOUND_JINGLE_ALLOW,  // COIN without the echo: an agent was allowed
+    MOTOR_SOUND_JINGLE_LAND,   // a knock: the loading screen's tiles land (d axis only)
     MOTOR_SOUND_JINGLE_COUNT,
 } motor_sound_jingle_t;
 void motor_sound_jingle(motor_sound_jingle_t which);

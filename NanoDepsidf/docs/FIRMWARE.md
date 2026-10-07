@@ -824,7 +824,9 @@ pins low so it stays shut down. The successor board leaves the parts out.
   stretched chirp sounds like a bird). Each shape's decay, glide and length are worked out once
   at start-up, so picking one in the loop is an index.
 - **Heat.** `sysmon` adds Vd² to its coil current and copper heat.
-- **Startup chime.** `motor_sound_chime()`, called when haptics start: COIN, B5 then E6 held
+- **Startup chime.** `motor_sound_chime()`, asked for by the loading screen 3.05 s in, just
+  after its two tiles land (a knock, `MOTOR_SOUND_JINGLE_LAND`, d axis only, comes at 2.75 s when they land; a
+  tune asked for before the motor is up waits for it): COIN, B5 then E6 held
   (988 and 1319 Hz, rich wave), and the pair again at a third of the level as an echo; about
   1.1 s. Picked by ear from six. Loud, low tunes are a risk on the q axis: some of the others,
   in the same range, cut the USB power there (as the TOCK click did), and were too quiet on

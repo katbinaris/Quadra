@@ -127,7 +127,7 @@ function ScreenTab() {
   return (
     <>
       {pr && (
-        <Box title="Idle word" note="On the loading and idle screens · saved on the knob at once">
+        <Box title="Idle word" note="On the idle screen · saved on the knob at once">
           <div class="line">
             <Text value={typed.current ?? pr.idleText} max={IDLE_TEXT_MAX} upper={false} placeholder="QUADRA" width={260} class="pixel" on={(v) => (typed.current = v)} onEnter={setWord} />
             <button class="btn primary" onClick={() => setWord(typed.current ?? pr.idleText)}>

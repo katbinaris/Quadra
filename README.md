@@ -779,6 +779,16 @@ The two ways the value reaches Onshape:
 These animations are recorded from the firmware's own drawing code (JUMP with Onshape, JUMP
 with the QUADRA wordmark), at 20 fps; the device runs them at its full frame rate.
 
+<p>
+  <img src="NanoDepsidf/docs/images/boot.png" width="200" alt="The loading screen: a white tile with a black Q beside a red tile with Espressif's mark, and POWERED BY ESP32-S3 below">
+</p>
+
+**Loading screen.** About 4 s, in the same arcade manner. Two 48 px tiles glued back to back,
+a white one with a black Q and a red one with Espressif's mark, drop in, hop with half a turn
+and spin-jump. At the top they split with a flash, circle each other once and come down side
+by side (the motor knocks, then plays the startup chime), and POWERED BY ESP32-S3 types in
+below. The knob is live from about 1 s in.
+
 After 12 s without input the screen goes into an arcade-style attract mode: the active app's
 48×48 icon, or the QUADRA wordmark outside APP mode, performs **Jump**. It never leaves the
 screen: two small hops, a crouch and a big jump with afterimages, a hard landing (squash,
@@ -800,11 +810,11 @@ of the icon. QUADRA uses amber. Any input wakes the device, and the waking key p
 swallowed.
 
 <p>
-  <img src="NanoDepsidf/docs/images/idle-word.png" width="200" alt="The loading screen with the idle word HELLO in place of QUADRA">
+  <img src="NanoDepsidf/docs/images/idle-word.png" width="200" alt="The idle animation with the idle word HELLO in place of QUADRA">
 </p>
 
 **Your own word.** An idle word of up to 12 characters, set from the companion app (**Look ›
-Screen & music**) or with `quadra.py text`, replaces QUADRA on the loading screen and in the idle
+Screen & music**) or with `quadra.py text`, replaces QUADRA in the idle
 animation. With an app icon up, the word and the icon take turns, one routine each.
 
 ### LEDs

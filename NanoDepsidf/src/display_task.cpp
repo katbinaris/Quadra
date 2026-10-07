@@ -1284,6 +1284,18 @@ static Pace update_ui(void) {
     s_list_prev_screen = snap.screen;
 
     // --- which view should be up ---
+    if (s_booting) { // the loading screen's sounds; one asked for before the motor is up waits for it
+        static uint8_t s_boot_played = 0;
+        int64_t e = (now - s_boot_start_us) / 1000;
+        if (!(s_boot_played & 1) && e >= ui::BOOT_LAND_MS) {
+            s_boot_played |= 1;
+            motor_sound_jingle(MOTOR_SOUND_JINGLE_LAND);
+        }
+        if (!(s_boot_played & 2) && e >= ui::BOOT_CHIME_MS) {
+            s_boot_played |= 2;
+            motor_sound_chime();
+        }
+    }
     if (s_booting && now - s_boot_start_us >= ui::BOOT_ANIM_MS * 1000LL) {
         s_booting = false;
         s_last_activity_us = now; // idle timer starts once the Main Screen is actually up
@@ -1443,7 +1455,7 @@ static void display_task_fn(void *arg) {
     ui::fx_init();
     char word[USER_TEXT_MAX + 1];
     user_text_get(word, sizeof(word));
-    ui::fx_set_word(word); // the loading screen already assembles the user's word
+    ui::fx_set_word(word);
 
     s_boot_start_us = esp_timer_get_time();
     update_ui(); // first (black) frame of the loading screen before the backlight comes up

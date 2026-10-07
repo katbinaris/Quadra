@@ -535,7 +535,6 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                     s_menu_btn_cooldown_until_iter = 0;
                     s_haptic_phase = HAPTIC_RUN;
                     s_haptic_start_us = esp_timer_get_time();
-                    motor_sound_chime(); // the startup chime
                     // Kp/Kd/detent-count come from menu.c (live-adjustable, NVS-persisted) --
                     // not reset to compile-time defaults here anymore, so a saved setting from
                     // a previous session survives this arm just like calibration does.

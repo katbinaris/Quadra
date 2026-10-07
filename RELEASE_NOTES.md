@@ -21,7 +21,9 @@ together.
   draws it as it sounds.
 - **More to hear:** a step one way clicks a little higher than a step the other way; a list
   at its end answers with a low knock; saving plays two rising notes, cancelling an edit one
-  low note; an agent notification arrives with two notes.
+  low note. An agent's request arrives with three rising notes, other notifications with
+  two soft ones, and allowing or denying answers with its own sound.
+- **A new startup chime,** two notes and their echo, in the manner of a game.
 - **A click per haptic profile.** WIDE, COARSE, MEDIUM, FINE and SMOOTH each keep their own,
   next to their volume and pitch.
 - **DEVICE → SOUND CAL** tunes the click to the pitch your knob rings at: it plays a sweep
@@ -59,6 +61,12 @@ together.
 - **MUSIC:** the album cover on a spinning record, in three styles (RECORD, SLIDE, BLEED).
 - **USB power is 5 V 3 A only.** The knob asks again if a charger offers more, and
   `quadra.py pd` sets the USB-PD chip to 5 V 3 A for good.
+- **Ready in about a second.** The knob used to wait some 11 s after power-on before the
+  motor came up. Keys for the power-on modes must now be held while plugging in.
+- **A new loading screen** in the idle screen's manner: a Q tile and an Espressif tile, glued
+  back to back, hop, spin-jump and split with a flash; they land side by side with a knock
+  and the chime plays.
+- **Idle after 12 s** (was 5), and never in AGENTS while an agent is working or asking.
 - **More free memory:** about 62 KB of internal RAM in normal use, up from 18.
 
 ## Companion 0.3.0

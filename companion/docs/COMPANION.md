@@ -427,7 +427,7 @@ the knob's own Lights screen). Changes made on the knob show up here within a se
 
 | Setting | What it sets |
 |---|---|
-| **Idle word** | The word on the loading and idle screens, up to 12 characters (lowercase draws as small capitals). **Back to QUADRA** restores it. Stored on the knob as soon as you press **Set** |
+| **Idle word** | The word on the idle screen, up to 12 characters (lowercase draws as small capitals). **Back to QUADRA** restores it. Stored on the knob as soon as you press **Set** |
 | **Music cover** | How the Music app shows the cover while something plays: **Flat** (full screen), **Record** (the glass is a spinning record, the cover its label), **Slide** (a sleeve the record slides out of) or **Bleed** (a big sleeve that slides off the glass). Stored on the knob at once. On the knob, a tap of F4 on the now-playing screen steps through them (extensions v8 and later) |
 | **Screen rotation** | 0, 90, 180 or 270 degrees. Kept by Save to knob |
 

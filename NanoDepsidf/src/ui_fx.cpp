@@ -18,65 +18,8 @@ static inline bool in_circle(float x, float y, float r) {
     return (x - CX) * (x - CX) + (y - CY) * (y - CY) <= r * r;
 }
 
-// --- loading screen: Big bang ---
-
-// "QUADRA" at scale 3 is ~130 blocks; a 12-character word (fx_set_word) at scale 2 fits too.
+// The word's pixels at 1x (fx_set_word's scratch): "QUADRA" is ~130, 12 characters fit.
 #define LOGO_MAX_BLOCKS 512
-// The block lists live in PSRAM (EXT_RAM_BSS_ATTR): a few hundred entries a frame, which the
-// cache keeps; internal RAM is short since the frame sprite moved there.
-EXT_RAM_BSS_ATTR static int16_t s_logo[LOGO_MAX_BLOCKS][2];
-static int s_logo_n = 0;
-static int s_logo_scale = 3; // the block size: the largest scale at which the word fits
-// Per-block scatter point and return delay, fixed at init (same hash as the mockup).
-EXT_RAM_BSS_ATTR static int16_t s_logo_scatter[LOGO_MAX_BLOCKS][2];
-EXT_RAM_BSS_ATTR static uint16_t s_logo_delay_ms[LOGO_MAX_BLOCKS];
-EXT_RAM_BSS_ATTR static uint8_t s_logo_tint[LOGO_MAX_BLOCKS]; // 0 amber, 1 grey, 2 white while in flight
-
-static const float SPARK_X = 120, SPARK_Y = 110;
-
-static void boot_tail(uint32_t e, uint32_t t0) {
-    static const char maker[] = "KAFI DEVICES";
-    if (e > t0) {
-        char buf[sizeof(maker)];
-        uint32_t n = (e - t0) / 30;
-        if (n > sizeof(maker) - 1) n = sizeof(maker) - 1;
-        for (uint32_t i = 0; i < n; i++) buf[i] = maker[i];
-        buf[n] = '\0';
-        text(buf, 120, 128, GREY, 1, CENTER);
-    }
-    if (e > t0 + 500) {
-        uint32_t n = (e - t0 - 500) / 60;
-        if (n > 12) n = 12;
-        for (uint32_t i = 0; i < 12; i++) rect(72 + i * 8, 152, 7, 5, i < n ? WHITE : DARK);
-    }
-}
-
-void fx_boot(uint32_t e) {
-    if (e < 380) {
-        int st = e / 95, s = 1 + st * 2;
-        rect(SPARK_X - s / 2.0f, SPARK_Y - s / 2.0f, s, s, (st % 2) ? WHITE : AMBER);
-        return;
-    }
-    if (e < 700) ring(SPARK_X, SPARK_Y, (e - 380) * 0.45f, e < 540 ? WHITE : GREY, 2);
-    float k1 = ease_out((e - 380) / 420.0f);
-    for (int i = 0; i < s_logo_n; i++) {
-        float sx = s_logo_scatter[i][0], sy = s_logo_scatter[i][1];
-        float k2 = ease_in_out(((float)e - 1000.0f - s_logo_delay_ms[i]) / 480.0f);
-        float x, y;
-        if (e < 1000) {
-            x = lerpf(SPARK_X, sx, k1);
-            y = lerpf(SPARK_Y, sy, k1);
-        } else {
-            x = lerpf(sx, s_logo[i][0], k2);
-            y = lerpf(sy, s_logo[i][1], k2);
-        }
-        bool home = e >= 1000 && k2 >= 1.0f;
-        uint32_t col = home ? (e < 1900 ? AMBER : WHITE)
-                     : s_logo_tint[i] == 0 ? AMBER : s_logo_tint[i] == 1 ? GREY : WHITE;
-        rect(x, y, s_logo_scale, s_logo_scale, col);
-    }
-    boot_tail(e, 1950);
-}
 
 // --- attract: arcade attract mode ---
 // The idle screen (DEVELOPMENT_PLAN.md "Idle screen: arcade attract mode"): the active app's
@@ -140,7 +83,10 @@ struct Spr {
 // (fx_attract sets it per frame); the stock QUADRA stays plain white.
 static uint32_t s_word_sheen = WHITE;
 static inline uint32_t spr_px(const Spr &sp, int i, int j) {
-    if (sp.mark != nullptr) return sp.mark->rows[j * sp.mark->w + i] == '#' ? WHITE : 0;
+    if (sp.mark != nullptr) {
+        if (sp.mark->rows[j * sp.mark->w + i] != '#') return 0;
+        return WHITE;
+    }
     if (sp.icon == nullptr) {
         if (!s_word[j * WORD_MAX_W + i]) return 0;
         if (!s_word_custom || s_word_h < 2) return WHITE;
@@ -360,6 +306,150 @@ static void routine_jump(float t, const Spr &sp, const uint32_t *cols) {
     if (st.rest) sparkles(t, 120 + st.x, gy - rest_h(sp) / 2.0f, rest_w(sp) / 2.0f + 8, cols);
 }
 
+// --- loading screen: the split ---
+// Two tiles glued back to back, 48 px each: a white one with a black Q, a red one with
+// Espressif's mark in white. The pair drops in, hops with half a turn about its upright axis
+// (one face, then the other, with the other tile's edge beside it), crouches and spin-jumps;
+// at the top it splits with a flash, the two circle each other once, slowing, and come down
+// side by side; POWERED BY ESP32-S3 types in below. Picked on 2026-10-07 from four rounds of
+// sketches (ATOM, the pair inside electron orbits at 80 px, was "too busy" on the device);
+// "Big bang", the logo's pixels flying together, went with it. The display task plays a knock
+// at BOOT_LAND_MS and the startup chime at BOOT_CHIME_MS.
+static const uint32_t ESP_RED = 0xE7352Cu; // Espressif's red: this screen only (PIXEL_ART.md)
+static const uint32_t INK = 0x010101u;     // black that spr_draw() takes as a colour
+#define TILE 48 // the tiles' size, drawn 1x: 80 px took too much of the glass
+static char s_tile_rows[TILE * TILE + 1], s_tile_q_rows[TILE * TILE + 1], s_tile_e_rows[TILE * TILE + 1];
+static Sprite s_tile = {TILE, TILE, s_tile_rows}, s_tile_q = {TILE, TILE, s_tile_q_rows}, s_tile_e = {TILE, TILE, s_tile_e_rows};
+static void boot_sprites() {
+    static const int8_t CUT[5] = {5, 3, 2, 1, 1}; // the rounded corner: pixels cut from each of the first rows
+    const Sprite &Q = SPR_LOGO_Q, &E = SPR_LOGO_ESPRESSIF;
+    for (int y = 0; y < TILE; y++) {
+        int e = y < TILE - 1 - y ? y : TILE - 1 - y, cut = e < 5 ? CUT[e] : 0;
+        for (int x = 0; x < TILE; x++) {
+            int qx = x - (TILE - Q.w) / 2, qy = y - (TILE - Q.h) / 2, ex = x - (TILE - E.w) / 2, ey = y - (TILE - E.h) / 2;
+            s_tile_rows[y * TILE + x] = x >= cut && x < TILE - cut ? '#' : '.';
+            s_tile_q_rows[y * TILE + x] = qx >= 0 && qy >= 0 && qx < Q.w && qy < Q.h && Q.rows[qy * Q.w + qx] == '#' ? '#' : '.';
+            s_tile_e_rows[y * TILE + x] = ex >= 0 && ey >= 0 && ex < E.w && ey < E.h && E.rows[ey * E.w + ex] == '#' ? '#' : '.';
+        }
+    }
+}
+
+// One tile, its bottom centre at (cx, by). which: 0 the Q's, 1 Espressif's.
+static void tile(int which, float cx, float by, float sx, float sy, bool ghost = false) {
+    const Spr box_s = {nullptr, TILE, TILE, 1, &s_tile};
+    const Spr glyph = {nullptr, TILE, TILE, 1, which ? &s_tile_e : &s_tile_q};
+    if (ghost) {
+        spr_draw(box_s, cx, by, sx, sy, which ? ESP_RED : GREY, true);
+        return;
+    }
+    spr_draw(box_s, cx, by, sx, sy, which ? ESP_RED : WHITE);
+    spr_draw(glyph, cx, by, sx, sy, which ? WHITE : INK);
+}
+// The glued pair turned by `th` about its upright axis: the face towards us, and the other
+// tile's edge beside it.
+static void pair(float cx, float by, float sy, float th, bool ghost = false) {
+    float c = cosf(th), sn = sinf(th);
+    int which = c >= 0 ? 0 : 1;
+    float sx = fabsf(c) > 0.08f ? fabsf(c) : 0.08f;
+    tile(which, cx, by, sx, sy, ghost);
+    if (ghost) return;
+    int edge = (int)lroundf(6 * fabsf(sn)), w = (int)lroundf(TILE * sx), h = (int)lroundf(TILE * sy);
+    if (edge < 1) return;
+    bool left = sn * c > 0;
+    box(left ? cx - w / 2.0f - edge : cx + w / 2.0f, by - h + 5, edge, h - 10, which ? WHITE : ESP_RED);
+}
+static inline float seg_k(float t, float t0, float t1) { return clampf((t - t0) / (t1 - t0), 0, 1); }
+// A point on one of the two crossed orbits around (cx, cy).
+static inline void orbit_pt(int o, float a, float rx, float ry, float cx, float cy, float &x, float &y) {
+    float tilt = o ? 0.9f : -0.9f, u = cosf(a) * rx, v = sinf(a) * ry;
+    x = cx + u * cosf(tilt) - v * sinf(tilt);
+    y = cy + u * sinf(tilt) + v * cosf(tilt);
+}
+
+// The split: one white frame, then rays, a shock ring, the two orbits swelling, and chips.
+static void bam(float t, float t0, float cx, float cy) {
+    static const uint32_t COLS[3] = {ESP_RED, AMBER, WHITE};
+    float d = t - t0;
+    if (d < 0 || d > 700) return;
+    if (d < 45) { rect(0, 0, 240, 240, WHITE); return; }
+    float k = d / 700;
+    if (d < 380) {
+        float kk = d / 380, r0 = 30 + 90 * kk, r1 = r0 + 34 * (1 - kk) + 6;
+        for (int i = 0; i < 14; i++) {
+            float a = i * (2 * (float)M_PI / 14) + 0.2f;
+            seg(cx + cosf(a) * r0, cy + sinf(a) * r0, cx + cosf(a) * r1, cy + sinf(a) * r1, i % 3 == 0 ? AMBER : i % 3 == 1 ? WHITE : ESP_RED);
+        }
+        for (int o = 0; o < 2; o++) {
+            for (int i = 0; i < 40; i++) {
+                if ((i + (int)(d / 40)) & 1) continue;
+                float x, y;
+                orbit_pt(o, i * (2 * (float)M_PI / 40), 30 + 70 * kk, 10 + 22 * kk, cx, cy, x, y);
+                pt(x, y, kk < 0.6f ? WHITE : GREY);
+            }
+        }
+    }
+    ring(cx, cy, 18 + 150 * sqrtf(k), k < 0.3f ? WHITE : k < 0.6f ? GREY : DARK, k < 0.4f ? 3 : 2);
+    debris(t, t0, cx, cy, 14, COLS, 77, 1.1f);
+}
+
+// Aligned by the whole string, so the letters don't slide as they come; 40 ms a letter.
+static void typed(const char *s, float c, float y, uint32_t col, int scale) {
+    char buf[16];
+    int n = c < 0 ? 0 : (int)(c / 40), len = (int)strlen(s);
+    if (n > len) n = len;
+    memcpy(buf, s, (size_t)n);
+    buf[n] = '\0';
+    if (n) text(buf, 120 - text_width(s, scale) / 2.0f, y, col, scale, LEFT);
+}
+
+void fx_boot(uint32_t e) {
+    static const uint32_t COLS[3] = {AMBER, AMBER, AMBER};
+    const float PI = (float)M_PI, t = (float)e, tb = BOOT_SPLIT_MS, land = BOOT_LAND_MS;
+    const float gy = 142, apex = 54, apart = 30; // the ground, the jump, and half the gap between the two at rest
+    s_ox = s_oy = 0;
+    stars(t);
+    s_oy = shake_at(t, land, 4, 260);
+    if (s_oy == 0) s_ox = shake_at(t, tb, 5, 200);
+    dust(t, 400, 120, gy, 26, 6, 3);
+    dust(t, land, 120 - apart, gy, 26, 8, 7);
+    dust(t, land, 120 + apart, gy, 26, 8, 19);
+    if (t < tb) {
+        float up = 0, sy = 1, th = 0;
+        if (t < 400) { float k = t / 400; up = 230 * (1 - k * k); sy = 1.2f; } // the fall
+        else if (t < 560) { float k = seg_k(t, 400, 560); sy = 1 - 0.28f * (k < 0.4f ? 1 : 1 - (k - 0.4f) / 0.6f); }
+        else if (t < 600) {}
+        else if (t < 1050) { float k = seg_k(t, 600, 1050); up = 4 * 24 * k * (1 - k); th = PI * k * k * (3 - 2 * k); } // a hop, half a turn
+        else if (t < 1250) { th = PI; sy = 1 - 0.2f * seg_k(t, 1100, 1250); } // the crouch
+        else { // up to the top, turning faster and faster: five half turns, so the Q faces us
+            float k = seg_k(t, 1250, tb);
+            up = apex * (1 - (1 - k) * (1 - k));
+            th = PI + k * k * 5 * PI;
+            sy = 1 + 0.12f * (1 - k);
+        }
+        shadow(120, gy + 2, 44, up);
+        if (t > tb - 320) pair(120, gy - up, sy, th - 0.7f, true); // a ghost of the turn before
+        pair(120, gy - up, sy, th);
+    } else { // they circle each other once, slowing, and come down side by side
+        float k = seg_k(t, tb, land), a = PI + (1 - (1 - k) * (1 - k)) * 2 * PI, r = apart * seg_k(t, tb, tb + 200);
+        float fall = apex * (1 - k * k), bob = 10 * sinf(a) * (1 - k), q = seg_k(t, land, land + 220);
+        float sy = t < land ? 1 : 1 - 0.3f * (q < 0.4f ? 1 : 1 - (q - 0.4f) / 0.6f);
+        float qx = 120 + r * cosf(a), ex = 120 - r * cosf(a);
+        shadow(ex, gy + 2, 44, fall - bob);
+        shadow(qx, gy + 2, 44, fall + bob);
+        bool q_front = sinf(a) <= 0; // the one lower on the screen is nearer
+        for (int pass = 0; pass < 2; pass++) {
+            if ((pass == 1) == q_front) tile(0, qx, gy - fall - bob, 1, sy);
+            else tile(1, ex, gy - fall + bob, 1, sy);
+        }
+        bam(t, tb, 120, gy - apex - TILE / 2);
+    }
+    s_ox = s_oy = 0;
+    if (t >= BOOT_CHIME_MS) sparkles(t, 120, gy - TILE / 2 - 10, 36, COLS); // clear of the words
+    float c = t - BOOT_CHIME_MS - 60;
+    typed("POWERED BY", c, 162, GREY, 1);
+    typed("ESP32-S3", c - 300, 175, WHITE, 2);
+}
+
 // --- BOUNCE ---
 // Simulated in 33 ms steps from the routine's start; state carried between frames.
 #define BOUNCE_STEP 33
@@ -515,18 +605,6 @@ void fx_set_word(const char *text) {
     s_word_custom = text != nullptr && text[0] != '\0';
     const char *w = s_word_custom ? text : "QUADRA";
 
-    // Loading screen: the word's own pixels, at the largest scale that fits the glass.
-    s_logo_scale = fit_scale(w, 200, 3);
-    s_logo_n = text_blocks(w, 120, 96, s_logo_scale, s_logo, LOGO_MAX_BLOCKS);
-    for (int i = 0; i < s_logo_n; i++) {
-        float a = rnd(i, 1) * 2.0f * (float)M_PI, d = 30 + rnd(i, 2) * 80;
-        s_logo_scatter[i][0] = (int16_t)lroundf(SPARK_X + cosf(a) * d);
-        s_logo_scatter[i][1] = (int16_t)lroundf(SPARK_Y + sinf(a) * d);
-        s_logo_delay_ms[i] = (uint16_t)(rnd(i, 3) * 260);
-        float r4 = rnd(i, 4);
-        s_logo_tint[i] = r4 < 0.3f ? 0 : r4 < 0.55f ? 1 : 2;
-    }
-
     // The idle wordmark: the word's pixels at 1x, as a mask (drawn at 2x when it fits, squashable).
     EXT_RAM_BSS_ATTR static int16_t word[LOGO_MAX_BLOCKS][2]; // scratch, kept off the task stack
     int nw = text_blocks(w, 0, 0, 1, word, LOGO_MAX_BLOCKS);
@@ -551,6 +629,7 @@ void fx_set_word(const char *text) {
 
 void fx_init() {
     fx_set_word(nullptr);
+    boot_sprites();
 
     // Jump choreography: each move's start time and x offset.
     uint32_t t = 0;

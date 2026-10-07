@@ -73,7 +73,7 @@ int main() {
                                &ui::SPR_NOTE_M, &ui::SPR_TERM_M, &ui::SPR_TRI_L_M, &ui::SPR_TRI_R_M,
                                &ui::SPR_STEPS_M, &ui::SPR_SNAP_M, &ui::SPR_DAMP_M, &ui::SPR_SHAPE_M, &ui::SPR_PITCH_M,
                                &ui::SPR_BULB, &ui::SPR_BULB_LIT, &ui::SPR_BULB_M, &ui::SPR_BULB_LIT_M,
-                               &ui::SPR_LOGO_KORG, &ui::SPR_LOGO_ROLAND};
+                               &ui::SPR_LOGO_KORG, &ui::SPR_LOGO_ROLAND, &ui::SPR_LOGO_Q, &ui::SPR_LOGO_ESPRESSIF};
     for (const ui::Sprite *s : all) {
         if (strlen(s->rows) != (size_t)s->w * s->h) {
             fprintf(stderr, "sprite %dx%d has %zu chars\n", s->w, s->h, strlen(s->rows));
@@ -81,7 +81,20 @@ int main() {
         }
     }
 
-    for (uint32_t e : {300u, 800u, 1400u, 2600u}) {
+    if (const char *path = getenv("BOOT_FRAMES")) { // the loading screen every 40 ms, raw RGB: for a moving preview
+        FILE *f = fopen(path, "wb");
+        for (uint32_t e = 0; e <= ui::BOOT_ANIM_MS + 600; e += 40) {
+            ui::fx_boot(e < ui::BOOT_ANIM_MS ? e : ui::BOOT_ANIM_MS);
+            for (int i = 0; i < 240 * 240; i++) {
+                uint8_t rgb[3] = {(uint8_t)(g.px[i] >> 16), (uint8_t)(g.px[i] >> 8), (uint8_t)g.px[i]};
+                fwrite(rgb, 1, 3, f);
+            }
+            g.clear();
+        }
+        fclose(f);
+        return 0;
+    }
+    for (uint32_t e : {300u, 800u, 1500u, 1660u, 1760u, 1900u, 2200u, 2500u, 3900u}) {
         ui::fx_boot(e);
         static char n[32];
         keep(strdup((snprintf(n, sizeof(n), "boot %ums", e), n)));
@@ -639,7 +652,8 @@ int main() {
     // --- this fork: the user's idle word, LIGHTS, agent notifications, the AGENTS wheel ---
     for (const char *word : {"HELLO", "MAKE IT NICE"}) {
         ui::fx_set_word(word);
-        ui::fx_boot(2600);
+        for (uint32_t t = 0; t < 4100; t += 33) ui::fx_attract(t, nullptr, nullptr, 5, ui::ATTRACT_JUMP), g.clear();
+        ui::fx_attract(4100, nullptr, nullptr, 5, ui::ATTRACT_JUMP); // the gleam after the big landing (docs/images/idle-word.png)
         keep(strdup(word));
         for (uint32_t t = 0; t < 5950; t += 33) ui::fx_attract(t, nullptr, nullptr, 5, ui::ATTRACT_JUMP), g.clear();
         ui::fx_attract(5950, nullptr, nullptr, 5, ui::ATTRACT_JUMP); // landing at +34 px, squashed: the widest reach

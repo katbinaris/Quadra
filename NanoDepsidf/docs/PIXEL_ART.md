@@ -68,6 +68,9 @@ profile's `accents`, or failing that the three most common colours of its 48×48
 
 **Fixed exceptions** (`src/ui_extras.cpp`). These came in with MUSIC, AGENTS, LIGHTS and HOME, and
 each is limited to its own screen:
+- **Loading screen:** Espressif's red, `ESP_RED` `#E7352C` (`src/ui_fx.cpp`), for the tile that
+  carries Espressif's mark and the chips of the split. The mark itself is the real logo brought
+  down to 29 px (`SPR_LOGO_ESPRESSIF`), not redrawn.
 - **Agent requests:** the agent's colour (badge, rim, ring arcs); `ALLOW_GREEN` for the F1
   hold arc and the ALLOW label; `DENY_RED` for the DENY label; a near-black `PANEL` behind the
   command.
