@@ -316,6 +316,10 @@ On hardware, with peaks reset and the knob in use (2026-10-02):
 | Spikes (iterations over 60 µs) | 0 per second |
 | Missed ticks | 0 |
 
+That reading was taken with WiFi off. On 2.1.0 with WiFi on, SYS INFO shows the maximum at
+about 154 µs and 2 to 4 spikes per second at times (2026-10-07). It can't be felt and is
+accepted as it is.
+
 ### 5.3 Flash writes
 
 While the flash chip erases or programs, the cache is switched off for **both cores**, and
@@ -800,9 +804,9 @@ pins low so it stays shut down. The successor board leaves the parts out.
   measurement.
 - **The end-stop knock plays on the d axis only.** With the voltage shared, TOCK on q was
   fine with the SAW feel and still cut the power with SINE (AMP 100%, or 50% on a fast spin).
-  So sharing was not the whole answer and the cause is open: something between a q-axis
-  sound with a low part and the SINE feel's control. TOCK was dropped; the knock, built the
-  same way, stays on d. A new click with a low part is untested on q.
+  So sharing was not the whole answer. The cause is a flaw in this board's design, not the
+  firmware, so low sounds stay off the q axis: TOCK was dropped; the knock, built the same
+  way, stays on d. A new click with a low part is untested on q.
 - **Direction.** A step one way clicks 2% higher, the other way 2% lower
   (`CLICK_DIRECTION_PITCH` in `control_task.c`).
 - **End stop.** A list at its end answers the push with a low knock in place of the click

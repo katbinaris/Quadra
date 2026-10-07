@@ -339,8 +339,6 @@ To build it yourself, see [companion/README.md](companion/README.md).
   Windows, use the companion in Chrome or Edge.
 - **Icons uploaded with `send_icon.py`** are cleared on restart. Icons imported into a
   profile in the companion are kept.
-- **MIDI:** Roland's switch values and the minilogue xd's Sync / Ring polarity are still to be
-  checked against the synths themselves.
 - **Sound:** the built-in speaker of 2.0.0 is not used from 2.1.0 on; the motor plays clicks
   from 500 Hz to 10 kHz.
 

@@ -202,8 +202,9 @@ static float CONTROL_HOT clamp_hz(float hz) {
 // The end-stop knock stays off the q axis. TOCK, a click built the same way (a low square
 // under noise), cut the USB power on the q axis on hardware, 2026-10-07 (reset reason
 // POWERON): first with one click, then, once q-axis voices shared the voltage, only with the
-// SINE feel. On the d axis it was fine. The cause was not found and TOCK was dropped; the
-// knock plays while the knob is pushed into a wall, where a power cut would be worst.
+// SINE feel. On the d axis it was fine. The cause is a flaw in the board's design, and TOCK
+// was dropped; the knock plays while the knob is pushed into a wall, where a power cut would
+// be worst.
 static void CONTROL_HOT burst_arm(float hz, int shape, float volts, bool q) {
     if (shape == SHAPE_THUD) q = false;
     for (int i = 0; i < MOTOR_SOUND_PARTS; i++) {

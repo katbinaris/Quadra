@@ -1222,8 +1222,9 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - The idle screen, icon upload, and the pixel UI.
 - The LED ring and key LEDs, with the power budget taken from the USB port.
 - The USB power reading and DEVICE → SYS INFO.
-- A fast, steady control loop: 10.00 kHz, about 26 µs per iteration on average and 42 µs at
-  worst of a 100 µs budget, 5 µs of jitter, no missed ticks and no spikes.
+- A fast, steady control loop: 10.00 kHz, about 26 µs per iteration on average of a 100 µs
+  budget. With WiFi on, a few iterations a second can run long (about 150 µs at worst), which
+  can't be felt.
 - The desktop companion for macOS: settings, haptic profiles, system info, profile editing
   with a haptic profile per input, and macros stored on the device.
 - MUSIC with now playing and its cover styles (FLAT, RECORD, SLIDE, BLEED), AGENTS with
@@ -1235,11 +1236,9 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 - MIDI: USB MIDI and the TRS jacks, the synth profiles (GENERIC, KORG minilogue xd, Roland
   JU-06A and TR-8S) with the real synths, parameter pages and program changes, the KORG and
   Roland logos.
-
-**Built, not yet tested on hardware:**
-- The companion's Lamps page and lamp import (extensions v12 for renaming, icons, order and
-  removing), and its Synths page: editable synth profiles stored on the knob as JSON, your own
-  synths, the knob's parameter live, and a USB MIDI monitor.
+- The companion's Lamps page and lamp import (renaming, icons, order and removing), and its
+  Synths page: editable synth profiles stored on the knob as JSON, your own synths, the knob's
+  parameter live, and a USB MIDI monitor.
 
 **Next:**
 - F4 quick tap in APP mode, and KEYBOARD / MOUSE as built-in profiles.
@@ -1247,8 +1246,6 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
   flash.
 
 **Later:**
-- Safe DAMP limits for each haptic profile and feel (today it is the full range; SNAP stops
-  at 4 in SAW and 2 in SINE).
 - Automatic profile switching from the frontmost app.
 - A Figma plugin for direct value control over HID.
 - The companion on Windows.
