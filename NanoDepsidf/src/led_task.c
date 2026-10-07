@@ -74,10 +74,13 @@ static const char *TAG = "led";
 #define NOTICE_DENY 0xFF3B30u
 
 // Ring geometry: position p (clockwise from the screen's 12 o'clock) is LED
-// RING_OFFSET + RING_DIR * (p + 15 * rotation). Upstream's mapping, and right: checked on
-// hardware at DISPLAY 270 (keys on the right) with the MUSIC volume arc -- the two alternatives
-// tried (- 15 * rotation; then RING_DIR +1) lit the wrong half / ran anticlockwise.
-#define RING_OFFSET 0
+// RING_OFFSET + RING_DIR * (p + 15 * rotation). Upstream's direction and rotation term, checked
+// on hardware at DISPLAY 270 (keys on the right) with the MUSIC volume arc -- the two
+// alternatives tried (- 15 * rotation; then RING_DIR +1) lit the wrong half / ran anticlockwise.
+// RING_OFFSET 15 (it was 0): at DISPLAY 270 the arc began at the screen's 9 o'clock while the
+// screen's ring begins at 6, a quarter turn clockwise of it (the user, 2026-10-07). Checked at
+// 270 only.
+#define RING_OFFSET 15
 #define RING_DIR (-1)
 #define VOL_ARC_START 30 // the volume arc starts at the screen's 6 o'clock, like the screen's ring
 // Keys: two LEDs each on ring B (legacy_fw hmi_thread.cpp).
