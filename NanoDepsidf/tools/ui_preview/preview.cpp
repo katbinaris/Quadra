@@ -793,11 +793,42 @@ int main() {
                 keep(v.name);
             }
         }
-        // CLOCK: a zone besides LOCAL, 24 h with seconds and the date; then LOCAL, 12 h, plain.
-        ui::draw_clock({true, 14, 7, 42, 6, 3, 9, true, true, true, "TOKYO", 9 * 60, 2, 4, 0xFFB030});
+        // CLOCK: the flap clock -- a zone besides LOCAL, 24 h with seconds and the date; LOCAL, 12 h,
+        // plain; a card turning -- then the board, at rest and turning, and before the time is known.
+        // The flaps turn by themselves: `settle` draws until they have all arrived.
+        uint32_t clock_t = 0;
+        auto settle = [&](ui::ClockInputs in) {
+            for (bool busy = true; busy; clock_t += 30) {
+                g.clear();
+                in.t_ms = clock_t;
+                busy = ui::draw_clock(in);
+            }
+        };
+        auto turning = [&](ui::ClockInputs in, uint32_t after_ms) { // `in` is new: where the flaps are after_ms later
+            in.t_ms = clock_t;
+            ui::draw_clock(in);
+            g.clear();
+            in.t_ms = clock_t += after_ms;
+            ui::draw_clock(in);
+        };
+        const ui::ClockZone zones[5] = {{"LOCAL", true, 7, 7}, {"LONDON", true, 6, 7}, {"TOKYO", true, 14, 7},
+                                        {"NEW YORK", true, 1, 7}, {"SYDNEY", true, 16, 7}};
+        const ui::ClockZone zones_next[5] = {{"LOCAL", true, 7, 8}, {"LONDON", true, 6, 8}, {"TOKYO", true, 14, 8},
+                                             {"NEW YORK", true, 1, 8}, {"SYDNEY", true, 16, 8}};
+        settle({true, 14, 7, 42, 6, 3, 9, true, true, true, "TOKYO", 9 * 60, 2, 5, 0xFFB030});
         keep("clock: zone, 24h");
-        ui::draw_clock({true, 9, 41, 0, 6, 3, 9, false, false, false, "LOCAL", 2 * 60, 0, 4, 0xFFB030});
+        turning({true, 14, 8, 0, 6, 3, 9, true, true, true, "TOKYO", 9 * 60, 2, 5, 0xFFB030}, 100);
+        keep("clock: a card turning");
+        settle({true, 21, 41, 0, 6, 3, 9, false, false, false, "LOCAL", 2 * 60, 0, 5, 0xFFB030});
         keep("clock: local, 12h");
+        settle({true, 14, 7, 42, 6, 3, 9, true, true, true, "TOKYO", 9 * 60, 2, 5, 0xFFB030, 0, true, zones});
+        keep("clock: board");
+        turning({true, 14, 8, 0, 6, 3, 9, true, true, true, "TOKYO", 9 * 60, 2, 5, 0xFFB030, 0, true, zones_next}, 30);
+        keep("clock: board, turning");
+        settle({true, 2, 8, 3, 6, 3, 9, false, true, true, "TOKYO", 9 * 60, 2, 5, 0xFFB030, 0, true, zones_next});
+        keep("clock: board, 12h");
+        settle({false, 0, 0, 0, 0, 0, 0, true, true, true, "LOCAL", 0, 0, 1, 0xFFB030});
+        keep("clock: no time yet");
         // AGENTS dashboard over the APP main screen (middle cleared).
         const app_profile_t &ap = app_profile_agents;
         ui::AppView av = {ap.name, ap.icon24, {ap.legend[0], ap.legend[1], ap.legend[2], ap.legend[3]}, "", "", "KNOB"};

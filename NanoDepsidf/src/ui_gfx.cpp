@@ -314,6 +314,12 @@ int text(const char *s, float x, float y, uint32_t c, int scale, Align align) {
     return text_width(s, scale);
 }
 
+CellGlyph cell_glyph(char ch, int w, int h, int s) {
+    const lgfx::GFXfont &f = ui_font_silkscreen_10_regular;
+    const lgfx::GFXglyph &g = glyph(f, ch);
+    return {f.bitmap + g.bitmapOffset, g.width, g.height, (w - g.width * s) / 2, (h - 7 * s) / 2 + (7 + g.yOffset) * s, s};
+}
+
 int text_blocks(const char *s, float cx, float y, int scale, int16_t (*out)[2], int max) {
     FontPick fp = font_for(scale);
     int x0 = pen_start(*fp.font, fp.px, s, cx, CENTER);

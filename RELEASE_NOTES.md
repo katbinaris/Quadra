@@ -66,12 +66,16 @@ together.
 - **A new loading screen** in the idle screen's manner: a Q tile and an Espressif tile, glued
   back to back, hop, spin-jump and split with a flash; they land side by side with a knock
   and the chime plays.
-- **Idle after 12 s** (was 5), and never in AGENTS while an agent is working or asking.
+- **Idle after 12 s** (was 5), and never in AGENTS while an agent is working or asking. The key
+  that wakes the screen now does its job too (it used to only wake it).
 - **A finer volume ring in MUSIC:** a 1 px circle with a 2 px arc and a small dot, in place of
   the thick, uneven one.
+- **CLOCK is a flap clock:** four dark cards with white digits that flip, the date on small
+  flaps. A tap on F4 switches to an airline board with every zone at once.
 - **New factory values:** the haptic profiles (both feels of each, and a click per profile) and
   the click before SOUND CAL (5.4 kHz, q axis) are the ones tuned on the maintainer's knob.
   Stored settings are kept; the new values show on a fresh knob or after a reset to factory.
+- **SNAP has a ceiling:** 4 in SAW, 2 in SINE (it was 20). A stored value over it is pulled down.
 - **More free memory:** about 62 KB of internal RAM in normal use, up from 18.
 
 ## Companion 0.3.0

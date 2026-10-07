@@ -184,6 +184,7 @@ const FORMAT = [
   { bit: ClockFlag.SECONDS, label: "Seconds" },
   { bit: ClockFlag.DATE, label: "Date" },
   { bit: ClockFlag.LED, label: "Seconds on the LED ring" },
+  { bit: ClockFlag.BOARD, label: "Board: every zone at once" },
 ];
 
 function ClockTab() {

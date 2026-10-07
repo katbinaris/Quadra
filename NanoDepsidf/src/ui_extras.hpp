@@ -58,8 +58,16 @@ struct NowPlayingInputs {
 };
 void draw_now_playing(const NowPlayingInputs &in);
 
-// CLOCK (clock.h): one zone's time, big; the zone's name and UTC offset above it, the date
-// below, a dot per zone, and a seconds ring round the glass (from 12 o'clock, like a dial).
+// CLOCK (clock.h), in one of two screens. The flap clock: one zone's time on four dark cards, the
+// zone's name and UTC offset above it, the date on small flaps below, a square per zone. The
+// board: a row of small flaps per zone, the one chosen in the accent colour. Both keep the
+// seconds ring round the glass (from 12 o'clock, like a dial). The flaps turn by themselves:
+// draw_clock() returns true while one is still turning (draw again soon).
+struct ClockZone {
+    const char *label;
+    bool valid;
+    int hour, minute;
+};
 struct ClockInputs {
     bool valid;                  // the time has been set (WiFi or the Mac service)
     int hour, minute, second;    // the zone's wall clock
@@ -69,8 +77,11 @@ struct ClockInputs {
     int offset_min;              // its UTC offset
     int zone, zones;             // which one, of how many
     uint32_t accent;
+    uint32_t t_ms = 0;               // the flaps' clock
+    bool board = false;              // the airline board, not the flap clock
+    const ClockZone *rows = nullptr; // the board: every zone, `zones` of them
 };
-void draw_clock(const ClockInputs &in);
+bool draw_clock(const ClockInputs &in);
 
 // AGENTS: who's running and what each is doing, in the Main Screen's middle.
 struct AgentRowView {

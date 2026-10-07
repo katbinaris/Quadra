@@ -61,8 +61,8 @@ static const char *TAG = "display";
 //
 // Views: one per menu screen, plus the loading screen and the attract animation. Every view
 // change goes through the iris wipe. Attract starts after ATTRACT_IDLE_MS with no knob
-// movement or button change on the Main Screen; any input ends it (control_task.c swallows
-// the waking button press via ui_state_set_screensaver()).
+// movement or button change on the Main Screen; any input ends it, and the key that
+// ends it does its job too.
 
 #define LCD_LEDC_TIMER LEDC_TIMER_0
 #define LCD_LEDC_CHANNEL LEDC_CHANNEL_0
@@ -367,8 +367,10 @@ static float s_np_volume_k = 0;
 
 // CLOCK: the zone on show (an index into clock_zone_slot()).
 static int s_clock_zone = 0;
+static bool s_clock_busy = false; // a flap is turning: draw again
+_Static_assert(CLOCK_SLOTS == 5, "ui_extras.cpp BOARD_ROWS");
 
-static void draw_clock_view(void) {
+static void draw_clock_view(int64_t now) {
     int n = clock_zone_count();
     if (s_clock_zone >= n) s_clock_zone = 0;
     int slot = clock_zone_slot(s_clock_zone);
@@ -381,8 +383,21 @@ static void draw_clock_view(void) {
     const app_profile_t *p = app_profiles_get(menu_get_app_profile());
     uint32_t acc[3];
     app_accents(p->icon48, p->accents, acc);
-    ui::draw_clock({valid, tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday, tm.tm_mday, tm.tm_mon, (f & CLOCK_24H) != 0,
-                    (f & CLOCK_SECONDS) != 0, (f & CLOCK_DATE) != 0, label, off, s_clock_zone, n, acc[1]});
+    // The board shows every zone.
+    static char s_labels[CLOCK_SLOTS][CLOCK_LABEL_MAX + 1];
+    ui::ClockZone rows[CLOCK_SLOTS] = {};
+    const bool board = (f & CLOCK_BOARD) != 0;
+    for (int i = 0; board && i < n && i < CLOCK_SLOTS; i++) {
+        struct tm zt = {};
+        clock_slot(clock_zone_slot(i), s_labels[i], tz);
+        rows[i].label = s_labels[i];
+        rows[i].valid = clock_now(clock_zone_slot(i), &zt, NULL, NULL);
+        rows[i].hour = zt.tm_hour;
+        rows[i].minute = zt.tm_min;
+    }
+    s_clock_busy = ui::draw_clock({valid, tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday, tm.tm_mday, tm.tm_mon, (f & CLOCK_24H) != 0,
+                                   (f & CLOCK_SECONDS) != 0, (f & CLOCK_DATE) != 0, label, off, s_clock_zone, n, acc[1],
+                                   (uint32_t)(now / 1000), board, rows});
 }
 
 // The notification on show, kept for the iris that closes on it after it's been answered.
@@ -887,7 +902,7 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             }
             bool app = menu_get_hid_type() == MENU_HID_APP;
             if (profile_is("clock")) {
-                draw_clock_view();
+                draw_clock_view(now);
                 break;
             }
             // MUSIC with something playing: the cover takes the whole screen.
@@ -1182,6 +1197,17 @@ static Pace update_ui(void) {
         if (pressed & UI_BTN_F1) f ^= CLOCK_24H;
         if (pressed & UI_BTN_F2) f ^= CLOCK_SECONDS;
         if (pressed & UI_BTN_F3) f ^= CLOCK_DATE;
+        // A tap of F4 (no turn, let go before the menu's long press), as in MUSIC: the other screen.
+        static int64_t s_tap_us = -1;
+        static int32_t s_tap_turns = 0;
+        if (pressed & UI_BTN_F4) {
+            s_tap_us = now;
+            s_tap_turns = turns;
+        }
+        if ((s_last_buttons & ~buttons & UI_BTN_F4) && s_tap_us >= 0) {
+            if (now - s_tap_us < F4_TAP_US && turns == s_tap_turns) f ^= CLOCK_BOARD;
+            s_tap_us = -1;
+        }
         clock_set_flags(f); // stored by the usb task, a moment later
     }
     if (clock_on) {
@@ -1391,6 +1417,7 @@ static Pace update_ui(void) {
                 || (s_view == V_MAIN && ((np_overlay && !vinyl_paced) || board_live)) // volume ring / key glyph, board dots
                 || (s_view == V_MAIN && (wheel_live || param_live)) // card animations, value dial
                 || (s_view == V_MAIN && home_scan) // HOME's rings
+                || (s_view == V_MAIN && clock_on && s_clock_busy) // CLOCK's flaps, while one turns
                 || (s_view == V_MAIN && midi_prog) // MIDI's program badge, until it goes
                 || (s_view == V_HAPTIC
                     && (snap.selected == MENU_HAPTIC_ROW_FEEL || snap.selected == MENU_HAPTIC_ROW_SHAPE

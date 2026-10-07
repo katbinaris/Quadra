@@ -79,6 +79,21 @@ void image565(int x, int y, int w, int h, const uint8_t *be, float brightness = 
 int cap_height(int scale);
 int text_width(const char *s, int scale = 1);
 int text(const char *s, float x, float y, uint32_t c, int scale = 1, Align align = LEFT);
+// One character of the small font (caps 7px), each of its pixels `s` screen pixels, in the
+// middle of a w x h cell: cell_ink() says whether the cell's pixel (i, j) is ink. For the
+// CLOCK's flaps, which draw a character a row at a time.
+struct CellGlyph {
+    const uint8_t *bits;
+    int gw, gh, ox, oy, s;
+};
+CellGlyph cell_glyph(char ch, int w, int h, int s);
+static inline bool cell_ink(const CellGlyph &g, int i, int j) {
+    if (i < g.ox || j < g.oy) return false;
+    int gx = (i - g.ox) / g.s, gy = (j - g.oy) / g.s;
+    if (gx >= g.gw || gy >= g.gh) return false;
+    int bit = gy * g.gw + gx;
+    return (g.bits[bit >> 3] & (0x80 >> (bit & 7))) != 0;
+}
 // Largest scale <= max_scale at which `s` fits in max_w.
 int fit_scale(const char *s, int max_w, int max_scale);
 // Top-left corners of the scale x scale blocks that make up `s` (centered on cx) -- the

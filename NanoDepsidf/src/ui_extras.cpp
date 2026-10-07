@@ -357,61 +357,203 @@ void draw_now_playing(const NowPlayingInputs &in) {
 }
 
 // --- CLOCK ---
+// Two screens (clock.h CLOCK_BOARD): a flap clock -- four dark cards with white digits, the
+// date a row of small flaps -- and an airline board, a row of small flaps per zone. A flap
+// turns in sixths: the top half of the old character falls to the hinge, then the bottom half
+// of the new one comes down from it. A card turns straight to its digit; a small flap steps
+// through its drum (the alphabet, or the digits) until it shows the right character.
+// The approved preview: https://claude.ai/artifact/Jfoo7AsJwtCcd4x5o7SDmH (round 2).
 
-void draw_clock(const ClockInputs &in) {
-    static const char *const WDAY[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
-    static const char *const MON[12] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+static const char FLAP_ALL[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:+-";
+static const char FLAP_DIGITS[] = "0123456789";
+constexpr uint32_t FLAP_CARD_MS = 300, FLAP_STEP_MS = 60;
+// Dark flaps, white characters: white cards were too bright on the panel (2026-10-07).
+constexpr uint32_t FLAP_CARD = 0x242424, FLAP_CARD_SHADE = 0x141414; // the flap clock's
+constexpr uint32_t FLAP_DARK = 0x1E1E1E, FLAP_DARK_SHADE = 0x101010; // the board's
+constexpr int BOARD_COLS = 14; // 7 of the zone, a gap, HH:MM, A / P
+constexpr int BOARD_ROWS = 5;  // clock.h CLOCK_SLOTS
 
-    // The seconds: a dot each round the glass, lit up to now; the five-second marks bigger.
-    if (in.seconds && in.valid) {
-        for (int s = 0; s < 60; s++) {
-            float a = s * 2 * (float)M_PI / 60 - (float)M_PI / 2;
-            int sz = s % 5 == 0 ? 4 : 2;
-            uint32_t c = s == in.second ? WHITE : s < in.second ? in.accent : DARK;
-            rect(CX + cosf(a) * 112 - sz / 2.0f, CY + sinf(a) * 112 - sz / 2.0f, sz, sz, c);
+struct FlapCell {
+    char cur, next;
+    uint32_t t0;
+};
+static FlapCell s_flaps[4 + 10 + BOARD_ROWS * BOARD_COLS]; // the cards, the date, the board
+static bool s_flap_busy;
+
+static char flap_char(char c) { // what a drum can show
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    return c && strchr(FLAP_ALL, c) ? c : ' ';
+}
+static char flap_after(char cur, char target) {
+    const char *set = strchr(FLAP_DIGITS, cur) && strchr(FLAP_DIGITS, target) ? FLAP_DIGITS : FLAP_ALL;
+    const char *p = strchr(set, cur) + 1;
+    return *p ? *p : set[0];
+}
+
+// One flap at (x, y): `a` turning into `b`, phase 0..1. `big`: a card (a 2px hinge with a notch
+// at each end, corners cut by 2); else a small flap, whose 1px hinge goes round the letter.
+static void flap_draw(int x, int y, int w, int h, int s, char a, char b, float phase, bool big, uint32_t fg,
+                      uint32_t bg, uint32_t shade, uint32_t hinge) {
+    const CellGlyph A = cell_glyph(a, w, h, s), B = cell_glyph(b, w, h, s);
+    const int hh = h / 2, sixth = (int)lroundf(phase * 6);
+    const float p = sixth / 6.0f;
+    const int fall = p > 0 && p < 0.5f ? (int)lroundf(hh * (1 - 2 * p)) : 0; // the old top half, this tall
+    const int rise = p >= 0.5f && p < 1 ? (int)lroundf(hh * (2 * p - 1)) : 0; // the new bottom half
+    const int cut = big ? 2 : 1;
+    for (int j = 0; j < h; j++) {
+        const bool top = j < hh;
+        const int edge = j < cut ? cut - j : j >= h - cut ? cut - (h - 1 - j) : 0; // corner pixels
+        int run = 0;
+        uint32_t run_c = 0;
+        for (int i = 0; i <= w; i++) {
+            uint32_t c = 0;
+            if (i < w) {
+                if (p <= 0) c = cell_ink(A, i, j) ? fg : bg;
+                else if (p >= 1) c = cell_ink(B, i, j) ? fg : bg;
+                else {
+                    c = cell_ink(top ? B : A, i, j) ? fg : bg;
+                    if (fall > 0 && top && j >= hh - fall) c = cell_ink(A, i, (j - (hh - fall)) * hh / fall) ? fg : shade;
+                    if (rise > 0 && !top && j < hh + rise) c = cell_ink(B, i, hh + (j - hh) * hh / rise) ? fg : shade;
+                }
+                if (big) {
+                    if (j == hh - 1 || j == hh) c = BLACK;
+                    if ((i < 2 || i >= w - 2) && j >= hh - 3 && j < hh + 3) c = BLACK;
+                } else if (j == hh && c != fg) {
+                    c = hinge;
+                }
+                if (i < edge || i >= w - edge) c = BLACK;
+            }
+            if (i == w || (run > 0 && c != run_c)) {
+                if (run > 0) rect(x + i - run, y + j, run, 1, run_c);
+                run = 0;
+            }
+            run_c = c;
+            run++;
         }
     }
+}
 
+// Flap `id` shows `target`: draws it where it is on the way there, and notes if it is still turning.
+static void flap_cell(int id, char target, bool step, uint32_t now, int x, int y, int w, int h, int s, uint32_t fg,
+                      uint32_t bg, uint32_t shade, uint32_t hinge) {
+    FlapCell &c = s_flaps[id];
+    const uint32_t ms = step ? FLAP_STEP_MS : FLAP_CARD_MS;
+    target = flap_char(target);
+    if (!c.cur) c.cur = c.next = ' '; // the first time: from blank
+    float phase = 0;
+    if (c.cur != c.next) {
+        if (now - c.t0 >= ms) c.cur = c.next;
+        else phase = (float)(now - c.t0) / ms;
+    }
+    if (c.cur == c.next && c.cur != target) {
+        c.next = step ? flap_after(c.cur, target) : target;
+        c.t0 = now;
+    }
+    if (c.cur != c.next) s_flap_busy = true;
+    flap_draw(x, y, w, h, s, c.cur, c.next, phase, !step, fg, bg, shade, hinge);
+}
+
+static void clock_date(const ClockInputs &in, char d[16]) {
+    static const char *const WDAY[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    static const char *const MON[12] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+    snprintf(d, 16, "%s %02d %s", WDAY[in.wday % 7], in.mday % 100, MON[in.mon % 12]);
+}
+static void clock_hhmm(bool valid, bool h24, int hour, int minute, char out[5]) { // "HHMM", "--" while unknown
+    if (!valid) {
+        memcpy(out, "----", 5);
+        return;
+    }
+    const int h = (unsigned)(h24 ? hour : hour % 12 ? hour % 12 : 12) % 24, m = (unsigned)minute % 60;
+    out[0] = h >= 10 || h24 ? (char)('0' + h / 10) : ' ';
+    out[1] = (char)('0' + h % 10);
+    out[2] = (char)('0' + m / 10);
+    out[3] = (char)('0' + m % 10);
+    out[4] = 0;
+}
+
+static void clock_flaps(const ClockInputs &in) {
     // The zone, and its offset from UTC.
     char head[40];
     int a = in.offset_min < 0 ? -in.offset_min : in.offset_min;
     if (a % 60) snprintf(head, sizeof head, "%s  UTC%c%d:%02d", in.label, in.offset_min < 0 ? '-' : '+', a / 60, a % 60);
     else snprintf(head, sizeof head, "%s  UTC%c%d", in.label, in.offset_min < 0 ? '-' : '+', a / 60);
-    text(in.valid ? head : in.label, CX, 52, GREY, 1, CENTER);
+    text(in.valid ? head : in.label, CX, 44, GREY, 1, CENTER);
 
-    // The time: HH:MM big, the seconds smaller on its baseline (12 hours: AM / PM above them).
-    char hm[8] = "--:--", ss[4] = "";
-    if (in.valid) {
-        int h = in.h24 ? in.hour : (in.hour % 12 ? in.hour % 12 : 12);
-        snprintf(hm, sizeof hm, in.h24 ? "%02d:%02d" : "%d:%02d", h, in.minute);
-        if (in.seconds) snprintf(ss, sizeof ss, "%02d", in.second);
-    }
-    bool side = ss[0] || (in.valid && !in.h24);
-    int big = fit_scale("88:88", side ? 150 : 190, 8), small = big > 3 ? big / 2 : 1;
-    int wb = text_width(hm, big), ws = side ? (ss[0] ? text_width(ss, small) : text_width("PM", 1)) + 6 : 0;
-    int x0 = CX - (wb + ws) / 2, y = CY - cap_height(big) / 2 - 6;
-    text(hm, x0, y, in.valid ? WHITE : GREY, big, LEFT);
-    if (ss[0]) text(ss, x0 + wb + 6, y + cap_height(big) - cap_height(small), in.accent, small, LEFT);
-    if (in.valid && !in.h24) text(in.hour < 12 ? "AM" : "PM", x0 + wb + 6, y, GREY, 1, LEFT);
+    // The time: a card a digit, a pair of dots between the hours and the minutes.
+    static const int CARD_X[4] = {31, 74, 127, 170};
+    char hm[5];
+    clock_hhmm(in.valid, in.h24, in.hour, in.minute, hm);
+    for (int i = 0; i < 4; i++)
+        flap_cell(i, hm[i], false, in.t_ms, CARD_X[i], 64, 40, 62, 7, WHITE, FLAP_CARD, FLAP_CARD_SHADE, BLACK);
+    rect(118, 82, 4, 4, WHITE);
+    rect(118, 104, 4, 4, WHITE);
+    if (in.valid && !in.h24) text(in.hour < 12 ? "AM" : "PM", 34, 54, in.accent, 1, LEFT);
 
-    // The date, or where the time is coming from.
-    int below = y + cap_height(big) + 16;
+    // The date, a small flap a character and nothing for a space; or where the time is coming from.
     if (!in.valid) {
-        text("WAITING FOR THE TIME", CX, below, GREY, 1, CENTER);
-        text("WIFI, OR THE MAC SERVICE", CX, below + 14, DARK, 1, CENTER);
+        text("WAITING FOR THE TIME", CX, 140, GREY, 1, CENTER);
+        text("WIFI, OR THE MAC SERVICE", CX, 154, DARK, 1, CENTER);
     } else if (in.date) {
         char d[16];
-        snprintf(d, sizeof d, "%s %02d %s", WDAY[in.wday % 7], in.mday, MON[in.mon % 12]);
-        text(d, CX, below, WHITE, 2, CENTER);
-    }
-
-    // A dot per zone, the one on show lit.
-    if (in.zones > 1) {
-        for (int i = 0; i < in.zones; i++) {
-            float x = CX + (i - (in.zones - 1) / 2.0f) * 12;
-            disc(x, 190, i == in.zone ? 3.0f : 2.0f, i == in.zone ? in.accent : DARK);
+        clock_date(in, d);
+        for (int i = 0; i < 10 && d[i]; i++) {
+            if (d[i] != ' ') flap_cell(4 + i, d[i], true, in.t_ms, 46 + i * 15, 136, 13, 20, 2, WHITE, FLAP_CARD, FLAP_CARD_SHADE, BLACK);
         }
     }
+
+    // A square per zone, the one on show lit.
+    if (in.zones > 1) {
+        const int y = in.date || !in.valid ? 174 : 150;
+        for (int i = 0; i < in.zones; i++) {
+            int x = (int)lroundf(CX + (i - (in.zones - 1) / 2.0f) * 12);
+            if (i == in.zone) rect(x - 2, y - 2, 5, 5, in.accent);
+            else rect(x - 1, y - 1, 3, 3, DARK);
+        }
+    }
+}
+
+static void clock_board(const ClockInputs &in) {
+    const int n = in.zones < BOARD_ROWS ? in.zones : BOARD_ROWS, cols = in.h24 ? BOARD_COLS - 1 : BOARD_COLS;
+    const int x0 = in.h24 ? 42 : 36, y0 = 62 + (BOARD_ROWS - n) * 21 / 2;
+    text("ZONE", x0 + 2, y0 - 14, GREY, 1, LEFT);
+    text("TIME", x0 + 8 * 12 + 2, y0 - 14, GREY, 1, LEFT);
+    for (int r = 0; r < n; r++) {
+        const ClockZone &z = in.rows[r];
+        char row[BOARD_COLS + 1], hm[5];
+        clock_hhmm(z.valid, in.h24, z.hour, z.minute, hm);
+        snprintf(row, sizeof row, "%-8.7s%c%c:%c%c%c", z.label ? z.label : "", hm[0], hm[1], hm[2], hm[3],
+                 !z.valid ? ' ' : z.hour < 12 ? 'A' : 'P');
+        for (int i = 0; i < cols; i++) {
+            if (i == 7) continue; // the gap between the zone and its time
+            flap_cell(14 + r * BOARD_COLS + i, row[i], true, in.t_ms, x0 + i * 12, y0 + r * 21, 11, 18, 2,
+                      r == in.zone ? in.accent : WHITE, FLAP_DARK, FLAP_DARK_SHADE, BLACK);
+        }
+    }
+    const int below = y0 + n * 21 + 7;
+    if (!in.valid) {
+        text("WAITING FOR THE TIME", CX, below, GREY, 1, CENTER);
+    } else if (in.date) {
+        char d[16];
+        clock_date(in, d);
+        text(d, CX, below, WHITE, 1, CENTER);
+    }
+}
+
+bool draw_clock(const ClockInputs &in) {
+    // The seconds: a small dot each round the glass, lit up to now; the five-second marks and
+    // the second itself a pixel bigger.
+    if (in.seconds && in.valid) {
+        for (int s = 0; s < 60; s++) {
+            float a = s * 2 * (float)M_PI / 60 - (float)M_PI / 2;
+            int sz = s % 5 == 0 || s == in.second ? 2 : 1;
+            uint32_t c = s == in.second ? WHITE : s < in.second ? in.accent : DARK;
+            rect(floorf(CX + cosf(a) * 112 - sz / 2.0f + 0.5f), floorf(CY + sinf(a) * 112 - sz / 2.0f + 0.5f), sz, sz, c);
+        }
+    }
+    s_flap_busy = false;
+    if (in.board && in.rows) clock_board(in);
+    else clock_flaps(in);
+    return s_flap_busy;
 }
 
 // --- AGENTS: the dashboard ---

@@ -12,6 +12,7 @@ const app_profile_t app_profile_clock = {
     .icon24 = app_icon_clock_24,
     .icon48 = app_icon_clock_48,
     .legend = {"12/24", "SEC", "DATE", "MENU"},
-    // No actions: the knob and F1-F3 are read by the display task while CLOCK is up, and nothing
-    // goes to the computer. F4: long press = menu, as in every profile.
+    // No actions: the knob and the keys are read by the display task while CLOCK is up, and
+    // nothing goes to the computer. F4: a tap = the other screen (the flap clock / the board),
+    // long press = menu, as in every profile.
 };

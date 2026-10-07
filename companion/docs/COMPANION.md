@@ -434,11 +434,12 @@ the knob's own Lights screen). Changes made on the knob show up here within a se
 <img src="app-look-clock.png" width="720" alt="Look, Clock: 24-hour, seconds and date on; local time; Tokyo and New York as world zones">
 
 **Clock** (the Clock app, extensions v5 and later): what it shows — **24-hour**, **Seconds**,
-**Date**, and **Seconds on the LED ring** — and up to four world zones besides the local time,
+**Date**, **Seconds on the LED ring**, and **Board: every zone at once** (the airline board in
+place of the flap clock) — and up to four world zones besides the local time,
 which is this computer's (the Mac service sends the time and the zone; with Wi-Fi on, the knob
 also sets its clock from the internet). Each zone follows its own daylight-saving rules. In the
 Clock app on the knob, turning steps through the zones; F1 switches 12 / 24 hours, F2 the
-seconds, F3 the date. Stored on the knob as you change them.
+seconds, F3 the date, and a tap on F4 the screen. Stored on the knob as you change them.
 
 ## 13. Device
 

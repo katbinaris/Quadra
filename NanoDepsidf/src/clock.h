@@ -19,6 +19,7 @@ enum {
     CLOCK_SECONDS = 0x02,     // HH:MM:SS, and the screen's seconds ring
     CLOCK_DATE = 0x04,
     CLOCK_LED_SECONDS = 0x08, // the LED ring sweeps the seconds
+    CLOCK_BOARD = 0x10,       // the screen is the airline board (every zone), not the flap clock
 };
 #define CLOCK_FLAGS_DEFAULT (CLOCK_24H | CLOCK_SECONDS | CLOCK_DATE | CLOCK_LED_SECONDS)
 

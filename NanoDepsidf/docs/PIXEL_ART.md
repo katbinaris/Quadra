@@ -74,6 +74,9 @@ each is limited to its own screen:
 - **Agent requests:** the agent's colour (badge, rim, ring arcs); `ALLOW_GREEN` for the F1
   hold arc and the ALLOW label; `DENY_RED` for the DENY label; a near-black `PANEL` behind the
   command.
+- **CLOCK's flaps:** dark cards with white digits (`#242424`, a falling flap `#141414`), and the
+  board's flaps a shade darker (`#1E1E1E`, falling `#101010`) with white letters, the chosen zone in the
+  profile's accent. A flap turns in sixths, in whole rows: no blending.
 - **MUSIC now playing:** the album cover, a 240×240 picture decoded on the device. FLAT
   draws it full screen and darkened under the title. The record styles (`src/ui_vinyl.cpp`)
   average it down to a label and a sleeve, and draw the record per pixel in a **10-step grey

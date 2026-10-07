@@ -479,7 +479,8 @@ project folder, with their state: WORKING, YOUR TURN, ASKING or IDLE.
 ### CLOCK
 
 <p>
-  <img src="NanoDepsidf/docs/images/clock.png" width="200" alt="CLOCK: TOKYO UTC+9, 14:07 with seconds, the date, a dot per zone and a seconds ring">
+  <img src="NanoDepsidf/docs/images/clock.png" width="200" alt="CLOCK, the flap clock: TOKYO UTC+9, 14:07 in white on four dark flap cards, the date on small flaps, a square per zone and a seconds ring">
+  <img src="NanoDepsidf/docs/images/clock-board.png" width="200" alt="CLOCK, the board: five zones as rows of small flaps, like an airport departure board, TOKYO in the accent colour">
 </p>
 
 The time in up to five zones: **LOCAL** (the computer's) and four more of your choice, each
@@ -491,7 +492,13 @@ with its own daylight-saving rules.
 | F1 | 12 / 24 hours |
 | F2 | Seconds on / off |
 | F3 | Date on / off |
-| F4 | Long press: menu |
+| F4 | Tap: the other screen. Long press: menu |
+
+Two screens, both made of flaps that turn when the time changes. The **flap clock** shows one
+zone: the time in white on four dark cards, the date on small flaps under it. The **board** shows every
+zone at once, a row each, like an airport departure board, with the chosen zone in colour; its
+flaps rattle through the letters to reach the new one. A zone's name is cut to 7 letters on the
+board.
 
 The knob learns the time from the [Mac service](#the-mac-service), which sends the time and
 the local zone every few minutes, or from the internet when [WiFi](#wifi) is on. Zones and
@@ -806,8 +813,8 @@ it back; the two then take turns. (Boom, an explosion, was removed in October 20
 Everything is whole pixels; squash and stretch scale the icon nearest-neighbour. Accents
 (sparks, sparkles) use the app's colours: Figma's purple, blue and
 green, Onshape's teal, green and lime, and for other profiles the three most common colours
-of the icon. QUADRA uses amber. Any input wakes the device, and the waking key press is
-swallowed.
+of the icon. QUADRA uses amber. Any input wakes the device, and the key that wakes it
+does its job too: no second press.
 
 <p>
   <img src="NanoDepsidf/docs/images/idle-word.png" width="200" alt="The idle animation with the idle word HELLO in place of QUADRA">
@@ -1240,8 +1247,8 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
   flash.
 
 **Later:**
-- Safe SNAP and DAMP limits for each haptic profile and feel (today they are the full
-  ranges), and tuned values for each profile's second feel.
+- Safe DAMP limits for each haptic profile and feel (today it is the full range; SNAP stops
+  at 4 in SAW and 2 in SINE).
 - Automatic profile switching from the frontmost app.
 - A Figma plugin for direct value control over HID.
 - The companion on Windows.

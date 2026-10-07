@@ -217,7 +217,7 @@ def cmd_wifi(args):
 # --- the CLOCK app (src/clock.h): its time, format and zones ---
 EXT_TIME, EXT_CLOCK, EXT_TAG_CLOCK = 0x2A, 0x2B, 0xC5
 CLOCK_FORMAT, CLOCK_ZONE, CLOCK_GET = 1, 2, 3
-CLOCK_FLAGS = [("24h", 0x01), ("seconds", 0x02), ("date", 0x04), ("led", 0x08)]
+CLOCK_FLAGS = [("24h", 0x01), ("seconds", 0x02), ("date", 0x04), ("led", 0x08), ("board", 0x10)]
 CLOCK_SLOTS, CLOCK_TZ_MAX = 5, 45
 ZONEINFO = "/usr/share/zoneinfo"
 _POSIX_HEAD = re.compile(r"^(<[^>]+>|[A-Za-z]{3,})([+-]?\d{1,3}(?::\d{1,2}){0,2})"
@@ -1093,10 +1093,10 @@ def main():
     g.add_argument("--on", action="store_true", help="switch it back on with the stored setup")
     p.set_defaults(fn=cmd_wifi)
     p = sub.add_parser("clock", help="the CLOCK app: show it; --24h/--12h, --[no-]seconds, --[no-]date, "
-                                     "--[no-]led, --zone N IANA/Zone|none [--label X], --sync")
+                                     "--[no-]led, --[no-]board, --zone N IANA/Zone|none [--label X], --sync")
     p.add_argument("--24h", dest="h24", action="store_true", default=None)
     p.add_argument("--12h", dest="h24", action="store_false")
-    for name in ("seconds", "date", "led"):
+    for name in ("seconds", "date", "led", "board"):
         p.add_argument(f"--{name}", dest=name, action="store_true", default=None)
         p.add_argument(f"--no-{name}", dest=name, action="store_false")
     p.add_argument("--zone", nargs=2, action="append", metavar=("N", "ZONE"),

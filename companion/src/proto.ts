@@ -61,7 +61,7 @@ export const InputOp = { KEYS: 1, TURN: 2 } as const;
 export const SCREEN_SIZE = 240;
 export const EXT_CLOCK_VERSION = 5; // the CLOCK app (EXT_CMD_CLOCK) from this extensions version on
 export const ClockOp = { FORMAT: 1, ZONE: 2, GET: 3 } as const;
-export const ClockFlag = { H24: 0x01, SECONDS: 0x02, DATE: 0x04, LED: 0x08 } as const; // clock.h CLOCK_*
+export const ClockFlag = { H24: 0x01, SECONDS: 0x02, DATE: 0x04, LED: 0x08, BOARD: 0x10 } as const; // clock.h CLOCK_*
 export const CLOCK_SLOTS = 5; // 0 = LOCAL (the Mac service sends it), 1-4 the user's
 export const EXT_NET_VERSION = 4; // WiFi (EXT_CMD_NET) from this extensions version on
 export const NetOp = { SSID: 1, PASS_A: 2, PASS_B: 3, APPLY: 4, STATUS: 5, KEY: 6, CONTROLS: 7 } as const;
