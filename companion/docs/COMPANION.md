@@ -283,7 +283,7 @@ that profile and feel, so the sliders' ranges change with them.
 | **Snap** | How firmly a step holds (kp). Not used in Viscose |
 | **Damp** | How much the knob resists fast turning (kd) |
 | **Shape** | How late the pull of a step rises. At 0% it grows evenly from the centre; higher values make the centre softer and the rise near the next step steeper. Saw only |
-| **Click volume** | The audio click. In Viscose it is off by default and goes up to 20% |
+| **Click volume** | The click the motor plays. In Viscose it is off by default and goes up to 20% |
 | **Click pitch** | The click's pitch. In Viscose, 1× to 2× |
 
 A slider that doesn't apply in the current feel is greyed out and shows `—`.
@@ -470,7 +470,7 @@ should be zero and aren't.
 | **Power** | Current drawn, against what the USB port offers; split into motor, LEDs and board. It's an estimate: the board can't measure current |
 | **Heat** | Chip temperature, and the motor coil's current and heating |
 | **CPU** | Load on each core. Core 0 runs only the control loop: its rate, work time, jitter, spikes and missed ticks |
-| **System** | Uptime, free memory, and counters for dropped HID reports, audio gaps and sensor errors |
+| **System** | Uptime, free memory, and counters for dropped HID reports and sensor errors |
 
 The knob sends these numbers only while this page is open: it does a little work for each
 report, so the app doesn't ask for them otherwise.

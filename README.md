@@ -90,10 +90,11 @@ shows, at 2× scale.
   (Kd), SHAPE, click volume and pitch, tunable live within safe limits. Modes, app inputs
   and parameter steps each use one. Lists end in a **haptic wall**: the knob pushes back
   instead of clicking past the end.
-- **Audible clicks.** Every detent plays a synthesised click through an I²S amplifier and
-  transducer, at the pitch and amplitude of the haptic profile in use, so a fine step sounds
-  different from a coarse one. Two timbres exist (WOOD, THUD); choosing one is hidden from
-  the menu for now, and the saved one plays.
+- **Audible clicks, from the motor.** Every detent plays a short burst through the motor's
+  own windings, so the knob itself is what sounds; there is no speaker in the path. It plays
+  at the pitch and amplitude of the haptic profile in use, so a fine step sounds different
+  from a coarse one, in the wave that profile has chosen from eight (HAPTICS → CLICK), tuned to the pitch the knob
+  rings at (DEVICE → SOUND CAL). The startup chime is the motor too.
 - **USB composite device:**
   - a keyboard, mouse, gamepad and media-key HID interface (in MIDI mode, a class-compliant
     USB MIDI interface instead);
@@ -233,6 +234,7 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
   <img src="NanoDepsidf/docs/images/haptics-steps.png" width="180" alt="Haptics screen choosing the haptic profile: COARSE, with its dial">
   <img src="NanoDepsidf/docs/images/haptics-feel.png" width="180" alt="Haptics screen editing FEEL">
   <img src="NanoDepsidf/docs/images/haptics-smooth.png" width="180" alt="Haptics screen on SMOOTH: SNAP and SHAPE muted">
+  <img src="NanoDepsidf/docs/images/haptics-click.png" width="180" alt="Haptics screen choosing the click: a square wave with a falling pitch">
   <img src="NanoDepsidf/docs/images/hid-app.png" width="180" alt="PROFILES carousel on APP">
   <img src="NanoDepsidf/docs/images/hid-home.png" width="180" alt="PROFILES carousel on HOME">
   <img src="NanoDepsidf/docs/images/hid-mouse.png" width="180" alt="PROFILES on MOUSE: the mode's haptic profile">
@@ -247,11 +249,11 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
 | Screen | Settings |
 |---|---|
 | **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel, then to **SYNTH**, the synth profile. |
-| **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
+| **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. Each profile also keeps its own CLICK, the wave the motor plays: eight to choose from, sine or square, 2 to 8 ms, a C for a falling pitch, each drawn as it sounds. An item that doesn't apply in the current feel shows `--`. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
 | **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°. The screen turns live while you turn the knob. |
 | **LIGHTS** | The LED look. COLOR: APP (the profile's colours, or the album cover's while music plays) or CUSTOM, with HUE and SAT. EFFECT at rest: GRADIENT, SOLID, BREATHE, SPIN, RAINBOW or OFF, with SPEED for the moving ones. LEVEL: brightness, 10–200% of the standard level. The screen's rim mirrors the ring while you tune. |
 | **BOOT MODE** | USB MODE: HID (the normal composite device) or SERIAL (for flashing). Applies after a restart. |
-| **DEVICE** | **SYS INFO**: live readings on five pages, turn to move between them, F1 resets the peaks and counters. POWER: estimated draw (motor, LEDs, board) against what the USB-C / PD chip negotiated at boot. HEAT: chip temperature, motor coil current and heat. CPU: load per core, control-loop rate, spikes per second, worst compute time, jitter, missed ticks. LOOP: where one control iteration's time goes (input, sensor, force, motor), plus sensor CRC errors. SYSTEM: free RAM, dropped HID reports, audio gaps, uptime. **BINDINGS**: MAC or PC. Profiles are written with Mac shortcuts; on PC every Cmd is sent as Ctrl (Option is Alt on both). Switches as you turn, F2 saves. **RECALIBRATE**: F1, then F1 again, restarts and recalibrates the motor (see [First calibration](#first-calibration)). |
+| **DEVICE** | **SYS INFO**: live readings on five pages, turn to move between them, F1 resets the peaks and counters. POWER: estimated draw (motor, LEDs, board) against what the USB-C / PD chip negotiated at boot. HEAT: chip temperature, motor coil current and heat. CPU: load per core, control-loop rate, spikes per second, worst compute time, jitter, missed ticks. LOOP: where one control iteration's time goes (input, sensor, force, motor), plus sensor CRC errors. SYSTEM: free RAM, dropped HID reports, uptime. **BINDINGS**: MAC or PC. Profiles are written with Mac shortcuts; on PC every Cmd is sent as Ctrl (Option is Alt on both). Switches as you turn, F2 saves. **RECALIBRATE**: F1, then F1 again, restarts and recalibrates the motor (see [First calibration](#first-calibration)). **CLICK**: the AXIS the motor's sounds play on (D rings the housing, Q shakes the knob). Turn to switch and hear it, F2 saves. The wave is each haptic profile's own (HAPTICS → CLICK). **SOUND CAL**: finds the pitch the knob rings at, for the clicks the motor plays. Hands off the knob, F1 to start: it plays a sweep two ways and asks which was louder (F1 first, F3 second), then asks about each tone (F1 heard, F3 not heard, F2 again). F4 stops it. |
 
 Screens with a single choice (PROFILES, DISPLAY, BOOT MODE, BINDINGS) change the value directly as you
 turn. LIGHTS, like HAPTICS, is live while you tune and kept by F2. Leaving without F2 puts the saved value back. Saved settings live in NVS flash and
@@ -869,7 +871,7 @@ All of WiFi runs on Core 1, so the control loop keeps its timing.
 | Motor | 3-phase BLDC, 7 pole pairs, driven by an STSPIN233. Voltage-mode FOC (no current sensing), MCPWM at 32 kHz. |
 | Position sensor | MT6701 magnetic encoder, SSI over SPI |
 | Display | GC9A01 round IPS, 240×240, SPI at 80 MHz, PWM backlight |
-| Audio | MAX98357A I²S amplifier driving a transducer |
+| Audio | The motor (clicks and the chime are bursts on its windings). The board's MAX98357A I²S amplifier and transducer are not used |
 | Keys | 4 (F1–F4), active low |
 | LEDs | WS2811: a 60-LED ring around the knob (RGB order) and 8 under the keys, two per key (GRB order), driven over RMT |
 | USB power | Asks the host for 500 mA, the USB 2.0 maximum; an STUSB4500 (I2C 0x28 on GPIO 12 / 13) negotiates USB-C / PD power on its own. The firmware reads it once at boot and shows the result under DEVICE → SYS INFO. The board runs at 5 V: if a PD charger gave more (the chip's stored settings also accept 9 V), the firmware asks for 5 V 3 A again, so the LEDs light and the haptics feel the same on any charger. `quadra.py pd --write-5v` makes the chip's stored settings 5 V 3 A only, so it never asks for more, even before the firmware runs |
@@ -909,7 +911,7 @@ input mapping. Core 1 runs everything that can tolerate latency:
 | `control` | 0 | 20 | 10 kHz FOC + haptic loop, key debounce, menu input, APP-mode engine |
 | `usb` | 1 | 12 | Brings the host in line with the wanted HID state every tick |
 | TinyUSB device task | 1 | 11 | The USB stack itself (kept above the display so animations never delay reports) |
-| `i2s` | 1 | 9 | Click synthesis and audio output |
+| `sndcal` | 1 | 10 | Runs DEVICE → SOUND CAL; idle otherwise |
 | `display` | 1 | 9 | Renders frames into a full-screen sprite and pushes them over SPI |
 | `led` | 1 | 10 | LED ring and key LEDs at 30 fps; above the display so its animations can't stall it, asleep between frames |
 | `pd` | 1 | 10 | One-shot at boot: reads the STUSB4500's contract over I2C (and asks for 5 V again if it's above), then exits |
@@ -1163,7 +1165,7 @@ NanoDepsidf/                   the firmware (PlatformIO project)
 │   ├── user_prefs.c           the idle word, LIGHTS and MUSIC's cover style
 │   ├── sysmon.c               SYS INFO: load, loop timing, heat, estimated power
 │   ├── led_task.c, pd_status.c              the LED ring and key LEDs; the USB-PD contract
-│   ├── i2s_task.c, audio_trigger.c          click synthesis
+│   ├── motor_sound.c          clicks and the chime through the motor; SOUND CAL
 │   ├── menu.c, config_store.c               settings menu + NVS persistence
 │   ├── haptic_params.h        the haptic profiles: factory values and limits
 │   ├── profile_store.c        stored profiles (LittleFS)
@@ -1190,7 +1192,7 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
 
 **Working and confirmed on hardware:**
 - FOC and haptics, with end stops, and the five haptic profiles.
-- Audio clicks.
+- Clicks and the startup chime through the motor, louder than the speaker they replaced.
 - The USB composite device.
 - The settings menu with persistence, display rotation, DEVICE → RECALIBRATE and
   DEVICE → BINDINGS (MAC / PC).

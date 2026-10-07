@@ -19,7 +19,7 @@ All paths below are relative to `NanoDepsidf/`.
 8. [APP mode and profiles](#8-app-mode-and-profiles) (and [HOME](#84-home-mode-xiaomi-lamps), [MIDI](#85-midi-mode))
 9. [USB](#9-usb)
 10. [The companion protocol](#10-the-companion-protocol)
-11. [Audio](#11-audio)
+11. [Sound](#11-sound)
 12. [Display](#12-display)
 13. [LEDs](#13-leds)
 14. [SYS INFO](#14-sys-info)
@@ -40,7 +40,7 @@ The firmware is ESP-IDF 6.1, built with PlatformIO. It is C throughout, except t
 layer, which is C++ because of LovyanGFX.
 
 One design rule shapes everything else: **Core 0 runs only the control loop.** Everything that
-can wait a few milliseconds (USB, audio, display, LEDs, storage, the companion link) runs on
+can wait a few milliseconds (USB, display, LEDs, storage, the companion link) runs on
 Core 1.
 
 ```
@@ -48,9 +48,8 @@ Core 1.
   ┌──────────────────────────┐        ┌───────────────────────────────────────┐
   │ control task, 10 kHz     │        │ usb        HID state sync, companion   │
   │  keys → menu / APP mode  │ atomics│ TinyUSB    the USB stack               │
-  │  encoder → FOC → PWM     │ ─────► │ i2s        click synthesis             │
-  │  detents, clicks         │ queues │ display    frames to the round LCD     │
-  │                          │        │ led        ring + key LEDs             │
+  │  encoder → FOC → PWM     │ ─────► │ display    frames to the round LCD     │
+  │  detents, clicks, sound  │ queues │ led        ring + key LEDs             │
   │                          │ ◄───── │ menu_save  NVS commits                 │
   │                          │ atomics│ sysmon     SYS INFO sampling           │
   └──────────────────────────┘        └───────────────────────────────────────┘
@@ -61,7 +60,7 @@ Core 1.
 `src/main.c`, `app_main()`, runs on Core 0:
 
 1. Logs the reset reason, then initialises NVS (erasing and retrying if the partition needs it).
-2. Creates the queues and shared state: `ipc_init()`, `audio_trigger_init()`, `ui_state_init()`.
+2. Creates the queues and shared state: `ipc_init()`, `motor_sound_init()` (which also starts the `sndcal` task), `ui_state_init()`.
 3. `app_profiles_init()` mounts the profile store and loads stored profiles. It runs before
    `menu_init()`, which looks the saved profile up by its id.
 4. `menu_init()` restores the saved settings from NVS and starts the `menu_save` task.
@@ -71,7 +70,7 @@ Core 1.
    stays in its built-in USB serial/JTAG mode, which the uploader can always reach. The key
    combination always wins over the saved setting, so a saved setting can never lock the board
    out.
-7. Starts the tasks: control (Core 0), then usb (unless in serial mode), i2s, display, led, pd
+7. Starts the tasks: control (Core 0), then usb (unless in serial mode), display, led, pd
    and sysmon (Core 1).
 
 The control task then waits 3 seconds, initialises the encoder and motor driver, and loads the
@@ -95,8 +94,8 @@ Priorities and core assignments are in `src/tasks_common.h`.
 | `led` | 1 | 10 | `led_task.c` | LED ring and key LEDs, 30 fps |
 | `sysmon` | 1 | 10 | `sysmon.c` | SYS INFO sampling twice a second |
 | `menu_save` | 1 | 10 | `menu.c` | Runs F2's NVS commit; asleep otherwise |
+| `sndcal` | 1 | 10 | `motor_sound.c` | Runs DEVICE → SOUND CAL (section 11); polls every 50 ms otherwise |
 | `pd` | 1 | 10 | `pd_status.c` | Reads the USB-C power contract once at boot, then exits |
-| `i2s` | 1 | 9 | `i2s_task.c` | Click and chime synthesis |
 | `display` | 1 | 9 | `display_task.cpp` | Draws frames and pushes them to the LCD |
 | `net_link` | 1 | 10 | `net_link.c` | The companion over WiFi: socket, handshake, AES-GCM (section 10.2) |
 | `net` | 1 | 5 | `net.c` | WiFi: connecting, reconnecting with a growing pause, RSSI; starts SNTP and mDNS |
@@ -105,8 +104,6 @@ Priorities and core assignments are in `src/tasks_common.h`.
 
 Why the priorities are what they are:
 
-- `i2s` and `display` share a priority so FreeRTOS time-slices between them. The i2s task never
-  sleeps on its own, so at a higher priority it would starve the display.
 - TinyUSB sits above the display. The display yields between frames during animations, and a
   yield only hands over to equal or higher priority, so a lower TinyUSB task would not run
   until the animation ended.
@@ -237,8 +234,8 @@ and feel.
 - the **click pulse** (SAW only): a 4 ms, 100 Hz burst driven above the voltage cap so it
   clips, then a 20 ms decaying tail. It is added on top of the spring and is not slew-limited.
   It does not fire while coasting, because kicks during a free spin would add energy to it.
-- the **audio click**: one call to `audio_trigger_click()`, at the active profile's AMP and
-  PITCH. VISCOSE clicks too, on its virtual steps, but its AMP is 0 by default and at most
+- the **audible click**, at the active profile's AMP and PITCH: `motor_sound_click()`, a burst
+  on the motor (section 11). VISCOSE clicks too, on its virtual steps, but its AMP is 0 by default and at most
   20%.
 - the **meaning** of the step: a menu move if the menu is open, an APP-mode step in APP mode,
   otherwise one mouse-wheel step queued for the USB task.
@@ -338,10 +335,10 @@ word, written on one side and read on the other.
 
 | Data | Mechanism | Writer → reader |
 |---|---|---|
-| Settings, haptic profiles (feel and tuning per profile and feel), the active profile | Atomics in `menu.c` | menu, companion, control → control, i2s, display |
+| Settings, haptic profiles (feel and tuning per profile and feel), the active profile | Atomics in `menu.c` | menu, companion, control → control, display |
 | Menu navigation state | Small struct under a spinlock (`s_state_mux`) | control → display |
 | Knob angle, detent, held keys, click and wall counters, screensaver | Atomics in `ui_state.c` | control ↔ display, led, companion |
-| Audio clicks | Counter plus a small ring (`audio_trigger.c`) | control → i2s |
+| The click in use (frequency, shape, axis) | Atomics in `motor_sound.c` | menu, sndcal → control |
 | Mouse-wheel steps (non-APP modes) | FreeRTOS queue, 32 deep, never blocks (`ipc.c`) | control → usb |
 | APP mode: wanted buttons, modifier, pointer travel, wheel steps | Atomics in `app_mode.c` | control → usb |
 | APP mode: key taps | Single-producer, single-consumer ring of 64 | control → usb |
@@ -355,9 +352,6 @@ word, written on one side and read on the other.
 publishes what the host should currently see, and the usb task keeps sending reports until
 the host matches. A report lost to a busy endpoint can then never leave a key or a mouse
 button stuck down.
-
-A click counter rather than a flag means two detents inside one audio poll still play as two
-clicks.
 
 ## 7. Menu and settings
 
@@ -376,7 +370,8 @@ F2 hands the save to the `menu_save` task. `config_store.c` writes one blob per 
 each in its own NVS namespace: `hprof_cfg` (the haptic profiles: each one's feel and its
 tuning per feel, versioned), `hmode_cfg` (the haptic profile per HID type -- the first four;
 HOME has none, so the blob kept its size), `hid_cfg` (with the APP profile and MIDI's synth
-next to it as strings, by id: `app`, `midi_synth`), `boot_cfg`, `disp_cfg`, `bind_cfg`. On load, a blob with the wrong size or an out-of-range
+next to it as strings, by id: `app`, `midi_synth`), `boot_cfg`, `disp_cfg`, `bind_cfg`, and
+`snd_cal` (SOUND CAL's result, written by its own task; section 11). On load, a blob with the wrong size or an out-of-range
 value is rejected and the compiled-in default is kept; haptic values are also clamped into
 their profile's limits. (`haptic_cfg`, the single global tuning from before haptic
 profiles, is no longer read.)
@@ -741,17 +736,77 @@ The extensions, WiFi, MUSIC, AGENTS, CLOCK, LIGHTS and the idle word were contri
 [@Dviros](https://github.com/Dviros) in
 [pull request #17](https://github.com/katbinaris/NanoD_RatchetH1/pull/17).
 
-## 11. Audio
+## 11. Sound
 
-`i2s_task.c` synthesises every sound; there are no audio files. It writes 64-sample chunks at
-44.1 kHz to a MAX98357A amplifier and checks for a new click on every sample.
+The motor is the speaker. `motor_sound.c` plays every sound as a voltage on the motor's
+windings, added in the control loop: the detent click, a short decaying burst
+`A·e^(−t/τ)·sin(2πft)` or its square wave, next to the q-axis click pulse; and the startup
+chime. On the **d axis** a sound makes no torque; the windings and magnets push on the
+housing. On the **q axis** it shakes the rotor and the knob with it. There are no audio files
+and no audio task.
 
-- **Detent click:** one of two timbres (a short pitched "wood" tock, or a tick with a low
-  thud), at the active haptic profile's PITCH and AMP.
-- **Button thump** and the **startup chime**.
+The board also carries a MAX98357A I²S amplifier and a transducer. They were the sound until
+2026-10-07, when the motor turned out louder on two units, at the same frequency on both, and
+no quieter with a hand on the knob. The I²S code is gone; `main.c` holds the amplifier's three
+pins low so it stays shut down. The successor board leaves the parts out.
 
-Oscillators read a 256-entry sine table rather than calling `sinf`. SYS INFO counts **audio
-gaps**: times the driver ran out of fresh samples.
+- **Voltage.** The supply is 5 V, so 2.5 V (half the bus) is the most any vector can be. A
+  d-axis sound gets what Vq (capped at 2.0 V) leaves inside that circle, so a SAW click pulse
+  still leaves 1.5 V; the limit follows the chord of the circle, which needs no square root in
+  the loop. A q-axis sound adds to Vq, up to 2.5 V.
+- **Frequency.** The 10 kHz loop plays 500 Hz to 4 kHz; above that there are too few samples
+  per cycle. A click is the calibrated frequency times the profile's PITCH, clamped to that
+  range.
+- **Loudness.** The profile's AMP sets the voltage on a curve, `a·(2 − a)` of the maximum
+  (15% gives 28%, 50% gives 75%): the motor is faint, so the low settings get more than a
+  straight line would give them. 0 is silent.
+- **Shapes.** Eight, in `motor_sound.c`: sine at 2 ms and 4 ms (the envelope's time constant;
+  a click lasts 1.5 times that), square at 2, 4 and 8 ms, and three with a **chirp** (sine
+  4 ms, square 4 and 8 ms), whose pitch falls to 0.6 of its start through the click, like the
+  old speaker click did. A steady pitch rings hollow; the chirp crosses more of the body's
+  resonances. Lengths are times, not cycle counts, so a low PITCH does not stretch a click (a
+  stretched chirp sounds like a bird). Each shape's decay, glide and length are worked out once
+  at start-up, so picking one in the loop is an index.
+- **Heat.** `sysmon` adds Vd² to its coil current and copper heat.
+- **Startup chime.** `motor_sound_chime()`, called when haptics start: three notes, C7 E7 G7,
+  80 ms apart, decaying at 25/s. They are that high because below 1 kHz the motor is nearly
+  silent. Three voices mixed in the loop, on the click's
+  axis, about 0.44 s in all.
+
+**DEVICE → SOUND CAL** finds what carries best. F1 starts it; it then owns the motor (no
+spring, no detents) and F1–F3 until it ends. F4, leaving the screen, or the knob turning while
+a sound plays stops it: more than 0.05 rad for a d-axis sound, 0.35 rad for a q-axis one,
+which is torque and lets the free knob creep. (A q-axis tone starts at its peak, not at zero:
+from zero its torque sets the knob drifting one way for the whole tone, which stopped the
+first q sweep on hardware.)
+
+1. **Sweep.** 16 log-spaced tones, 500 Hz to 4 kHz, 300 ms each at 1.4 V, on the d axis and
+   then again on the q axis. Then: which sweep was louder? F1 the first (d), F3 the second
+   (q), F2 plays both again. The rest uses that axis.
+2. **Tones.** Each tone from 0.3 V up through 0.7, 1.4 and 2.5 V until F1 (heard); F3 is "not
+   heard", F2 plays it again. The best tone is the one heard at the quietest level (of several,
+   the middle one). The screen draws the answers as bars.
+
+The frequency and the axis go to NVS (`snd_cal`) and are used from then on; until then clicks
+play on the d axis at 3.5 kHz. Every answer is a console line, e.g.
+`sndcal axis=q f=3482 amp=0.70 heard=1`, and the result is `sndcal result axis=… f=… level=…`.
+
+**The wave is per haptic profile**, with AMP and PITCH: WIDE can have a long square click and
+FINE a short sine. **HAPTICS → CLICK** (the eighth item on the ring) picks it for the profile
+shown and draws it: the wave as it is played, as wide as it is long, a dot running along it.
+F2 saves it with the profile; holding F2 puts it back to the factory one (SIN 4MS) with the
+rest. The five shapes are packed, three bits each, into the one spare word of the stored
+profiles (`hprof_cfg`; it held the speaker's timbre), with a flag bit to say they are there,
+so profiles tuned before this still load: they all start from the one shape the device had
+then (`snd_cal` still carries it). The companion does not show or change the wave yet.
+
+**DEVICE → CLICK** switches the axis, D or Q, without a new calibration: a direct screen,
+turning switches it and, being a detent, plays it; F2 saves.
+
+The sequence runs in the `sndcal` task
+on Core 1 (4 KB stack, internal, since it writes NVS); the control loop only plays what its
+atomics say. 150 ms of silence follows every sound, which keeps the windings under what a held
+detent draws.
 
 ## 12. Display
 
@@ -820,7 +875,7 @@ HOME shows the chosen lamp's scale (section 8.4) and MIDI the parameter's value 
 - **Power.** An estimate, not a measurement: motor current from `vq` and the phase resistance,
   LED current from the colours sent, and a fixed figure for the rest of the board.
 - **Heat.** The chip's temperature sensor.
-- **System.** Free heap and its minimum, dropped HID wheel events, audio gaps, encoder CRC
+- **System.** Free heap and its minimum, dropped HID wheel events, encoder CRC
   errors, uptime.
 
 Maximums are held until reset: F1 on a SYS INFO page, or `RESET_PEAKS` from the companion.
