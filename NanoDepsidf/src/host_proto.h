@@ -59,7 +59,7 @@ enum {
     HOST_SET_FEEL = 3,      // i32 haptic_type_t
     HOST_SET_AMP = 4,       // i32 percent
     HOST_SET_PITCH = 5,     // f32 multiplier
-    HOST_SET_SOUND = 6,     // unused: was the speaker's click timbre; ignored
+    HOST_SET_CLICK = 6,     // i32 the click's wave, 0..7 (motor_sound.h). It was the speaker's timbre
     HOST_SET_HID_TYPE = 7,  // i32 menu_hid_type_t
     HOST_SET_MIDI_CH = 8,   // i32 1..16
     HOST_SET_PROFILE = 9,   // i32 app profile index
@@ -82,7 +82,7 @@ enum {
     // [1..3]=dirty bits (1 << HOST_SET_*: live differs from NVS), 24 bits ([3] was 0 before
     // HOST_SET_MIDI_SYNTH)
     // [4..7]=detents i32 [8..11]=kp f32 [12..15]=kd f32 [16]=feel [17]=amp % [18..21]=pitch f32
-    // [22]=0 (was sound) [23]=hid type [24]=midi ch [25]=profile [26]=boot [27]=rotation [28]=host
+    // [22]=click wave | 0x80 (0 or 1 with no 0x80: the old timbre) [23]=hid type [24]=midi ch [25]=profile [26]=boot [27]=rotation [28]=host
     // [29]=shape % (0 from firmware before SHAPE existed)
     // Haptic profiles (protocol 3): KP, KD, SHAPE, FEEL, AMP and PITCH are the values of one
     // haptic profile in its current feel, and are clamped to that profile's limits.

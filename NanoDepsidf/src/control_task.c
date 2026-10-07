@@ -231,6 +231,10 @@ static int64_t s_pp_start_us = 0;
 // push is still capped by the motor voltage limit, so a hand can overpower it; let go and
 // it springs back to the end detent.
 #define HAPTIC_WALL_GAIN 3.0f
+// A click's pitch up one way and down the other by this: 2% each, two thirds of a semitone
+// between the two directions. It was 4%: clicks are tuned to where the knob rings, and that
+// far off it they may lose loudness (reported quieter on hardware, cause not confirmed).
+#define CLICK_DIRECTION_PITCH 1.02f
 // Compared against legacy_fw/src/haptic.cpp (SimpleFOC): the dominant reason legacy feels
 // "clicky" while ours feels "dampened" is that legacy has real closed-loop current control
 // (up to 1.22A/5V) -- ~6x our static Ohm's-law voltage/current ceiling (~0.3A/0.79V), a hard
@@ -384,6 +388,33 @@ static float CONTROL_HOT wrap_pi(float rad) {
 
 static float CONTROL_HOT raw_to_rad(int32_t raw) {
     return ((float)raw / 16384.0f) * 2.0f * (float)M_PI;
+}
+
+// The haptic q-axis voltage to the motor, with this tick's sounds on top (motor_sound.h).
+// Nothing sounding is the plain case. A sound goes to the driver as voices, which it plays at
+// the PWM rate, with what 1 V on each axis is on the phases: the q axis is the d axis a
+// quarter turn on, so one sine and cosine serve both and the torque voltage.
+static void CONTROL_HOT motor_out(float vq, float elec_rad) {
+    static motor_tone_t tone; // Core 0 only
+    float sound = motor_sound_tick(vq, &tone);
+    if (sound <= 0.0f) {
+        foc_dq_t dq = { .d = 0.0f, .q = vq };
+        foc_abc_t abc = foc_inverse_clarke(foc_inverse_park(dq, elec_rad));
+        motor_driver_set_phase_voltages(abc.a, abc.b, abc.c);
+    } else {
+        foc_dq_t unit = { .d = 1.0f, .q = 0.0f };
+        foc_ab_t d_ab = foc_inverse_park(unit, elec_rad);
+        foc_ab_t q_ab = { .alpha = -d_ab.beta, .beta = d_ab.alpha };
+        foc_abc_t d = foc_inverse_clarke(d_ab), q = foc_inverse_clarke(q_ab);
+        tone.d[0] = d.a, tone.d[1] = d.b, tone.d[2] = d.c;
+        tone.q[0] = q.a, tone.q[1] = q.b, tone.q[2] = q.c;
+        tone.u[0] = vq * q.a, tone.u[1] = vq * q.b, tone.u[2] = vq * q.c;
+        motor_driver_tone(&tone);
+    }
+    s_applied_vq = vq;
+    // For SYS INFO's heat estimate: the sound as its RMS, the voices' peaks summed (so a
+    // little high when several play), whichever axis it is on.
+    s_applied_vd = sound * 0.7071f;
 }
 
 // One detent's worth of turning, wherever it goes: the menu (list navigation, or a value while
@@ -979,15 +1010,8 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 float mech_rad = raw_to_rad(raw);
                 float elec_rad = wrap_pi(s_cal.direction * mech_rad * MOTOR_POLE_PAIRS - s_cal.electrical_offset_rad);
                 motor_sound_cal_angle(mech_rad);
-                float vd, vq;
-                motor_sound_dq(0.0f, &vd, &vq);
                 SECTION_DONE(SYSMON_SEC_FORCE);
-                foc_dq_t dq = { .d = vd, .q = vq };
-                foc_ab_t ab = foc_inverse_park(dq, elec_rad);
-                foc_abc_t abc = foc_inverse_clarke(ab);
-                motor_driver_set_phase_voltages(abc.a, abc.b, abc.c);
-                s_applied_vq = vq;
-                s_applied_vd = vd;
+                motor_out(0.0f, elec_rad);
                 SECTION_DONE(SYSMON_SEC_MOTOR);
                 // Haptics start over from wherever the knob is when it ends: no step, no click.
                 s_haptic_prev_detent_index_valid = false;
@@ -1058,9 +1082,11 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                 }
                 // End stop: a crossing that would run a list off its end is refused.
                 bool at_wall = false;
+                int8_t crossing_dir = 0; // which way this tick's crossing went, 0 = none
                 if (s_haptic_prev_detent_index_valid && detent_index != s_haptic_prev_detent_index) {
                     float past = wrap_pi(rel - (float)s_haptic_prev_detent_index * detent_spacing);
                     int8_t dir = (past > 0 ? 1 : -1) * KNOB_DIRECTION; // same sense as the dispatch below
+                    crossing_dir = dir;
                     bool end = menu_is_open() ? menu_at_end(dir) : app_on ? app_mode_at_end(dir)
                              : home_on ? home_at_end(dir) : (midi_on && midi_at_end(dir));
                     if (end) {
@@ -1069,7 +1095,10 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                     }
                 }
                 static bool s_prev_at_wall = false; // LEDs flash once per new push into a wall
-                if (at_wall && !s_prev_at_wall) ui_state_note_wall();
+                if (at_wall && !s_prev_at_wall) {
+                    ui_state_note_wall();
+                    motor_sound_thud(menu_get_click_amplitude()); // a low knock where the click would have been
+                }
                 s_prev_at_wall = at_wall;
                 float target_rel = (float)detent_index * detent_spacing;
                 float error = wrap_pi(target_rel - rel);
@@ -1251,7 +1280,12 @@ static void CONTROL_HOT control_task_fn(void *arg) {
                             // pulse above also triggers the audible one, a burst on the motor
                             // (motor_sound.h). Fires menu open or not -- same physical click
                             // either way, only what the crossing *means* (below) changes.
-                            motor_sound_click(menu_get_haptic_pitch(), menu_get_click_amplitude(), menu_get_click_shape());
+                            // A step one way clicks a little higher than a step the other
+                            // way, so the direction can be heard.
+                            float pitch = menu_get_haptic_pitch();
+                            if (crossing_dir > 0) pitch *= CLICK_DIRECTION_PITCH;
+                            else if (crossing_dir < 0) pitch *= 1.0f / CLICK_DIRECTION_PITCH;
+                            motor_sound_click(pitch, menu_get_click_amplitude(), menu_get_click_shape());
                             ui_state_note_click();
                         }
 
@@ -1332,15 +1366,7 @@ static void CONTROL_HOT control_task_fn(void *arg) {
 
                     SECTION_DONE(SYSMON_SEC_FORCE);
                     if (s_haptic_phase != HAPTIC_DONE) {
-                        // The motor's sound, on the d or the q axis, in the voltage the haptics leave.
-                        float vd_out;
-                        motor_sound_dq(vq_out, &vd_out, &vq_out);
-                        foc_dq_t dq = { .d = vd_out, .q = vq_out };
-                        foc_ab_t ab = foc_inverse_park(dq, elec_rad);
-                        foc_abc_t abc = foc_inverse_clarke(ab);
-                        motor_driver_set_phase_voltages(abc.a, abc.b, abc.c);
-                        s_applied_vq = vq_out;
-                        s_applied_vd = vd_out;
+                        motor_out(vq_out, elec_rad);
                     }
                     SECTION_DONE(SYSMON_SEC_MOTOR);
                     // No periodic logging here (there was a 5 Hz "haptic:" line and a 1 Hz

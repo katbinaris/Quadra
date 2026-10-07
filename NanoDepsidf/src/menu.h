@@ -236,6 +236,7 @@ typedef struct {
     float kp, kd;
     int32_t feel, amp;
     float pitch;
+    int32_t click; // the click's wave (motor_sound.h)
     int32_t hid_type, midi_channel, profile, boot_mode, rotation, host;
     int32_t midi_synth;
     int32_t shape;

@@ -7,15 +7,18 @@
 #include "driver/temperature_sensor.h"
 #include "esp_heap_caps.h"
 #include "esp_intr_alloc.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_memory_utils.h"
 #include "esp_timer.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <math.h>
 #include <stdatomic.h>
 #include <string.h>
 
+static void reset_history_report(void);
 static const char *TAG = "sys";
 
 #define SYSMON_PERIOD_MS 500
@@ -274,6 +277,8 @@ static void sysmon_task_fn(void *arg) {
             ESP_LOGI(TAG, "interrupt allocation:");
             esp_intr_dump(NULL);
             memory_report();
+            mt6701_report();
+            reset_history_report();
 #if SYSMON_QUIET_AFTER_BOOT
             // From here on only warnings and errors reach the console: nobody reads it in
             // normal use, and a console write with no reader can block the writing task.
@@ -304,6 +309,48 @@ static void sysmon_task_fn(void *arg) {
                      (unsigned long)info.sensor_crc_errors);
         }
     }
+}
+
+// --- Why the chip restarted, the last few times ---
+// One reason alone is not enough: main.c logs it before the USB console has a reader, and
+// opening the serial monitor restarts the chip (reason USB), which hides the restart one
+// wanted to know about. So each boot's reason goes to NVS (one small write a boot) and the
+// last RESET_HISTORY of them are printed with the 10 s report, newest first.
+// POWERON = the supply went away (the USB host or the PD chip cut it); BROWNOUT = the 3.3 V
+// rail sagged; PANIC, INT_WDT, TASK_WDT = a crash; USB = the serial monitor or a flash.
+#define RESET_HISTORY 8
+static uint8_t s_reset_history[RESET_HISTORY];
+static uint32_t s_boot_count = 0;
+
+void sysmon_note_boot(void) {
+    nvs_handle_t h;
+    if (nvs_open("sysmon", NVS_READWRITE, &h) != ESP_OK) return;
+    size_t n = sizeof(s_reset_history);
+    if (nvs_get_blob(h, "resets", s_reset_history, &n) != ESP_OK || n != sizeof(s_reset_history)) {
+        memset(s_reset_history, 0xFF, sizeof(s_reset_history));
+    }
+    nvs_get_u32(h, "boots", &s_boot_count);
+    memmove(s_reset_history + 1, s_reset_history, RESET_HISTORY - 1);
+    s_reset_history[0] = (uint8_t)esp_reset_reason();
+    s_boot_count++;
+    nvs_set_blob(h, "resets", s_reset_history, sizeof(s_reset_history));
+    nvs_set_u32(h, "boots", s_boot_count);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+static void reset_history_report(void) {
+    static const char *const why[] = {[ESP_RST_POWERON] = "POWERON", [ESP_RST_SW] = "SW", [ESP_RST_PANIC] = "PANIC",
+                                      [ESP_RST_INT_WDT] = "INT_WDT", [ESP_RST_TASK_WDT] = "TASK_WDT", [ESP_RST_WDT] = "OTHER_WDT",
+                                      [ESP_RST_BROWNOUT] = "BROWNOUT", [ESP_RST_USB] = "USB"};
+    char line[RESET_HISTORY * 12 + 1];
+    int at = 0;
+    for (int i = 0; i < RESET_HISTORY && s_reset_history[i] != 0xFF; i++) {
+        uint8_t r = s_reset_history[i];
+        const char *name = r < sizeof(why) / sizeof(why[0]) && why[r] ? why[r] : "OTHER";
+        at += snprintf(line + at, sizeof(line) - at, "%s%s", i ? ", " : "", name);
+    }
+    ESP_LOGW(TAG, "boot %lu; reset reasons, newest first: %s", (unsigned long)s_boot_count, at ? line : "none recorded");
 }
 
 void sysmon_start(void) {

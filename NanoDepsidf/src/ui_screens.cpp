@@ -200,21 +200,42 @@ void draw_menu_list(const menu_render_snapshot_t &snap, float scroll) {
 static const float ORBIT_R = 82;
 static const float ORBIT_STEP_DEG = 360.0f / (int)MENU_HAPTIC_ROW_COUNT;
 
-// The motor click as it is played, left to right: a sine or a square dying away, its cycles
-// widening where the pitch falls (a chirp), and as wide as it is long (3, 6 or 12 ms). The
-// real click has some twenty cycles; these are fewer, so they can be seen. `icon`: three
-// cycles across the whole width, for the ring. Returns the click's width.
+// The motor click as it is played, left to right: its parts summed, each a sine, a square or
+// noise dying away, its cycles widening where the pitch falls (a chirp), and as wide as it is
+// long (up to 12 ms). The real click has some twenty cycles; these are fewer, so they can be
+// seen. `icon`: three cycles across the whole width, for the ring. Returns the click's width.
 static float click_level(const motor_sound_shape_t &sh, float cycles, float u) {
-    float end = MOTOR_SOUND_CHIRP_END;
-    float ph = sh.chirp ? cycles * (1.0f - powf(end, u)) / -logf(end) : cycles * u;
-    float v = sinf(2.0f * (float)M_PI * ph);
-    if (sh.square) v = v >= 0 ? 1.0f : -1.0f;
-    return v * expf(-u * sh.len_us / sh.tau_us);
+    const float end = MOTOR_SOUND_CHIRP_END;
+    float total = (float)motor_sound_shape_us(&sh), t = u * total, v = 0;
+    for (int i = 0; i < MOTOR_SOUND_PARTS; i++) {
+        const motor_sound_part_t &p = sh.part[i];
+        if (p.len_us == 0 || t < p.delay_us || t >= p.delay_us + p.len_us) continue;
+        float up = (t - p.delay_us) / p.len_us;
+        float part_cycles = cycles * p.len_us / total * p.pitch_pct / 100.0f;
+        float ph = p.chirp ? part_cycles * (1.0f - powf(end, up)) / -logf(end) : part_cycles * up;
+        float w;
+        if (p.wave == MOTOR_SOUND_NOISE) {
+            // As it is played: cycles of a sine, each upside down or not. The same "random"
+            // choices every frame.
+            static const uint8_t flip[16] = {1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0};
+            w = sinf(2.0f * (float)M_PI * ph) * (flip[((int)ph + i * 5) & 15] ? 1.0f : -1.0f);
+        } else {
+            w = sinf(2.0f * (float)M_PI * ph);
+            if (p.wave == MOTOR_SOUND_SQUARE) w = w >= 0 ? 1.0f : -1.0f;
+        }
+        v += w * p.level_pct / 100.0f * expf(-(t - p.delay_us) / p.tau_us);
+    }
+    return v > 1.0f ? 1.0f : v < -1.0f ? -1.0f : v;
 }
+static const motor_sound_shape_t &click_shape_at(int shape) {
+    return MOTOR_SOUND_SHAPE[shape >= 0 && shape < SNDCAL_CLICK_COUNT ? shape : 0];
+}
+static float click_cycles(uint32_t us) { return us <= 3000 ? 3 : us <= 6000 ? 5 : 8; }
 static int click_wave(int shape, bool icon, int x, int y, int w, float amp, uint32_t c, int thick) {
-    const motor_sound_shape_t &sh = MOTOR_SOUND_SHAPE[shape >= 0 && shape < SNDCAL_CLICK_COUNT ? shape : 0];
-    float cycles = icon ? 3 : sh.len_us <= 3000 ? 3 : sh.len_us <= 6000 ? 5 : 8;
-    int span = icon ? w : sh.len_us <= 3000 ? w / 2 : sh.len_us <= 6000 ? w * 3 / 4 : w;
+    const motor_sound_shape_t &sh = click_shape_at(shape);
+    uint32_t us = motor_sound_shape_us(&sh);
+    float cycles = icon ? 3 : click_cycles(us);
+    int span = icon ? w : us <= 3000 ? w / 2 : us <= 6000 ? w * 3 / 4 : w;
     int prev = y;
     for (int px = 0; px < span; px++) {
         int yy = y - (int)lroundf(click_level(sh, cycles, (px + 0.5f) / span) * amp);
@@ -229,14 +250,13 @@ static int click_wave(int shape, bool icon, int x, int y, int w, float amp, uint
 // CLICK animation: a dot runs along the wave as the click plays, then waits.
 static void click_anim(int shape, int x, int y, int w, float amp, uint32_t t, uint32_t c) {
     int span = click_wave(shape, false, x, y, w, amp, c, 2);
-    const motor_sound_shape_t &sh = MOTOR_SOUND_SHAPE[shape >= 0 && shape < SNDCAL_CLICK_COUNT ? shape : 0];
+    const motor_sound_shape_t &sh = click_shape_at(shape);
     const uint32_t play_ms = 700, loop_ms = 1300;
     uint32_t at = t % loop_ms;
     if (at >= play_ms) return;
     float u = (float)at / play_ms;
-    float cycles = sh.len_us <= 3000 ? 3 : sh.len_us <= 6000 ? 5 : 8;
     float px = x + u * span;
-    rect(px - 2, y - click_level(sh, cycles, u) * amp - 2, 5, 5, AMBER);
+    rect(px - 2, y - click_level(sh, click_cycles(motor_sound_shape_us(&sh)), u) * amp - 2, 5, 5, AMBER);
 }
 
 static void orbit_icon(int row, haptic_type_t feel, int click_shape, float cx, float cy, uint32_t c) {

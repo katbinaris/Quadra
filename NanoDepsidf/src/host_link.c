@@ -159,7 +159,7 @@ static void build_settings(uint8_t *r) {
     r[16] = (uint8_t)s.feel;
     r[17] = (uint8_t)s.amp;
     put_f32(r + 18, s.pitch);
-    r[22] = 0; // was the speaker's click timbre
+    r[22] = 0x80 | (uint8_t)s.click; // 0x80: this firmware has a wave here (it was the timbre)
     r[23] = (uint8_t)s.hid_type;
     r[24] = (uint8_t)s.midi_channel;
     r[25] = (uint8_t)s.profile;

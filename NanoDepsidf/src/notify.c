@@ -1,4 +1,5 @@
 #include "notify.h"
+#include "motor_sound.h"
 #include "tasks_common.h"
 #include "ui_state.h"
 #include "freertos/FreeRTOS.h"
@@ -193,6 +194,8 @@ float CONTROL_HOT notify_nudge_vq(int64_t now_us, bool shown) {
         s_nudge_at = 0; // the next time an item needs input, it taps at once
         return 0.0f;
     }
+    // With the first double tap, two soft notes; the taps that follow are silent.
+    if (s_nudge_at == 0) motor_sound_jingle(MOTOR_SOUND_JINGLE_AGENT);
     if (s_nudge_at == 0 || now_us - s_nudge_at >= (int64_t)NOTIFY_NUDGE_PERIOD_MS * 1000) s_nudge_at = now_us;
     int64_t t = now_us - s_nudge_at;
     if (t >= NUDGE_BURST_US + NUDGE_GAP_US) t -= NUDGE_BURST_US + NUDGE_GAP_US; // the second tap

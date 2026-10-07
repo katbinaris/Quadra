@@ -1,6 +1,7 @@
 #include "motor_sound.h"
 #include "tasks_common.h"
 #include "motor_config.h"
+#include "motor_driver.h"
 #include "config_store.h"
 #include "menu.h"
 #include "ui_state.h"
@@ -19,10 +20,14 @@ static const char *TAG = "sndcal";
 #define DT_S (CONTROL_LOOP_PERIOD_US / 1000000.0f)
 #define TWO_PI 6.2831853f
 
-// Tones the 10 kHz loop can play: by 5 kHz (two samples a cycle) the amplitude depends on
-// where the samples happen to fall, so everything stops at 4 kHz.
+// What a click may be pitched to. Sounds are stepped at the PWM rate, 32 kHz
+// (motor_driver_tone()), so the top is set by what is heard, not by the loop: on hardware
+// (2026-10-07) tones up to 10 kHz were about as loud as the 3-4 kHz ones.
 #define SOUND_F_MIN_HZ 500.0f
-#define SOUND_F_MAX_HZ 4000.0f
+#define SOUND_F_MAX_HZ 10000.0f
+// SOUND CAL's tones. Under 1 kHz the motor is nearly silent, so they start there.
+#define CAL_F_MIN_HZ 1000.0f
+#define CAL_F_MAX_HZ 10000.0f
 
 // The voltage a sound may use. Torque comes first: Vq keeps its own cap
 // (MOTOR_EFFECTIVE_STATIC_VOLTAGE_LIMIT_V) and Vd gets what is left inside the half-bus
@@ -30,7 +35,7 @@ static const char *TAG = "sndcal";
 // frequencies the windings' inductance holds the current well under the DC figure, so the
 // current-derived cap is not applied to it. The limit follows the chord of the circle from
 // (Vq 0, Vd max) to (Vq cap, Vd left there): never above the circle, and no square root in
-// the loop.
+// the loop. The sound is clipped to it, sample by sample, where it is played.
 #define SOUND_VMAX_V MOTOR_HALF_BUS_LIMIT_V
 #define SOUND_VQ_CAP_V MOTOR_EFFECTIVE_STATIC_VOLTAGE_LIMIT_V
 static const float SOUND_CHORD_K =
@@ -43,20 +48,43 @@ static const float SOUND_CHORD_K =
 #define SHAPE MOTOR_SOUND_SHAPE
 #define CHIRP_END MOTOR_SOUND_CHIRP_END
 // Per shape, worked out once at start-up (motor_sound_init(), before the control loop runs).
-static float s_shape_decay[SNDCAL_CLICK_COUNT]; // envelope factor per tick
-static float s_shape_glide[SNDCAL_CLICK_COUNT]; // pitch factor per tick: under 1 is the chirp
-static uint32_t s_shape_ticks[SNDCAL_CLICK_COUNT];
-static bool s_shape_square[SNDCAL_CLICK_COUNT];
+static struct {
+    uint32_t ticks, delay; // 0 ticks = no such part
+    float decay;           // envelope factor per tick
+    float glide;           // pitch factor per tick: under 1 is the chirp
+    float pitch, level;
+    uint8_t wave;
+} s_part[SNDCAL_CLICK_COUNT + 1][MOTOR_SOUND_PARTS]; // and the end-stop knock, SHAPE_THUD
+_Static_assert(MOTOR_SOUND_SINE == MOTOR_TONE_SINE && MOTOR_SOUND_SQUARE == MOTOR_TONE_SQUARE && MOTOR_SOUND_NOISE == MOTOR_TONE_NOISE,
+               "a part's wave goes to the driver as it is");
 
-// The startup chime: an arpeggio, C7 E7 G7, 80 ms apart, decaying at 25/s. (The speaker's was
-// C5 E5 G5; at 500 to 800 Hz the motor is nearly silent, and these sit just under where it is
-// loudest.) Three voices can overlap, so each gets a share of the voltage.
-#define CHIME_NOTES 3
-#define CHIME_HZ {2093.0f, 2637.0f, 3136.0f}
-#define CHIME_STEP_TICKS ((uint32_t)(0.08f / DT_S))
-#define CHIME_TICKS (2 * CHIME_STEP_TICKS + (uint32_t)(7.0f / 25.0f / DT_S)) // to about -60 dB after the last note
-#define CHIME_NOTE_V (SOUND_VMAX_V / 1.5f)
-static const float CHIME_DECAY = __builtin_expf(-25.0f * DT_S); // envelope factor per tick
+// The little tunes: up to three notes, each starting `step_ms` after the one before and dying
+// away at `decay` per second. All high: at 500 to 800 Hz the motor is nearly silent (the old
+// speaker's chime was C5 E5 G5). Notes overlap, so each gets a share of the voltage. Not
+// const: in RAM, with the rest the loop reads. A MOTOR_TONE_RICH note is given half as much
+// again as a sine would be: its fundamental is two thirds of its peak.
+#define JINGLE_NOTES 3
+static struct {
+    uint8_t notes, wave;
+    float hz[JINGLE_NOTES];
+    uint16_t step_ms;
+    float decay, volts;
+    // worked out at start-up
+    uint32_t step_ticks, ticks;
+    float decay_tick;
+} s_jingle_def[MOTOR_SOUND_JINGLE_COUNT] = {
+    // The startup chime: C7 E7 G7, with harmonics now that they fit under 10 kHz.
+    [MOTOR_SOUND_JINGLE_CHIME] = {3, MOTOR_TONE_RICH, {2093.0f, 2637.0f, 3136.0f}, 80, 25.0f, SOUND_VMAX_V},
+    [MOTOR_SOUND_JINGLE_SAVE] = {2, MOTOR_TONE_RICH, {3136.0f, 4186.0f}, 70, 35.0f, 1.8f},
+    [MOTOR_SOUND_JINGLE_CANCEL] = {1, MOTOR_TONE_RICH, {1568.0f}, 0, 30.0f, 2.2f},
+    [MOTOR_SOUND_JINGLE_AGENT] = {2, MOTOR_TONE_SINE, {2637.0f, 3520.0f}, 120, 12.0f, 0.8f},
+};
+
+// The end-stop knock (motor_sound_thud()): a click shape of its own, low and noisy.
+// On the d axis only (burst_arm()), where parts may stack: both at full level, and long, as
+// the d axis is the quieter one.
+static const motor_sound_shape_t THUD = {{{6000, 9000, MOTOR_SOUND_SQUARE, 0, 50, 100, 0}, {3000, 4500, MOTOR_SOUND_NOISE, 0, 100, 100, 0}}};
+#define SHAPE_THUD SNDCAL_CLICK_COUNT
 
 // --- SOUND CAL's programme ---
 #define CAL_TONE_MS 300
@@ -93,58 +121,84 @@ static portMUX_TYPE s_view_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // --- Core 0 ---
 
+// The voices handed to the motor driver: the click's parts (or SOUND CAL's tone, which never
+// plays with one) and the chime's three notes.
+#define VOICE_CLICK 0
+#define VOICE_JINGLE MOTOR_SOUND_PARTS
+_Static_assert(MOTOR_TONE_VOICES >= VOICE_JINGLE + JINGLE_NOTES, "a voice for each part of a click and for each note");
+
 static struct {
-    uint32_t left; // ticks still to play
-    float phase, inc, env, decay, glide;
-    bool q, square;
+    struct {
+        uint32_t wait, left; // ticks until it starts, and still to play
+        float hz, env, decay, glide;
+        uint8_t wave;
+        bool fresh, q;
+    } part[MOTOR_SOUND_PARTS];
 } s_burst;
-static float s_tone_phase = 0.0f;
 static float s_tone_amp = 0.0f;
 
+static _Atomic int s_jingle_request = -1; // a motor_sound_jingle_t to start, from any task
 static struct {
-    uint32_t tick; // CHIME_TICKS = not playing
-    float phase[CHIME_NOTES], inc[CHIME_NOTES], env[CHIME_NOTES];
+    int which; // -1 = not playing
+    uint32_t tick;
+    float env[JINGLE_NOTES];
     bool q;
-} s_chime = {.tick = CHIME_TICKS};
+} s_jingle = {.which = -1};
 
-void CONTROL_HOT motor_sound_chime(void) {
-    static float hz[CHIME_NOTES] = CHIME_HZ; // not const: in RAM, with the rest the loop reads
-    for (int i = 0; i < CHIME_NOTES; i++) {
-        s_chime.phase[i] = 0.0f;
-        s_chime.inc[i] = TWO_PI * hz[i] * DT_S;
-        s_chime.env[i] = CHIME_NOTE_V;
-    }
-    s_chime.q = LD(s_click_q);
-    s_chime.tick = 0;
+void CONTROL_HOT motor_sound_jingle(motor_sound_jingle_t which) {
+    ST(s_jingle_request, (int)which);
 }
 
+void CONTROL_HOT motor_sound_chime(void) {
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_CHIME);
+}
+
+static float CONTROL_HOT clamp_hz(float hz) {
+    return hz < SOUND_F_MIN_HZ ? SOUND_F_MIN_HZ : hz > SOUND_F_MAX_HZ ? SOUND_F_MAX_HZ : hz;
+}
+
+// The end-stop knock stays off the q axis. TOCK, a click built the same way (a low square
+// under noise), cut the USB power on the q axis on hardware, 2026-10-07 (reset reason
+// POWERON): first with one click, then, once q-axis voices shared the voltage, only with the
+// SINE feel. On the d axis it was fine. The cause was not found and TOCK was dropped; the
+// knock plays while the knob is pushed into a wall, where a power cut would be worst.
 static void CONTROL_HOT burst_arm(float hz, int shape, float volts, bool q) {
-    s_burst.q = q;
-    s_burst.square = s_shape_square[shape];
-    s_burst.glide = s_shape_glide[shape];
-    s_burst.decay = s_shape_decay[shape];
-    s_burst.left = s_shape_ticks[shape];
-    s_burst.phase = 0.0f;
-    s_burst.inc = TWO_PI * hz * DT_S;
-    s_burst.env = volts;
+    if (shape == SHAPE_THUD) q = false;
+    for (int i = 0; i < MOTOR_SOUND_PARTS; i++) {
+        s_burst.part[i].q = q;
+        s_burst.part[i].wave = s_part[shape][i].wave;
+        s_burst.part[i].glide = s_part[shape][i].glide;
+        s_burst.part[i].decay = s_part[shape][i].decay;
+        s_burst.part[i].wait = s_part[shape][i].delay;
+        s_burst.part[i].left = s_part[shape][i].ticks;
+        s_burst.part[i].hz = clamp_hz(hz * s_part[shape][i].pitch);
+        s_burst.part[i].env = volts * s_part[shape][i].level;
+        s_burst.part[i].fresh = true;
+    }
 }
 
 void CONTROL_HOT motor_sound_click(float pitch, float amp, int shape) {
     if (amp <= 0.0f || shape < 0 || shape >= SNDCAL_CLICK_COUNT) return;
-    float hz = LD(s_click_hz) * pitch;
-    if (hz < SOUND_F_MIN_HZ) hz = SOUND_F_MIN_HZ;
-    if (hz > SOUND_F_MAX_HZ) hz = SOUND_F_MAX_HZ;
+    float hz = clamp_hz(LD(s_click_hz) * pitch);
     // AMP on a curve, a(2 - a): the motor is faint, so the low settings get more of the
     // voltage than a straight line gives (15% -> 28%, 50% -> 75%).
     burst_arm(hz, shape, SOUND_VMAX_V * amp * (2.0f - amp), LD(s_click_q));
 }
 
+void CONTROL_HOT motor_sound_thud(float amp) {
+    if (amp <= 0.0f) return;
+    burst_arm(LD(s_click_hz), SHAPE_THUD, SOUND_VMAX_V * amp * (2.0f - amp), LD(s_click_q));
+}
+
 int CONTROL_HOT motor_sound_axis(void) { return LD(s_click_q); }
 void CONTROL_HOT motor_sound_set_axis(int axis) { ST(s_click_q, axis != 0); }
 
-void CONTROL_HOT motor_sound_dq(float vq, float *vd_out, float *vq_out) {
-    float sd = 0.0f, sq = 0.0f; // the sound, per axis
+float CONTROL_HOT motor_sound_tick(float vq, struct motor_tone *out) {
+    motor_tone_voice_t *voice = out->voice;
+    for (int i = 0; i < MOTOR_TONE_VOICES; i++) voice[i].volts = 0.0f;
+    float total = 0.0f, on_q = 0.0f; // the peaks, summed: all of them, and those on the q axis
     if (LD(s_cal_on)) {
+        bool was_silent = s_tone_amp == 0.0f;
         float target = LD(s_tone_v);
         if (s_tone_amp < target) {
             s_tone_amp += TONE_SLEW_V_PER_TICK;
@@ -153,55 +207,73 @@ void CONTROL_HOT motor_sound_dq(float vq, float *vd_out, float *vq_out) {
             s_tone_amp -= TONE_SLEW_V_PER_TICK;
             if (s_tone_amp < target) s_tone_amp = target;
         }
-        // A q-axis tone starts at its peak: from zero, a sine's torque would set the free knob
-        // drifting one way for as long as the tone lasts.
-        if (s_tone_amp == 0.0f) s_tone_phase = LD(s_tone_q) ? TWO_PI / 4.0f : 0.0f;
         if (s_tone_amp > 0.0f) {
-            s_tone_phase += TWO_PI * LD(s_tone_hz) * DT_S;
-            if (s_tone_phase >= TWO_PI) s_tone_phase -= TWO_PI;
-            float v = s_tone_amp * sinf(s_tone_phase);
-            if (LD(s_tone_q)) sq += v;
-            else sd += v;
+            // A q-axis tone starts at its peak: from zero, a sine's torque would set the free
+            // knob drifting one way for as long as the tone lasts.
+            bool q = LD(s_tone_q);
+            voice[VOICE_CLICK] = (motor_tone_voice_t){.hz = LD(s_tone_hz), .volts = s_tone_amp, .q = q, .start = was_silent, .cosine = q};
+            total += s_tone_amp;
+            if (q) on_q += s_tone_amp;
         }
     } else {
         s_tone_amp = 0.0f;
-        s_tone_phase = 0.0f;
-    }
-    if (s_chime.tick < CHIME_TICKS) {
-        float v = 0.0f;
-        for (int i = 0; i < CHIME_NOTES; i++) {
-            if (s_chime.tick < i * CHIME_STEP_TICKS) break; // this note hasn't started
-            v += s_chime.env[i] * sinf(s_chime.phase[i]);
-            s_chime.phase[i] += s_chime.inc[i];
-            if (s_chime.phase[i] >= TWO_PI) s_chime.phase[i] -= TWO_PI;
-            s_chime.env[i] *= CHIME_DECAY;
+        for (int i = 0; i < MOTOR_SOUND_PARTS; i++) {
+            if (s_burst.part[i].left == 0) continue;
+            if (s_burst.part[i].wait > 0) {
+                s_burst.part[i].wait--;
+                continue;
+            }
+            voice[VOICE_CLICK + i] = (motor_tone_voice_t){.hz = s_burst.part[i].hz, .volts = s_burst.part[i].env, .q = s_burst.part[i].q,
+                                                          .wave = s_burst.part[i].wave, .start = s_burst.part[i].fresh};
+            total += s_burst.part[i].env;
+            if (s_burst.part[i].q) on_q += s_burst.part[i].env;
+            s_burst.part[i].fresh = false;
+            s_burst.part[i].hz *= s_burst.part[i].glide;
+            s_burst.part[i].env *= s_burst.part[i].decay;
+            s_burst.part[i].left--;
         }
-        if (s_chime.q) sq += v;
-        else sd += v;
-        s_chime.tick++;
     }
-    if (s_burst.left > 0) {
-        float w = sinf(s_burst.phase);
-        if (s_burst.square) w = w >= 0.0f ? 1.0f : -1.0f;
-        if (s_burst.q) sq += s_burst.env * w;
-        else sd += s_burst.env * w;
-        s_burst.phase += s_burst.inc;
-        if (s_burst.phase >= TWO_PI) s_burst.phase -= TWO_PI;
-        s_burst.inc *= s_burst.glide;
-        s_burst.env *= s_burst.decay;
-        s_burst.left--;
+    int request = atomic_exchange_explicit(&s_jingle_request, -1, memory_order_relaxed);
+    if (request >= 0 && request < MOTOR_SOUND_JINGLE_COUNT) {
+        s_jingle.which = request;
+        s_jingle.tick = 0;
+        s_jingle.q = LD(s_click_q);
+        for (int i = 0; i < JINGLE_NOTES; i++) s_jingle.env[i] = s_jingle_def[request].volts;
+    }
+    if (s_jingle.which >= 0) {
+        for (int i = 0; i < s_jingle_def[s_jingle.which].notes; i++) {
+            uint32_t from = i * s_jingle_def[s_jingle.which].step_ticks;
+            if (s_jingle.tick < from) break; // this note hasn't started
+            voice[VOICE_JINGLE + i] = (motor_tone_voice_t){.hz = s_jingle_def[s_jingle.which].hz[i], .volts = s_jingle.env[i],
+                                                           .q = s_jingle.q, .wave = s_jingle_def[s_jingle.which].wave,
+                                                           .start = s_jingle.tick == from};
+            total += s_jingle.env[i];
+            if (s_jingle.q) on_q += s_jingle.env[i];
+            s_jingle.env[i] *= s_jingle_def[s_jingle.which].decay_tick;
+        }
+        if (++s_jingle.tick >= s_jingle_def[s_jingle.which].ticks) s_jingle.which = -1;
+    }
+    // Voices on the q axis share the voltage: together they are never more than one voice at
+    // full level. Stacked past that, the sum is clipped, and clipping two pitches that are
+    // close makes their difference tone, a slow one: on the q axis that is torque. TOCK (a
+    // square at 0.75 of the pitch under noise at the pitch, both at full level) cut the USB
+    // power with one click on the q axis, while its square alone, and TOCK on the d axis,
+    // were fine (2026-10-07). On the d axis stacking stays: it is louder and makes no torque.
+    if (on_q > SOUND_VMAX_V) {
+        float k = SOUND_VMAX_V / on_q;
+        for (int i = 0; i < MOTOR_TONE_VOICES; i++) {
+            if (voice[i].volts > 0.0f && voice[i].q) voice[i].volts *= k;
+        }
+        total -= on_q - SOUND_VMAX_V;
+        on_q = SOUND_VMAX_V;
     }
     // On the q axis the sound adds to the torque voltage, up to the half bus.
-    float q = vq + sq;
-    if (q > SOUND_VMAX_V) q = SOUND_VMAX_V;
-    if (q < -SOUND_VMAX_V) q = -SOUND_VMAX_V;
+    out->q_min = -SOUND_VMAX_V - vq;
+    out->q_max = SOUND_VMAX_V - vq;
     // On the d axis it gets what q leaves: the chord, which only holds up to Vq's own cap.
-    float qa = q < 0.0f ? -q : q;
-    float lim = qa > SOUND_VQ_CAP_V ? 0.0f : SOUND_VMAX_V - qa * SOUND_CHORD_K;
-    if (sd > lim) sd = lim;
-    if (sd < -lim) sd = -lim;
-    *vd_out = sd;
-    *vq_out = q;
+    float qa = (vq < 0.0f ? -vq : vq) + on_q;
+    out->d_lim = qa > SOUND_VQ_CAP_V ? 0.0f : SOUND_VMAX_V - qa * SOUND_CHORD_K;
+    return total;
 }
 
 bool CONTROL_HOT motor_sound_cal_active(void) {
@@ -234,7 +306,7 @@ void CONTROL_HOT motor_sound_cal_start(void) {
 // --- Core 1: the calibration ---
 
 static uint16_t tone_hz(int i) {
-    return (uint16_t)lroundf(SOUND_F_MIN_HZ * powf(SOUND_F_MAX_HZ / SOUND_F_MIN_HZ, (float)i / (SNDCAL_TONE_COUNT - 1)));
+    return (uint16_t)lroundf(CAL_F_MIN_HZ * powf(CAL_F_MAX_HZ / CAL_F_MIN_HZ, (float)i / (SNDCAL_TONE_COUNT - 1)));
 }
 
 static void apply_click(float hz, bool q, bool calibrated) {
@@ -443,17 +515,30 @@ void motor_sound_save(void) {
 }
 
 void motor_sound_init(void) {
-    for (int i = 0; i < SNDCAL_CLICK_COUNT; i++) {
-        s_shape_ticks[i] = (uint32_t)(SHAPE[i].len_us / CONTROL_LOOP_PERIOD_US);
-        s_shape_square[i] = SHAPE[i].square;
-        s_shape_decay[i] = expf(-DT_S / (SHAPE[i].tau_us / 1000000.0f));
-        s_shape_glide[i] = SHAPE[i].chirp ? powf(CHIRP_END, 1.0f / s_shape_ticks[i]) : 1.0f;
+    for (int i = 0; i <= SNDCAL_CLICK_COUNT; i++) {
+        for (int k = 0; k < MOTOR_SOUND_PARTS; k++) {
+            const motor_sound_part_t *pt = i == SHAPE_THUD ? &THUD.part[k] : &SHAPE[i].part[k];
+            if (pt->len_us == 0) continue;
+            s_part[i][k].ticks = (uint32_t)(pt->len_us / CONTROL_LOOP_PERIOD_US);
+            s_part[i][k].delay = (uint32_t)(pt->delay_us / CONTROL_LOOP_PERIOD_US);
+            s_part[i][k].wave = pt->wave;
+            s_part[i][k].decay = expf(-DT_S / (pt->tau_us / 1000000.0f));
+            s_part[i][k].glide = pt->chirp ? powf(CHIRP_END, 1.0f / s_part[i][k].ticks) : 1.0f;
+            s_part[i][k].pitch = pt->pitch_pct / 100.0f;
+            s_part[i][k].level = pt->level_pct / 100.0f;
+        }
+    }
+    for (int i = 0; i < MOTOR_SOUND_JINGLE_COUNT; i++) {
+        s_jingle_def[i].step_ticks = (uint32_t)(s_jingle_def[i].step_ms / 1000.0f / DT_S);
+        // To about -60 dB after the last note.
+        s_jingle_def[i].ticks = (s_jingle_def[i].notes - 1) * s_jingle_def[i].step_ticks + (uint32_t)(7.0f / s_jingle_def[i].decay / DT_S);
+        s_jingle_def[i].decay_tick = expf(-s_jingle_def[i].decay * DT_S);
     }
     s_view.best = SNDCAL_NOT_HEARD;
     snd_cal_cfg_t cfg;
     if (config_store_load_snd_cal(&cfg)) {
         apply_click(cfg.freq_hz, cfg.axis, cfg.calibrated);
-        s_legacy_shape = cfg.shape;
+        s_legacy_shape = MOTOR_SOUND_SHAPE_FROM_10[MOTOR_SOUND_SHAPE_FROM_14[cfg.shape < 14 ? cfg.shape : MOTOR_SOUND_SHAPE_DEFAULT]];
         memcpy(s_heard, cfg.heard, sizeof(s_heard));
         memcpy(s_view.heard, cfg.heard, sizeof(s_view.heard));
     } else {

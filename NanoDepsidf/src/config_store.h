@@ -49,7 +49,7 @@ typedef struct {
 
 // The motor's click (motor_sound.h): its frequency from DEVICE -> SOUND CAL, its axis from
 // there or DEVICE -> CLICK, and the calibration's answers (per tone: the quietest level heard, 1 up; 0xFF never).
-#define SND_CAL_CFG_VERSION 4 // 4: the shape by index
+#define SND_CAL_CFG_VERSION 5 // 4: the shape by index. 5: the tones are 1 to 10 kHz (were 500 Hz to 4 kHz)
 typedef struct {
     uint32_t version;
     uint16_t freq_hz;

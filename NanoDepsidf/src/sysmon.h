@@ -62,6 +62,9 @@ typedef struct {
 } sysmon_info_t;
 
 // Starts the Core 1 task that samples everything twice a second (and logs a line every 5 s).
+// Once at boot, after nvs_flash_init(): records why the chip restarted (the 10 s console
+// report prints the last few).
+void sysmon_note_boot(void);
 void sysmon_start(void);
 
 // Any Core 1 task: the latest refresh.

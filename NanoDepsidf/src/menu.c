@@ -111,12 +111,30 @@ static void hp_set_tune(int p, int f, const haptic_tune_t *t) {
     ST(s_hp_pitch[p][f], clampf(t->pitch, l->pitch_min, l->pitch_max));
 }
 // The five click shapes in the stored profiles' one spare word (it was the speaker's timbre,
-// 0 or 1): three bits each, and the top bit to say they are there at all.
+// 0 or 1): four bits each, and flag bits to say they are there at all and which list they
+// index. Only the first flag: three bits each, of the first eight shapes. The first two: four
+// bits, of the fourteen there were for an afternoon. With HP_CLICK_LIST_10: of the ten after
+// that. All four: today's list. The older ones are put through MOTOR_SOUND_SHAPE_FROM_14 and
+// _FROM_10.
 #define HP_CLICK_STORED 0x40000000
+#define HP_CLICK_WIDE 0x20000000
+#define HP_CLICK_LIST_10 0x10000000
+#define HP_CLICK_LIST_9 0x08000000
+_Static_assert(SNDCAL_CLICK_COUNT <= 16, "four bits a profile");
 static int32_t hp_click_pack(void) {
-    int32_t v = HP_CLICK_STORED;
-    for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) v |= (LD(s_hp_click[p]) & 7) << (3 * p);
+    int32_t v = HP_CLICK_STORED | HP_CLICK_WIDE | HP_CLICK_LIST_10 | HP_CLICK_LIST_9;
+    for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) v |= (LD(s_hp_click[p]) & 15) << (4 * p);
     return v;
+}
+static void hp_click_unpack(int32_t v) {
+    if (!(v & HP_CLICK_STORED)) return;
+    int bits = v & HP_CLICK_WIDE ? 4 : 3;
+    for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) {
+        int c = (v >> (bits * p)) & ((1 << bits) - 1);
+        if (!(v & HP_CLICK_LIST_10)) c = c < 14 ? MOTOR_SOUND_SHAPE_FROM_14[c] : MOTOR_SOUND_SHAPE_DEFAULT;
+        if (!(v & HP_CLICK_LIST_9)) c = c < 10 ? MOTOR_SOUND_SHAPE_FROM_10[c] : MOTOR_SOUND_SHAPE_DEFAULT;
+        ST(s_hp_click[p], c < SNDCAL_CLICK_COUNT ? c : MOTOR_SOUND_SHAPE_DEFAULT);
+    }
 }
 static void hp_factory(int p) {
     ST(s_hp_click[p], MOTOR_SOUND_SHAPE_DEFAULT);
@@ -823,6 +841,7 @@ static void save_task_fn(void *arg) {
         settings_copy_group(&s_saved, &cur, job.group);
         portEXIT_CRITICAL(&s_state_mux);
         atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
     }
 }
 
@@ -860,9 +879,7 @@ void menu_init(void) {
     for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) ST(s_hp_click[p], motor_sound_legacy_shape());
     if (config_store_load_haptic_profiles(&hcfg)) {
         ST(s_hp_edit, clampi(hcfg.edit, 0, HAPTIC_PROFILE_COUNT - 1));
-        if (hcfg.click & HP_CLICK_STORED) {
-            for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) ST(s_hp_click[p], (hcfg.click >> (3 * p)) & 7);
-        }
+        hp_click_unpack(hcfg.click);
         for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) {
             int feel = hcfg.feel[p];
             if (feel >= 0 && feel < HAPTIC_TYPE_COUNT && (HAPTIC_PROFILES[p].feels & (1u << feel))) ST(s_hp_feel[p], feel);
@@ -942,10 +959,12 @@ void menu_input_back(void) {
         // no-op
     } else if (s_armed) {
         s_armed = false; // cancel the action, stay on the screen
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_CANCEL);
     } else if (s_editing) {
         // Cancel: put back what the value was when the edit started.
         settings_restore(&s_undo);
         s_editing = false;
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_CANCEL);
     } else {
         const menu_screen_t *top = s_stack[s_stack_depth - 1].screen;
         if (top->direct_edit) {
@@ -1318,6 +1337,7 @@ void menu_remote_get(menu_remote_settings_t *out) {
     out->feel = f;
     out->amp = t->amp;
     out->pitch = t->pitch;
+    out->click = cur.hp_click[p];
     out->kp_min = l->kp_min;
     out->kp_max = l->kp_max;
     out->kd_min = l->kd_min;
@@ -1341,6 +1361,7 @@ void menu_remote_get(menu_remote_settings_t *out) {
     if (f != saved.hp_feel[p]) d |= 1u << HOST_SET_FEEL;
     if (t->amp != st->amp) d |= 1u << HOST_SET_AMP;
     if (t->pitch != st->pitch) d |= 1u << HOST_SET_PITCH;
+    if (cur.hp_click[p] != saved.hp_click[p]) d |= 1u << HOST_SET_CLICK;
     // Unsaved changes in the other profiles (or this one's other feels) show on the profile.
     for (int q = 0; q < HAPTIC_PROFILE_COUNT; q++) {
         for (int g = 0; g < HAPTIC_TYPE_COUNT; g++) {
@@ -1348,7 +1369,7 @@ void menu_remote_get(menu_remote_settings_t *out) {
                 d |= 1u << HOST_SET_HAPTIC_PROFILE;
             }
         }
-        if (q != p && cur.hp_feel[q] != saved.hp_feel[q]) d |= 1u << HOST_SET_HAPTIC_PROFILE;
+        if (q != p && (cur.hp_feel[q] != saved.hp_feel[q] || cur.hp_click[q] != saved.hp_click[q])) d |= 1u << HOST_SET_HAPTIC_PROFILE;
     }
     if (cur.hid_type != saved.hid_type) d |= 1u << HOST_SET_HID_TYPE;
     if (memcmp(cur.mode_hp, saved.mode_hp, sizeof(cur.mode_hp)) != 0) d |= 1u << HOST_SET_MODE_HAPTIC;
@@ -1381,8 +1402,7 @@ bool menu_remote_set(int id, int32_t ival, float fval) {
         case HOST_SET_MODE_HAPTIC:
             ST(s_mode_hp[atomic_load(&s_ph_hid_type)], clampi(ival, 0, HAPTIC_PROFILE_COUNT - 1));
             break;
-        case HOST_SET_SOUND: // the speaker's timbre: gone with the speaker
-            break;
+        case HOST_SET_CLICK: ST(s_hp_click[p], clampi(ival, 0, SNDCAL_CLICK_COUNT - 1)); break;
         case HOST_SET_HID_TYPE:
             atomic_store(&s_ph_hid_type, (menu_hid_type_t)clampi(ival, 0, MENU_HID_TYPE_COUNT - 1));
             break;
@@ -1425,7 +1445,10 @@ void menu_remote_save(void) {
         portEXIT_CRITICAL(&s_state_mux);
         any = true;
     }
-    if (any) atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed); // the SAVED! toast
+    if (any) {
+        atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed); // the SAVED! toast
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
+    }
 }
 
 void menu_remote_revert(void) {
@@ -1450,9 +1473,13 @@ void menu_remote_save_lights(void) {
     lights_t cur;
     lights_get(&cur);
     if (!menu_lights_dirty()) return;
-    if (!lights_save()) return; // NVS failed: still unsaved, and the screen keeps saying so
+    if (!lights_save()) { // NVS failed: still unsaved, and the screen keeps saying so
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_CANCEL);
+        return;
+    }
     portENTER_CRITICAL(&s_state_mux);
     s_saved.lights = cur;
     portEXIT_CRITICAL(&s_state_mux);
     atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
 }

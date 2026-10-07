@@ -103,6 +103,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_err);
 
     ipc_init();
+    sysmon_note_boot(); // after nvs_flash_init(): this boot's reset reason joins the stored few
     motor_sound_init(); // after nvs_flash_init(): it loads SOUND CAL's result
     // The I2S amp isn't driven any more (board_pins.h): its inputs low, not floating.
     const gpio_config_t amp_cfg = {

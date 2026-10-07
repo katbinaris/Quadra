@@ -1,3 +1,4 @@
+#include <string.h>
 #include "config_store.h"
 #include "haptic_params.h"
 #include "boot_mode.h"
@@ -108,10 +109,16 @@ void config_store_save_hid(const hid_cfg_t *cfg) {
 
 bool config_store_load_snd_cal(snd_cal_cfg_t *out) {
     snd_cal_cfg_t stored;
-    if (!nvs_load_blob(NS_SND_CAL, &stored, sizeof(stored)) || stored.version != SND_CAL_CFG_VERSION) {
+    if (!nvs_load_blob(NS_SND_CAL, &stored, sizeof(stored)) || (stored.version != SND_CAL_CFG_VERSION && stored.version != 4)) {
         return false;
     }
-    if (stored.freq_hz < 300 || stored.freq_hz > 5000 || stored.shape >= 8 || stored.axis > 1) {
+    if (stored.version == 4) {
+        // The tones were 500 Hz to 4 kHz then: the answers are about other pitches. The click
+        // itself (frequency, axis) is as good as it was.
+        memset(stored.heard, 0, sizeof(stored.heard));
+        stored.version = SND_CAL_CFG_VERSION;
+    }
+    if (stored.freq_hz < 300 || stored.freq_hz > 10000 || stored.shape >= 8 || stored.axis > 1) {
         ESP_LOGW(TAG, "stored snd_cal failed sanity check, ignoring");
         return false;
     }

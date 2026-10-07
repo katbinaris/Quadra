@@ -4,6 +4,8 @@
 #include "motor_config.h"
 #include "driver/mcpwm_prelude.h"
 #include "driver/gpio.h"
+#include "soc/mcpwm_struct.h"
+#include <math.h>
 #include "esp_log.h"
 #include <stdint.h>
 
@@ -46,6 +48,44 @@ static mcpwm_oper_handle_t s_oper[3];
 static mcpwm_cmpr_handle_t s_cmpr[3];
 static mcpwm_gen_handle_t s_gen[3];
 
+// --- Sound, at the PWM rate ---
+// While a sound plays, an interrupt on every PWM period (32 kHz) writes the three compare
+// values: where the loop wants the phases, plus one sample of the sound. The 10 kHz loop still
+// decides everything, each tick (motor_driver_tone()): the phase voltages without the sound,
+// each voice's pitch and level, and which way the d and the q axis point on the phases. The
+// interrupt only steps the oscillators. (The loop alone could play up to 4 kHz: at 10 kHz a
+// 4 kHz sine is 2.5 samples a cycle.)
+// Integers only in there: the FPU isn't saved for interrupts (CONFIG_FREERTOS_FPU_IN_ISR is
+// off). It is on for the length of a sound and off again, so it costs nothing otherwise.
+#define MCPWM_CARRIER_HZ (MCPWM_RESOLUTION_HZ / MCPWM_PERIOD_TICKS)
+#define TONE_SIN_BITS 8
+#define TONE_SIN_SHIFT 14  // the sine table's 1.0 is 1 << this
+#define TONE_VOLT_SHIFT 12 // levels and limits: volts << this
+#define TONE_AXIS_SHIFT 8  // an axis on a phase: compare ticks per volt << this
+#define TONE_CMP_MIN 5     // DUTY_MARGIN (below) of MCPWM_PEAK_TICKS
+#define TONE_CMP_MAX (MCPWM_PEAK_TICKS - 5)
+typedef struct {
+    int32_t base[3];           // the compare values without the sound
+    int32_t axis[2][3];        // 1 V on the d [0] and the q [1] axis, on each phase
+    int32_t lim_min[2], lim_max[2]; // the summed sound is clipped to these, per axis
+    struct {
+        uint32_t inc; // phase step per PWM period, a full turn is 2^32
+        int32_t amp;  // 0 = silent
+        uint8_t q, wave;
+    } voice[MOTOR_TONE_VOICES];
+} tone_t;
+static int16_t s_tone_sin[1 << TONE_SIN_BITS]; // filled at init: in RAM, where the interrupt can read it
+static int16_t s_tone_rich[1 << TONE_SIN_BITS]; // MOTOR_TONE_RICH, its peak at the table's 1.0
+// The loop writes the one not in use and then switches: both run on Core 0, the interrupt on
+// top of the loop, so it never sees one half written.
+static tone_t s_tone[2];
+static volatile uint32_t s_tone_use = 0;
+static uint32_t s_tone_phase[MOTOR_TONE_VOICES];
+static int32_t s_tone_noise[MOTOR_TONE_VOICES]; // each noise voice's current cycle: 1 or -1
+static uint32_t s_tone_rand = 0x2545F491;       // xorshift, never 0
+static bool s_tone_on = false;
+static uint32_t s_tone_int_mask = 0; // the timer's "count is zero" interrupt
+
 static const int s_in_pins[3] = { PIN_IN_U, PIN_IN_V, PIN_IN_W };
 static const int s_en_pins[3] = { PIN_EN_U, PIN_EN_V, PIN_EN_W };
 
@@ -53,6 +93,51 @@ void motor_driver_enable(bool enable) {
     for (int i = 0; i < 3; i++) {
         gpio_set_level(s_en_pins[i], enable ? 1 : 0);
     }
+}
+
+// Every PWM period while a sound plays. What it writes takes effect at the next period's start.
+static bool CONTROL_HOT tone_on_period(mcpwm_timer_handle_t timer, const mcpwm_timer_event_data_t *edata, void *user) {
+    const tone_t *t = &s_tone[s_tone_use];
+    int32_t sum[2] = {0, 0};
+    for (int v = 0; v < MOTOR_TONE_VOICES; v++) {
+        if (t->voice[v].amp == 0) continue;
+        uint32_t ph = s_tone_phase[v] + t->voice[v].inc;
+        s_tone_phase[v] = ph;
+        int32_t s;
+        if (t->voice[v].wave == MOTOR_TONE_SINE) {
+            s = s_tone_sin[ph >> (32 - TONE_SIN_BITS)];
+        } else if (t->voice[v].wave == MOTOR_TONE_RICH) {
+            s = s_tone_rich[ph >> (32 - TONE_SIN_BITS)];
+        } else if (t->voice[v].wave == MOTOR_TONE_SQUARE) {
+            s = (int32_t)ph < 0 ? -(1 << TONE_SIN_SHIFT) : (1 << TONE_SIN_SHIFT);
+        } else {
+            // Noise: whole cycles of the sine, each the right way up or upside down at random.
+            // Every cycle averages zero, so there is nothing slow in it. (It was random
+            // +-1 steps at first: their long runs are DC to the windings, which only
+            // inductance keeps the current out of, and on the q axis they are torque. A click
+            // made of them on the q axis pulled enough to make the USB host cut the power.)
+            if (ph < t->voice[v].inc) { // the phase has just wrapped
+                uint32_t r = s_tone_rand;
+                r ^= r << 13, r ^= r >> 17, r ^= r << 5;
+                s_tone_rand = r;
+                s_tone_noise[v] = r & 1 ? 1 : -1;
+            }
+            s = s_tone_noise[v] * s_tone_sin[ph >> (32 - TONE_SIN_BITS)];
+        }
+        sum[t->voice[v].q] += (t->voice[v].amp * s) >> TONE_SIN_SHIFT;
+    }
+    for (int a = 0; a < 2; a++) {
+        if (sum[a] > t->lim_max[a]) sum[a] = t->lim_max[a];
+        if (sum[a] < t->lim_min[a]) sum[a] = t->lim_min[a];
+    }
+    const int shift = TONE_VOLT_SHIFT + TONE_AXIS_SHIFT;
+    for (int i = 0; i < 3; i++) {
+        int32_t c = t->base[i] + ((sum[0] * t->axis[0][i] + sum[1] * t->axis[1][i] + (1 << (shift - 1))) >> shift);
+        if (c < TONE_CMP_MIN) c = TONE_CMP_MIN;
+        if (c > TONE_CMP_MAX) c = TONE_CMP_MAX;
+        mcpwm_comparator_set_compare_value(s_cmpr[i], (uint32_t)c);
+    }
+    return false;
 }
 
 esp_err_t motor_driver_init(void) {
@@ -88,6 +173,22 @@ esp_err_t motor_driver_init(void) {
         .period_ticks = MCPWM_PERIOD_TICKS,
     };
     ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &s_timer));
+    // The sound's interrupt: registered here (the driver wants it before the timer is
+    // enabled), on this task's core, and switched straight off again until a sound plays.
+    for (int i = 0; i < (1 << TONE_SIN_BITS); i++) {
+        s_tone_sin[i] = (int16_t)lroundf((1 << TONE_SIN_SHIFT) * sinf(i * (6.2831853f / (1 << TONE_SIN_BITS))));
+    }
+    float rich[1 << TONE_SIN_BITS], peak = 0.0f;
+    for (int i = 0; i < (1 << TONE_SIN_BITS); i++) {
+        float x = i * (6.2831853f / (1 << TONE_SIN_BITS));
+        rich[i] = sinf(x) + 0.5f * sinf(2.0f * x) + 0.25f * sinf(3.0f * x);
+        if (fabsf(rich[i]) > peak) peak = fabsf(rich[i]);
+    }
+    for (int i = 0; i < (1 << TONE_SIN_BITS); i++) s_tone_rich[i] = (int16_t)lroundf((1 << TONE_SIN_SHIFT) * rich[i] / peak);
+    mcpwm_timer_event_callbacks_t tone_cbs = { .on_empty = tone_on_period };
+    ESP_ERROR_CHECK(mcpwm_timer_register_event_callbacks(s_timer, &tone_cbs, NULL));
+    s_tone_int_mask = MCPWM0.int_ena.val;
+    MCPWM0.int_ena.val = 0;
 
     for (int i = 0; i < 3; i++) {
         mcpwm_operator_config_t oper_config = { .group_id = 0 };
@@ -134,7 +235,45 @@ static uint32_t CONTROL_HOT voltage_to_compare(float phase_volts) {
 }
 
 void CONTROL_HOT motor_driver_set_phase_voltages(float ua, float ub, float uc) {
+    if (s_tone_on) {
+        MCPWM0.int_ena.val = 0; // nothing else of MCPWM0's interrupts is in use
+        s_tone_on = false;
+    }
     mcpwm_comparator_set_compare_value(s_cmpr[0], voltage_to_compare(ua));
     mcpwm_comparator_set_compare_value(s_cmpr[1], voltage_to_compare(ub));
     mcpwm_comparator_set_compare_value(s_cmpr[2], voltage_to_compare(uc));
+}
+
+void CONTROL_HOT motor_driver_tone(const motor_tone_t *in) {
+    const float volt = (float)(1 << TONE_VOLT_SHIFT);
+    const float axis = (1 << TONE_AXIS_SHIFT) * MCPWM_PEAK_TICKS / MOTOR_MAX_VOLTAGE_V;
+    tone_t *t = &s_tone[s_tone_use ^ 1];
+    for (int i = 0; i < 3; i++) {
+        t->base[i] = (int32_t)voltage_to_compare(in->u[i]);
+        t->axis[0][i] = (int32_t)(in->d[i] * axis);
+        t->axis[1][i] = (int32_t)(in->q[i] * axis);
+    }
+    t->lim_min[0] = (int32_t)(-in->d_lim * volt);
+    t->lim_max[0] = (int32_t)(in->d_lim * volt);
+    t->lim_min[1] = (int32_t)(in->q_min * volt);
+    t->lim_max[1] = (int32_t)(in->q_max * volt);
+    for (int v = 0; v < MOTOR_TONE_VOICES; v++) {
+        const motor_tone_voice_t *vc = &in->voice[v];
+        // Under 16 kHz (half the PWM rate) the step fits a signed word, and the loop has no
+        // unsigned conversion to call.
+        t->voice[v].inc = (uint32_t)(int32_t)(vc->hz * (4294967296.0f / MCPWM_CARRIER_HZ));
+        t->voice[v].amp = (int32_t)(vc->volts * volt);
+        t->voice[v].q = vc->q;
+        t->voice[v].wave = vc->wave;
+        if (vc->start) {
+            s_tone_phase[v] = vc->cosine ? 0x40000000u : 0u;
+            s_tone_noise[v] = 1;
+        }
+    }
+    s_tone_use ^= 1;
+    if (!s_tone_on) {
+        MCPWM0.int_clr.val = s_tone_int_mask;
+        MCPWM0.int_ena.val = s_tone_int_mask;
+        s_tone_on = true;
+    }
 }

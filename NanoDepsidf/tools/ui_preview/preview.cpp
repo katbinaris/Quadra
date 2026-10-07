@@ -154,7 +154,7 @@ int main() {
     keep("orbit AMP editing");
     ui::draw_orbit(haptic_snap(MENU_HAPTIC_ROW_STEPS, true, false), {HAPTIC_TYPE_SAW, 900, -1, 1, true, 12, 6});
     keep("orbit STEPS editing");
-    // CLICK: each of the eight shapes, the dot part way along.
+    // CLICK: each of the shapes, the dot part way along.
     for (int k = 0; k < SNDCAL_CLICK_COUNT; k++) {
         menu_render_snapshot_t m = haptic_snap(MENU_HAPTIC_ROW_CLICK, true, k == 0);
         snprintf(m.rows[MENU_HAPTIC_ROW_CLICK].value, sizeof(m.rows[0].value), "%s", MOTOR_SOUND_SHAPE_SHORT[k]);
