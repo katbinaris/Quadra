@@ -137,7 +137,7 @@ static void hp_click_unpack(int32_t v) {
     }
 }
 static void hp_factory(int p) {
-    ST(s_hp_click[p], MOTOR_SOUND_SHAPE_DEFAULT);
+    ST(s_hp_click[p], HAPTIC_PROFILES[p].click);
     ST(s_hp_feel[p], HAPTIC_PROFILES[p].feel);
     for (int f = 0; f < HAPTIC_TYPE_COUNT; f++) hp_set_tune(p, f, &HAPTIC_PROFILES[p].tune[f]);
 }
@@ -876,7 +876,11 @@ void menu_init(void) {
     for (int i = 0; i < MENU_HID_TYPE_COUNT; i++) ST(s_mode_hp[i], HAPTIC_PROFILE_COARSE);
     static haptic_profiles_cfg_t hcfg; // static: too big for app_main's stack to carry lightly
     // Profiles stored before each had its own click: all start from the one the device had.
-    for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) ST(s_hp_click[p], motor_sound_legacy_shape());
+    // A knob with nothing stored: each profile's factory click.
+    for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) {
+        int legacy = motor_sound_legacy_shape();
+        ST(s_hp_click[p], legacy >= 0 ? legacy : HAPTIC_PROFILES[p].click);
+    }
     if (config_store_load_haptic_profiles(&hcfg)) {
         ST(s_hp_edit, clampi(hcfg.edit, 0, HAPTIC_PROFILE_COUNT - 1));
         hp_click_unpack(hcfg.click);

@@ -43,7 +43,8 @@ static const float SOUND_CHORD_K =
 
 // Until SOUND CAL has run. First result on hardware (2026-10-07): the sound is faint, loudest
 // at 3-4 kHz, so the default sits there and is long for a click.
-#define CLICK_DEFAULT_HZ 3500.0f
+#define CLICK_DEFAULT_HZ 5412.0f // the user's knob, from SOUND CAL (2026-10-07)
+#define CLICK_DEFAULT_Q true      // and its axis: q
 
 #define SHAPE MOTOR_SOUND_SHAPE
 #define CHIRP_END MOTOR_SOUND_CHIRP_END
@@ -138,7 +139,7 @@ static const float CAL_LEVEL_V[SNDCAL_LEVEL_COUNT] = {0.3f, 0.7f, 1.4f, 2.5f};
 // The click in use: SOUND CAL finds the frequency, it or DEVICE -> CLICK picks the axis. The
 // wave comes with each click, from the haptic profile.
 static _Atomic float s_click_hz = CLICK_DEFAULT_HZ;
-static _Atomic bool s_click_q = false; // on the q axis, not the d axis
+static _Atomic bool s_click_q = CLICK_DEFAULT_Q; // on the q axis, not the d axis
 // SOUND CAL
 static _Atomic bool s_cal_on = false;
 static _Atomic bool s_cal_request = false;
@@ -151,6 +152,7 @@ static sndcal_view_t s_view;
 static uint8_t s_heard[SNDCAL_TONE_COUNT]; // the last calibration's answers, kept for the next save
 static bool s_calibrated = false;
 static uint8_t s_legacy_shape = MOTOR_SOUND_SHAPE_DEFAULT;
+static bool s_legacy_stored; // it came from NVS
 static portMUX_TYPE s_view_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // --- Core 0 ---
@@ -554,7 +556,7 @@ void motor_sound_cal_view(sndcal_view_t *out) {
 }
 
 int motor_sound_legacy_shape(void) {
-    return s_legacy_shape;
+    return s_legacy_stored ? s_legacy_shape : -1;
 }
 
 void motor_sound_save(void) {
@@ -597,10 +599,11 @@ void motor_sound_init(void) {
     if (config_store_load_snd_cal(&cfg)) {
         apply_click(cfg.freq_hz, cfg.axis, cfg.calibrated);
         s_legacy_shape = MOTOR_SOUND_SHAPE_FROM_10[MOTOR_SOUND_SHAPE_FROM_14[cfg.shape < 14 ? cfg.shape : MOTOR_SOUND_SHAPE_DEFAULT]];
+        s_legacy_stored = true;
         memcpy(s_heard, cfg.heard, sizeof(s_heard));
         memcpy(s_view.heard, cfg.heard, sizeof(s_view.heard));
     } else {
-        apply_click(CLICK_DEFAULT_HZ, false, false);
+        apply_click(CLICK_DEFAULT_HZ, CLICK_DEFAULT_Q, false);
     }
     // Internal stack: the task writes NVS.
     xTaskCreatePinnedToCore(cal_task_fn, "sndcal", 4096, NULL, PRIO_STORE, NULL, CORE_IO);

@@ -75,10 +75,10 @@ export class MockTransport implements Transport {
   // haptic_params.h HAPTIC_PROFILES: factory feel and {kp, kd, shape, amp, pitch} in it.
   private static readonly HP_FACTORY = [
     { feel: 0, t: [6, 0.005, 25, 100, 0.85] },
-    { feel: 1, t: [2, 0.035, 0, 100, 0.9] },
-    { feel: 0, t: [4, 0.115, 55, 90, 1.2] },
-    { feel: 0, t: [1.5, 0.15, 80, 70, 1.95] },
-    { feel: 2, t: [0, 0.15, 0, 15, 1.85] },
+    { feel: 0, t: [2.7, 0.095, 70, 100, 1.35] },
+    { feel: 0, t: [4.25, 0.115, 55, 90, 1.2] },
+    { feel: 0, t: [2, 0.15, 0, 100, 1.85] },
+    { feel: 2, t: [0, 0.15, 0, 20, 1] },
   ];
   private static hpProfile(p: number) {
     const { feel, t } = MockTransport.HP_FACTORY[p];

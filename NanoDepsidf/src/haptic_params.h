@@ -62,8 +62,8 @@ typedef enum {
 // instability; values are kept per feel, so switching FEEL shows that feel's own (saved or
 // factory) values. menu.c holds the live copies and NVS the saved ones.
 //
-// Factory values: the user's, tuned on hardware (2026-10-02), for each profile's factory
-// feel. A stepped profile's other feel starts from the same numbers until it is tuned too.
+// Factory values: the user's, tuned on hardware and read back from their knob's stored
+// settings (2026-10-07), both feels of each stepped profile, with each profile's click.
 // The LIMITS are still the old global ranges (HAPTIC_LIM_TODO) -- to be narrowed per profile
 // and feel.
 typedef enum {
@@ -100,6 +100,7 @@ typedef struct {
     uint8_t detents; // per turn. SMOOTH has no felt steps; these are where step events fire
     uint8_t feels;   // allowed feels, 1 << haptic_type_t
     uint8_t feel;    // factory feel
+    uint8_t click;   // factory click: an index into motor_sound.h's MOTOR_SOUND_SHAPE
     haptic_tune_t tune[HAPTIC_TYPE_COUNT];  // factory values, per feel: SAW, SINE, VISCOSE
     haptic_limits_t lim[HAPTIC_TYPE_COUNT]; // safe range, per feel
 } haptic_profile_t;
@@ -115,23 +116,23 @@ typedef struct {
 #define HAPTIC_TUNE_NONE {0.0f, 0.0f, 0, 0, 1.0f}
 
 __attribute__((unused)) static const haptic_profile_t HAPTIC_PROFILES[HAPTIC_PROFILE_COUNT] = {
-    // name, detents, feels, factory feel,
+    // name, detents, feels, factory feel, factory click,
     //   tune {SNAP, DAMP, SHAPE %, AMP %, PITCH}: SAW, SINE, VISCOSE
     //   limits: SAW, SINE, VISCOSE
-    {"WIDE", 8, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW,
-     {{6.00f, 0.005f, 25, 100, 0.85f}, {6.00f, 0.005f, 0, 100, 0.85f}, HAPTIC_TUNE_NONE},
+    {"WIDE", 8, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
+     {{6.00f, 0.005f, 25, 100, 0.85f}, {6.00f, 0.010f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
      {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
-    {"COARSE", 12, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SINE,
-     {{2.00f, 0.035f, 0, 100, 0.90f}, {2.00f, 0.035f, 0, 100, 0.90f}, HAPTIC_TUNE_NONE},
+    {"COARSE", 12, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
+     {{2.70f, 0.095f, 70, 100, 1.35f}, {2.00f, 0.055f, 0, 100, 0.85f}, HAPTIC_TUNE_NONE},
      {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
-    {"MEDIUM", 24, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW,
-     {{4.00f, 0.115f, 55, 90, 1.20f}, {4.00f, 0.115f, 0, 90, 1.20f}, HAPTIC_TUNE_NONE},
+    {"MEDIUM", 24, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 0,
+     {{4.25f, 0.115f, 55, 90, 1.20f}, {1.90f, 0.150f, 0, 100, 1.00f}, HAPTIC_TUNE_NONE},
      {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
-    {"FINE", 36, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW,
-     {{1.50f, 0.150f, 80, 70, 1.95f}, {1.50f, 0.150f, 0, 70, 1.95f}, HAPTIC_TUNE_NONE},
+    {"FINE", 36, HAPTIC_FEELS_STEPPED, HAPTIC_TYPE_SAW, 2,
+     {{2.00f, 0.150f, 0, 100, 1.85f}, {0.50f, 0.145f, 0, 65, 1.00f}, HAPTIC_TUNE_NONE},
      {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
-    {"SMOOTH", 24, HAPTIC_FEELS_SMOOTH, HAPTIC_TYPE_VISCOSE,
-     {HAPTIC_TUNE_NONE, HAPTIC_TUNE_NONE, {0.0f, 0.150f, 0, 15, 1.85f}},
+    {"SMOOTH", 24, HAPTIC_FEELS_SMOOTH, HAPTIC_TYPE_VISCOSE, 0,
+     {HAPTIC_TUNE_NONE, HAPTIC_TUNE_NONE, {0.0f, 0.150f, 0, 20, 1.00f}},
      {HAPTIC_LIM_TODO, HAPTIC_LIM_TODO, HAPTIC_LIM_VISCOSE}},
 };
 

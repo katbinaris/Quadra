@@ -848,14 +848,14 @@ first q sweep on hardware.)
    the middle one). The screen draws the answers as bars.
 
 The frequency and the axis go to NVS (`snd_cal`) and are used from then on; until then clicks
-play on the d axis at 3.5 kHz. Every answer is a console line, e.g.
+play on the q axis at 5.4 kHz (the values from the maintainer's knob). Every answer is a console line, e.g.
 `sndcal axis=q f=3482 amp=0.70 heard=1`, and the result is `sndcal result axis=… f=… level=…`.
 
 **The wave is per haptic profile**, with AMP and PITCH: WIDE can have a long square click and
 FINE a short sine. **HAPTICS → CLICK** (the eighth item on the ring) picks it for the profile
 shown and draws it: the wave as it is played, as wide as it is long, a dot running along it.
-F2 saves it with the profile; holding F2 puts it back to the factory one (SIN 4MS) with the
-rest. The five shapes are packed, four bits each (three in blobs from when there were eight;
+F2 saves it with the profile; holding F2 puts it back to the profile's factory one (SQR 2MS for FINE, SIN 2MS for the
+others) with the rest. The five shapes are packed, four bits each (three in blobs from when there were eight;
 a flag bit tells them apart), into the one spare word of the stored
 profiles (`hprof_cfg`; it held the speaker's timbre), with a flag bit to say they are there,
 so profiles tuned before this still load: they all start from the one shape the device had

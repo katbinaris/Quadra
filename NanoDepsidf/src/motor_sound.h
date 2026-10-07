@@ -145,6 +145,7 @@ void motor_sound_cal_start(void);           // the menu's F1
 
 // --- Core 1 ---
 void motor_sound_save(void); // the frequency and the axis to NVS
-// The one click shape the device had before each haptic profile got its own (menu_init()).
+// The one click shape the device had before each haptic profile got its own (menu_init());
+// -1 on a knob with no stored sound settings.
 int motor_sound_legacy_shape(void);
 void motor_sound_cal_view(sndcal_view_t *out);
