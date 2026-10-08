@@ -54,8 +54,8 @@ export const Tag = {
 // Extensions -- a mirror of NanoDepsidf/src/ext_proto.h (commands 0x20-0x2F, tags 0xC0-0xCF).
 // Firmware without them answers Tag.ERROR, and the app leaves out what needs them.
 // The range 0x20-0x2F is full; 0x30 on (HOME, SYNTH) goes to the same handler (ext_link.c).
-export const ExtCmd = { HELLO: 0x20, TEXT: 0x22, LIGHTS: 0x23, PREFS: 0x24, NET: 0x29, CLOCK: 0x2b, SCREEN: 0x2c, INPUT: 0x2d, MUSIC: 0x2e, HOME: 0x30, SYNTH: 0x31 } as const;
-export const ExtTag = { HELLO: 0xc0, ACK: 0xc1, PREFS: 0xc2, NET: 0xc4, CLOCK: 0xc5, SCREEN: 0xc6, KEY: 0xc7, HOME: 0xca, SYNTH: 0xcb } as const;
+export const ExtCmd = { HELLO: 0x20, TEXT: 0x22, LIGHTS: 0x23, PREFS: 0x24, NET: 0x29, CLOCK: 0x2b, SCREEN: 0x2c, INPUT: 0x2d, MUSIC: 0x2e, HOME: 0x30, SYNTH: 0x31, IDLE: 0x32, HAPTICS: 0x33 } as const;
+export const ExtTag = { HELLO: 0xc0, ACK: 0xc1, PREFS: 0xc2, NET: 0xc4, CLOCK: 0xc5, SCREEN: 0xc6, KEY: 0xc7, HOME: 0xca, SYNTH: 0xcb, IDLE: 0xcc, HAPTICS: 0xcd } as const;
 export const EXT_SCREEN_VERSION = 6; // the live screen (EXT_CMD_SCREEN) and the knob from here (EXT_CMD_INPUT)
 export const InputOp = { KEYS: 1, TURN: 2 } as const;
 export const SCREEN_SIZE = 240;
@@ -99,6 +99,63 @@ export const LIGHT_FX = ["GRADIENT", "SOLID", "BREATHE", "SPIN", "RAINBOW", "OFF
 export const LIGHT_FX_MOVING = new globalThis.Set([2, 3, 4]); // the ones SPEED changes
 // MUSIC's cover on the now-playing screen (user_prefs.h cover_style_t, EXT_CMD_MUSIC, v8), in order.
 export const COVER_STYLES = ["FLAT", "RECORD", "SLIDE", "BLEED"] as const;
+// The screen (user_prefs.h screen_t, EXT_CMD_IDLE): brightness, the screensaver, the sleep hours.
+export const EXT_IDLE_VERSION = 13;
+export const SAVERS = ["AUTO", "ICON", "BOUNCE", "CLOCK", "MUSIC", "BLANK", "NEVER"] as const; // saver_t, in order
+export const Saver = { AUTO: 0, ICON: 1, BOUNCE: 2, CLOCK: 3, MUSIC: 4, BLANK: 5, NEVER: 6 } as const;
+export const SAVER_AFTER = [5, 10, 15, 30, 60, 120, 300, 600]; // seconds, the steps the knob keeps
+export const DARK_AFTER = [0, 10, 30, 60, 120, 300, 600];
+export const Wake = { NORMAL: 0, DIM: 1 } as const;
+export const EXT_IDLE_SAVE = 0x01;
+export const IdleFlag = { DIRTY: 0x01, TRUSTED: 0x02, SLEEPING: 0x04, DARK: 0x08 } as const;
+
+// Every haptic profile's tuning, one profile and feel per report (EXT_CMD_HAPTICS, v14): what
+// a backup reads and restores. `modes`: the haptic profile KEYBOARD, MOUSE, MIDI and APP use.
+export const EXT_HAPTICS_VERSION = 14;
+export const HapticsOp = { GET: 1, SET: 2 } as const;
+export const HapticsFlag = { SAVE: 0x01, TUNE: 0x02, MODES: 0x04 } as const;
+export interface HapticTune {
+  kp: number;
+  kd: number;
+  shape: number;
+  amp: number;
+  pitch: number;
+}
+export interface HapticEntry {
+  profile: number;
+  feel: number; // the feel `tune` is for
+  useFeel: number; // the feel the profile uses
+  click: number; // its click wave (ClickWaves)
+  tune: HapticTune;
+  dirty: boolean; // the profile differs from what's stored
+  feels: number; // the feels it offers, 1 << Feel
+  profiles: number; // how many haptic profiles the knob has
+  feelCount: number;
+  modes: number[]; // KEYBOARD, MOUSE, MIDI, APP
+}
+export interface HapticSet {
+  useFeel?: number;
+  click?: number;
+  tune?: HapticTune;
+  modes?: number[];
+}
+
+export interface ScreenPrefs {
+  bright: number; // backlight, 10..100 %
+  saver: number; // SAVERS
+  saverS: number; // seconds idle before the screensaver
+  sleepOn: boolean;
+  sleepFrom: number; // minutes of the day (15 min steps)
+  sleepTo: number;
+  darkS: number; // seconds of screensaver before dark, in the sleep hours
+  wake: number; // Wake
+}
+export interface Idle extends ScreenPrefs {
+  dirty: boolean; // differs from what's saved
+  trusted: boolean; // the knob trusts its local time: the sleep hours apply
+  sleeping: boolean; // inside them now
+  dark: boolean; // the screen is dark now
+}
 
 export interface Lights {
   src: number;
@@ -270,7 +327,8 @@ export interface State {
   detent: number;
   buttons: number; // bit0 F1 .. bit3 F4
   menuScreen: number; // 0 = menu closed
-  screensaver: boolean;
+  screensaver: boolean; // on, or dark
+  dark: boolean; // the sleep hours' dark screen
   liveSlot: number;
   clicks: number;
   walls: number;
@@ -385,6 +443,8 @@ export type Message =
   | { tag: typeof ExtTag.HELLO; ext: number }
   | { tag: typeof ExtTag.ACK; cmd: number; status: number }
   | { tag: typeof ExtTag.PREFS; prefs: Prefs }
+  | { tag: typeof ExtTag.IDLE; idle: Idle }
+  | { tag: typeof ExtTag.HAPTICS; haptic: HapticEntry }
   | { tag: typeof ExtTag.NET; net: Net }
   | { tag: typeof ExtTag.CLOCK; clock: ClockSlot }
   | { tag: typeof ExtTag.SCREEN; screen: ScreenChunk }
@@ -637,6 +697,48 @@ export const encode = {
     r.set(new TextEncoder().encode(text.replace(/[^\x20-\x7e]/g, " ").slice(0, IDLE_TEXT_MAX)), 2);
     return r;
   },
+  // The screen: live at once; `save` also stores it. Fields left out are kept; none = just asks.
+  idle: (s: Partial<ScreenPrefs>, save = false) => {
+    const r = report(ExtCmd.IDLE);
+    const v = new DataView(r.buffer);
+    r[1] = save ? EXT_IDLE_SAVE : 0;
+    r[2] = s.bright ?? 0xff;
+    r[3] = s.saver ?? 0xff;
+    v.setUint16(4, s.saverS ?? 0xffff, true);
+    r[6] = s.sleepOn === undefined ? 0xff : s.sleepOn ? 1 : 0;
+    v.setUint16(7, s.sleepFrom ?? 0xffff, true);
+    v.setUint16(9, s.sleepTo ?? 0xffff, true);
+    v.setUint16(11, s.darkS ?? 0xffff, true);
+    r[13] = s.wake ?? 0xff;
+    return r;
+  },
+  hapticsGet: (profile: number, feel: number) => {
+    const r = report(ExtCmd.HAPTICS);
+    r[1] = HapticsOp.GET;
+    r[2] = profile;
+    r[3] = feel;
+    return r;
+  },
+  // Live at once; `save` also stores the haptic profiles (the modes are stored by SAVE).
+  hapticsSet: (profile: number, feel: number, h: HapticSet, save = false) => {
+    const r = report(ExtCmd.HAPTICS);
+    const v = new DataView(r.buffer);
+    r[1] = HapticsOp.SET;
+    r[2] = profile;
+    r[3] = feel;
+    r[4] = (save ? HapticsFlag.SAVE : 0) | (h.tune ? HapticsFlag.TUNE : 0) | (h.modes ? HapticsFlag.MODES : 0);
+    r[5] = h.useFeel ?? 0xff;
+    r[6] = h.click ?? 0xff;
+    if (h.tune) {
+      v.setFloat32(8, h.tune.kp, true);
+      v.setFloat32(12, h.tune.kd, true);
+      v.setInt32(16, h.tune.shape, true);
+      v.setInt32(20, h.tune.amp, true);
+      v.setFloat32(24, h.tune.pitch, true);
+    }
+    if (h.modes) h.modes.slice(0, 4).forEach((m, i) => (r[28 + i] = m));
+    return r;
+  },
   // Live at once; `save` also stores them (otherwise SAVE does, like the other settings).
   lights: (l: Lights, save: boolean) => {
     const r = report(ExtCmd.LIGHTS);
@@ -738,7 +840,8 @@ export function decode(b: Uint8Array): Message {
           detent: i32(8),
           buttons: b[12],
           menuScreen: b[13],
-          screensaver: b[14] === 1,
+          screensaver: b[14] !== 0,
+          dark: b[14] === 2,
           liveSlot: b[15],
           clicks: i32(16),
           walls: i32(20),
@@ -841,6 +944,40 @@ export function decode(b: Uint8Array): Message {
       return {
         tag: ExtTag.PREFS,
         prefs: { src: b[1], fx: b[2], hue: u16(3), sat: b[5], speed: b[6], level: u16(7), lightsDirty: b[9] === 1, coverStyle: b[10], coverStyles: b[11], idleText: str(b, 16, 16) },
+      };
+    case ExtTag.IDLE:
+      return {
+        tag: ExtTag.IDLE,
+        idle: {
+          bright: b[1],
+          saver: b[2],
+          saverS: u16(3),
+          sleepOn: b[5] === 1,
+          sleepFrom: u16(6),
+          sleepTo: u16(8),
+          darkS: u16(10),
+          wake: b[12],
+          dirty: (b[13] & IdleFlag.DIRTY) !== 0,
+          trusted: (b[13] & IdleFlag.TRUSTED) !== 0,
+          sleeping: (b[13] & IdleFlag.SLEEPING) !== 0,
+          dark: (b[13] & IdleFlag.DARK) !== 0,
+        },
+      };
+    case ExtTag.HAPTICS:
+      return {
+        tag: ExtTag.HAPTICS,
+        haptic: {
+          profile: b[1],
+          feel: b[2],
+          useFeel: b[3],
+          click: b[4],
+          tune: { kp: f32(5), kd: f32(9), shape: i32(13), amp: i32(17), pitch: f32(21) },
+          dirty: (b[25] & 1) !== 0,
+          feels: b[26],
+          profiles: b[27],
+          feelCount: b[28],
+          modes: [b[30], b[31], b[32], b[33]],
+        },
       };
     default:
       return { tag: b[0] };

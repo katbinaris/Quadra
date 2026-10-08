@@ -26,6 +26,11 @@ enum {
 void clock_init(void);  // app_main, after nvs_flash_init()
 bool clock_valid(void); // the time has been set
 void clock_set_utc_ms(int64_t ms);
+void clock_note_sync(void); // SNTP set the time (clock_set_utc_ms notes its own)
+// The local wall clock can be relied on: set, synced in the last 24 h (no battery-backed clock
+// keeps it honest), and LOCAL's zone sent by a host at some point (SNTP alone only knows UTC).
+// The sleep hours (user_prefs.h) only apply while this holds.
+bool clock_trusted(void);
 uint8_t clock_flags(void);
 void clock_set_flags(uint8_t flags); // stored from clock_poll()
 // Slot `slot` (0-4): its label and rule ("" = empty). LOCAL's rule is "" until the host sends it.

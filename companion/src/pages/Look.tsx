@@ -4,11 +4,13 @@
 
 import { useSignal } from "@preact/signals";
 import { useRef } from "preact/hooks";
+import { serviceName } from "../platform";
 import { CLOCK_SLOTS, COVER_STYLES, ClockFlag, EXT_CLOCK_VERSION, IDLE_TEXT_MAX, LIGHT_FX, LIGHT_FX_MOVING, LightSrc, Set, type Lights } from "../proto";
 import { device, use } from "../store";
 import { CITIES } from "../tzdata";
 import { Box, Card, cls, PageHead, Row, Slider, SubTabs, Text } from "../ui/controls";
 import { titleCase } from "../ui/shell";
+import { Screensaver } from "./look/Screensaver";
 
 const TABS = [
   { value: "lights" as const, label: "Lights", href: "#/look/lights" },
@@ -169,6 +171,7 @@ function ScreenTab() {
           ))}
         </div>
       </Box>
+      <Screensaver />
     </>
   );
 }
@@ -215,7 +218,7 @@ function ClockTab() {
               <span class="hint">From this computer</span>
             </>
           ) : (
-            <span class="hint">Not set yet: connect Wi-Fi, or run the Mac service</span>
+            <span class="hint">Not set yet: connect Wi-Fi, or run {serviceName}</span>
           )}
         </Row>
       </Box>

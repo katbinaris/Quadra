@@ -1,7 +1,9 @@
 // The Synths page's monitor: what the knob sends on USB MIDI, read from its port here (CoreMIDI,
 // which lets every program open a port). Only in MIDI mode does the knob have one, so while the
 // page asks for it a thread looks for it every second; each message goes to the UI as a
-// `midi-msg` event, and `midi-port` says when the port comes or goes.
+// `midi-msg` event, and `midi-port` says when the port comes or goes. On Windows (WinMM) a port
+// has one reader at a time: while a DAW holds the knob's, the monitor can't open it, and the
+// other way round.
 
 use midir::{Ignore, MidiInput, MidiInputConnection};
 use std::sync::atomic::{AtomicU64, Ordering};

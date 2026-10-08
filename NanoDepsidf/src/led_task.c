@@ -487,7 +487,12 @@ static void led_task_fn(void *arg) {
         // Every 2 s, send everything once anyway: a frame a glitch did corrupt doesn't stay.
         static int s_frames = 0;
         if (++s_frames >= 2 * LED_FPS) { s_frames = 0; s_sent_valid = false; }
-        flush((int)menu_get_display_rotation(), L.level / 100.0f);
+        // The sleep hours (user_prefs.h): dark means every LED off, notifications included; awake
+        // in them with ON WAKE = DIM, the night level.
+        float level = L.level / 100.0f;
+        if (ui_state_get_saver() == UI_SAVER_DARK) level = 0;
+        else if (screen_sleeping() && screen_dim_now()) level *= SCREEN_DIM_LEDS;
+        flush((int)menu_get_display_rotation(), level);
     }
 }
 

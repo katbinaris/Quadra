@@ -6,8 +6,9 @@
 import { signal, useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import { EXT_SYNTH_VERSION, HidType, MAX_SYNTHS, Set, SynthEdit, SynthFlag, type SynthEntry } from "../proto";
-import { describe, evenValues, freeId, groups, newSynth, paramMax, problem, rangeText, SYNTH_MAX, tidySynth, type SynthJson, type SynthParam } from "../synth";
+import { describe, evenValues, freeId, groups, newSynth, paramMax, parseSynth, rangeText, SYNTH_MAX, tidySynth, type SynthJson, type SynthParam } from "../synth";
 import { device, go, href, use, type SynthTab } from "../store";
+import { openJson, saveJson, savedText } from "../files";
 import { isTauri } from "../transport";
 import { Box, cls, Confirm, Num, PageHead, Row, Seg, SubTabs, Text } from "../ui/controls";
 import { drawLogo, drawMidiScreen, hasLogo } from "../ui/knobart";
@@ -59,7 +60,6 @@ export function SynthsPage(p: { id: string; tab: SynthTab }) {
 
 function SynthList(p: { current: string }) {
   use("synths", "settings");
-  const file = useRef<HTMLInputElement>(null);
   const err = useSignal<string | null>(null);
   const list = device.synths.filter(Boolean);
   const using = inUseIndex();
@@ -93,32 +93,22 @@ function SynthList(p: { current: string }) {
         <span class="nm">+ New synth</span>
         <span class="sub">Four parameters to start from</span>
       </button>
-      <button class="btn ghost sm" style={{ alignSelf: "flex-start" }} disabled={list.length >= MAX_SYNTHS} onClick={() => file.current?.click()}>
-        Import a file…
-      </button>
-      <input
-        ref={file}
-        type="file"
-        accept=".json,application/json"
-        hidden
-        onChange={async (e) => {
-          const f = e.currentTarget.files?.[0];
-          e.currentTarget.value = "";
-          if (!f) return;
+      <button
+        class="btn ghost sm"
+        style={{ alignSelf: "flex-start" }}
+        disabled={list.length >= MAX_SYNTHS}
+        onClick={async () => {
+          err.value = null;
           try {
-            const s = JSON.parse(await f.text()) as SynthJson;
-            if (!Array.isArray(s.params)) throw new Error("That isn't a synth profile");
-            s.channel ??= 0;
-            s.maker ??= "";
-            s.params.forEach((x) => (x.group ??= ""));
-            const bad = problem(s);
-            if (bad) throw new Error(bad);
-            await add(s);
+            const f = await openJson();
+            if (f) await add(parseSynth(f.data));
           } catch (x) {
             err.value = x instanceof Error ? x.message : String(x);
           }
         }}
-      />
+      >
+        Import a file…
+      </button>
       {err.value && <span class="hint amber">{err.value}</span>}
       <KnobPreview />
     </div>
@@ -187,18 +177,9 @@ function Editor(p: { entry: SynthEntry; tab: SynthTab }) {
   ];
   const exportIt = async () => {
     if (!draft) return;
-    const text = JSON.stringify(tidySynth(draft), null, 2) + "\n";
     try {
-      if (isTauri()) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const path = await invoke<string>("save_download", { name: `${draft.id}.json`, text });
-        s.say(`Saved as ${path}`);
-      } else {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-        a.download = `${draft.id}.json`;
-        a.click();
-      }
+      const path = await saveJson(`${draft.id}.json`, tidySynth(draft));
+      if (path !== null) s.say(savedText(path));
     } catch (x) {
       s.say(x instanceof Error ? x.message : String(x), true);
     }

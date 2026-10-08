@@ -50,6 +50,19 @@ export function problem(s: SynthJson): string | null {
   return null;
 }
 
+// A synth from a file (an export, or a backup's): its defaults filled in, checked. Throws.
+export function parseSynth(data: unknown): SynthJson {
+  const s = data as SynthJson;
+  if (!s || typeof s !== "object" || !Array.isArray(s.params) || typeof s.id !== "string") throw new Error("That isn't a synth profile");
+  s.channel ??= 0;
+  s.maker ??= "";
+  s.name ??= "";
+  s.params.forEach((x) => (x.group ??= ""));
+  const bad = problem(s);
+  if (bad) throw new Error(bad);
+  return s;
+}
+
 // What the knob turns through: 0..127, 0..1023 for KORG's 10-bit, or the options.
 export const paramMax = (p: SynthParam) => (p.options ? p.options.length - 1 : p.sends === "korg10" ? 1023 : 127);
 

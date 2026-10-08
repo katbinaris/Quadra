@@ -14,7 +14,11 @@ import { ModePage } from "./pages/Mode";
 import { ProfilePage } from "./pages/profile/Profile";
 import "./pages/profile/session"; // the profile page's session follows the route
 import { SysPage } from "./pages/Sys";
-import { device, route } from "./store";
+import { droppedBackup } from "./backup";
+import { kindOf, onDropFiles } from "./files";
+import { importProfile } from "./profiles";
+import { device, go, route, saveError } from "./store";
+import { parseSynth } from "./synth";
 import { Shell } from "./ui/shell";
 
 function App() {
@@ -50,5 +54,33 @@ effect(() => {
   device.watch("lamps", r.page === "lamps" || r.page === "mode");
   device.watch("midi", r.page === "synths" || r.page === "mode");
 });
+
+// A file dropped on the window: a backup opens on Device › Backup, a profile or a synth comes in
+// like Import does.
+void onDropFiles(
+  async (f) => {
+    saveError.value = null;
+    if (device.status !== "connected") return void (saveError.value = "Connect the knob first");
+    try {
+      switch (kindOf(f.data)) {
+        case "backup":
+          droppedBackup.value = f;
+          return go({ page: "device", tab: "backup" });
+        case "profile":
+          return void (await importProfile(f.data));
+        case "synth": {
+          const s = parseSynth(f.data);
+          await device.putSynth(s, false);
+          return go({ page: "synths", id: s.id, tab: "params" });
+        }
+        default:
+          saveError.value = `${f.name} isn't a Quadra backup, app profile or synth`;
+      }
+    } catch (e) {
+      saveError.value = e instanceof Error ? e.message : String(e);
+    }
+  },
+  (m) => (saveError.value = m),
+);
 
 render(<App />, document.getElementById("app")!);

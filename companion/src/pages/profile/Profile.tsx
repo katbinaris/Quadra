@@ -6,7 +6,7 @@
 import { useEffect, useRef } from "preact/hooks";
 import { HidType, Op, ProfileFlag, Set } from "../../proto";
 import { iconImage, imageToIcon, MAX, type ProfileJson } from "../../profile";
-import { duplicateProfile, MAX_PROFILES } from "../../profiles";
+import { duplicateProfile, exportProfile, MAX_PROFILES } from "../../profiles";
 import { device, editorDirty, go, href, inUse, use, type ProfileTab } from "../../store";
 import { Box, Confirm, Row, Seg, SubTabs, Text } from "../../ui/controls";
 import { drawMainScreen } from "../../ui/draw";
@@ -77,6 +77,15 @@ function Editor(p: { id: string; tab: ProfileTab; input: string }) {
         )}
         <button class="btn ghost" disabled={device.profiles.length >= MAX_PROFILES} onClick={() => void duplicateProfile(entry.index)}>
           Duplicate
+        </button>
+        <button
+          class="btn ghost"
+          onClick={async () => {
+            await s.flush();
+            await exportProfile(entry.index);
+          }}
+        >
+          Export…
         </button>
       </div>
       <SubTabs tabs={tabs} value={p.tab} />

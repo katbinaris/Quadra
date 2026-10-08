@@ -704,6 +704,8 @@ and the companion shows a feature only from the version that has it:
 | 10 | `NET CONTROLS` and `EXT_TAG_HID`: with no USB host, the HID reports go to the WiFi client that asked (the companion app types and scrolls for the knob) |
 | 11 | `HOME` and `EXT_TAG_HOME`: HOME's lamps, imported over USB, their state over any link (section 8.4). The first command of the second range, 0x30-0x3F: 0x20-0x2F is full |
 | 12 | `HOME EDIT` (rename, icon, order, remove; any link) and the lamp's icon, address and dialect in `EXT_TAG_HOME`; `SYNTH` and `EXT_TAG_SYNTH`: the synth list, a synth's JSON (read in 48-byte pieces: offset 0 alone first, the knob writes the JSON then; the rest may be asked for several at a time), upload, save / revert / remove, the midi task's status, and go to a parameter (section 8.5) |
+| 13 | `IDLE` and `EXT_TAG_IDLE`: the screen's brightness, the screensaver and the sleep hours (section 12), live, with SAVE to store them; the reply says whether they're unsaved, whether the knob trusts its local time, and whether it's in the sleep hours or dark now. `HOST_TAG_STATE [14]` reports 2 while dark |
+| 14 | `HAPTICS` and `EXT_TAG_HAPTICS`: one haptic profile in one feel per report (its values there, the feel it uses, its click, whether it's unsaved, and the profile each mode uses), read or set live, with SAVE to store the HAPTIC group. The companion's backup reads all fifteen and restores them (`menu_haptic_get` / `_set`, `menu_mode_haptics_*`); `GET_SETTINGS` only shows the profile on the Haptics screen. A set is clamped like the knob's own edits, and a feel the profile doesn't offer is refused |
 
 Work that touches NVS or decodes images runs in the usb task (`ext_link_poll`), not in
 TinyUSB's callback. Keys from `INPUT` are OR-ed into the real ones in the control loop and let
@@ -900,8 +902,36 @@ frames a second. Once the record has stopped, the screen is drawn only on a chan
 shows the frame rate and the draw and push times every 2 s while it moves. The
 motion is a function of the time since the last play or pause, like every other animation. A
 tap of F4 on the now-playing screen (no turn, released within 0.6 s, before the menu's long
-press) picks the next style; the usb task stores it (`user_prefs_poll`). The idle screen starts after 12 seconds without input (in AGENTS, not while an agent is working or asking);
-the first key press only wakes the screen and is not passed on.
+press) picks the next style; the usb task stores it (`user_prefs_poll`).
+
+**The screensaver and the sleep hours** (`screen_t` in `user_prefs.h`, stored as one NVS blob,
+`screen`; set from DISPLAY and SLEEP, or `EXT_CMD_IDLE`). `update_ui()` keeps three states from
+the time since the last activity:
+- **Awake.** Any change counts as activity: a turn, a key, the menu, a notification, a new
+  track, a mode or icon change. By day the screensaver is also held off while music plays, the
+  CLOCK app is up, HOME scans, or an AGENTS row is working or asking.
+- **Screensaver** (`V_ATTRACT`) after DISPLAY → AFTER. By day only over the Main Screen. Its
+  picture is resolved each tick (`saver_resolve`): AUTO and MUSIC show the now-playing cover
+  while a track plays, else the clock; CLOCK needs `clock_trusted()`, else the icon. ICON and
+  BOUNCE loop at about 30 fps; CLOCK redraws once a minute, MUSIC on a new track; BLANK turns the
+  backlight off and draws nothing.
+- **Dark** (`V_DARK`), only in the sleep hours, SLEEP → DARK IN after the screensaver started:
+  backlight 0, nothing drawn, and `led_task.c` flushes every LED at 0, notifications included.
+
+In the sleep hours nothing holds the screensaver off and only *input* (a turn, a key, the menu,
+or the companion's `EXT_CMD_INPUT`) counts as activity, over any screen. Waking at night with
+WAKE = DIM puts the backlight at 15% and the LEDs at 0.3×. The key that wakes the screen does
+its normal job as well. `ui_state_set_screensaver()` publishes 0 / 1 / 2 (off, on, dark) for the
+LEDs and the companion (`HOST_TAG_STATE [14]`).
+
+Whether the sleep hours apply is decided once a second (`screen_sleep_now()`; it reads the
+clock), and only while `clock_trusted()` holds. That needs the time set since boot, a sync
+(SNTP or `EXT_CMD_TIME`) in the last 24 h, and LOCAL's zone sent by a host at some point.
+Otherwise the knob behaves as by day, and a dark screen comes back on. The knob has no clock
+battery, so a power cut loses the time, and SNTP alone only gives UTC.
+
+The backlight follows DISPLAY → BRIGHT (10–100%) live; `backlight_set_percent()` only touches
+the LEDC on a change.
 
 The same UI code compiles on the host: `tools/ui_preview/run.sh` renders every screen to a PNG
 without hardware. How the pixel art is drawn, and the rules for changing it, are in
@@ -918,7 +948,8 @@ the keys. Colours follow the active profile (`app_colors.c`).
 - End stop: a short white flash.
 
 Brightness is 20% at the standard level; LIGHTS → LEVEL scales it from 10% to 200% of that
-(`user_prefs.c`, which also holds the colour and the effect at rest). The whole frame is then
+(`user_prefs.c`, which also holds the colour and the effect at rest). The screen's dark state in
+the sleep hours sets it to 0, and a DIM wake in them to 0.3× (section 12). The whole frame is then
 scaled so the estimated draw stays under the LED budget: what the USB port offers (`pd_status`) less 400 mA for the board and the motor,
 between 60 and 250 mA. That is 100 mA on a plain 500 mA port and 250 mA from 1.5 A up. With
 WiFi on, the radio's ~100 mA comes off it. A strip is sent only when its data changed.
@@ -960,7 +991,8 @@ did the same things.
 | `coredump` | 64 KB | Crash dumps |
 
 The firmware image is about 1.32 MB (78% of a slot), most of the growth being WiFi. NVS also
-holds the namespaces `user_prefs` (idle word, LIGHTS, cover style), `clock`, `home` (HOME's lamps
+holds the namespaces `user_prefs` (idle word, LIGHTS, cover style, the screen: brightness,
+screensaver, sleep hours), `clock`, `home` (HOME's lamps
 and their tokens) and `net` (WiFi network,
 password and pairing key), in plain text: flash encryption is off.
 

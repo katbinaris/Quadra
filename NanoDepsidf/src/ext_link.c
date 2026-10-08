@@ -3,6 +3,7 @@
 #include "host_link.h"
 #include "host_proto.h"
 #include "menu.h"
+#include "motor_sound.h"
 #include "notify.h"
 #include "media.h"
 #include "agent_board.h"
@@ -48,6 +49,16 @@ static _Atomic bool s_text_pending = false;
 static lights_t s_lights_req;
 static bool s_lights_save;
 static _Atomic bool s_lights_pending = false;
+static screen_t s_idle_req; // EXT_CMD_IDLE, likewise
+static bool s_idle_save;
+static _Atomic bool s_idle_pending = false;
+static host_link_t s_idle_link;
+static uint32_t s_idle_gen;
+// EXT_CMD_HAPTICS with SAVE: set at once, stored (NVS) from ext_link_poll, answered from there.
+static int s_hap_profile, s_hap_feel;
+static _Atomic bool s_hap_pending = false;
+static host_link_t s_hap_link;
+static uint32_t s_hap_gen;
 static _Atomic bool s_cover_end_pending = false;
 static host_link_t s_text_link, s_lights_link;
 static uint32_t s_text_gen, s_lights_gen; // host_link_gen() of the link that asked
@@ -169,6 +180,45 @@ static void build_prefs(uint8_t *r) {
     r[10] = (uint8_t)cover_style_get();
     r[11] = COVER_STYLE_COUNT;
     user_text_get((char *)r + 16, USER_TEXT_MAX + 1);
+}
+
+static void build_idle(uint8_t *r) {
+    screen_t s;
+    screen_get(&s);
+    r[0] = EXT_TAG_IDLE;
+    r[1] = (uint8_t)s.bright;
+    r[2] = (uint8_t)s.saver;
+    put_u16(r + 3, (uint16_t)s.saver_s);
+    r[5] = (uint8_t)s.sleep_on;
+    put_u16(r + 6, (uint16_t)s.sleep_from);
+    put_u16(r + 8, (uint16_t)s.sleep_to);
+    put_u16(r + 10, (uint16_t)s.dark_s);
+    r[12] = (uint8_t)s.wake;
+    r[13] = (menu_screen_dirty() ? EXT_IDLE_DIRTY : 0) | (clock_trusted() ? EXT_IDLE_TRUSTED : 0)
+          | (screen_sleeping() ? EXT_IDLE_SLEEPING : 0) | (ui_state_get_saver() == UI_SAVER_DARK ? EXT_IDLE_DARK : 0);
+}
+
+static void build_haptics(uint8_t *r, int p, int f) {
+    menu_haptic_entry_t e;
+    menu_haptic_get(p, f, &e);
+    r[0] = EXT_TAG_HAPTICS;
+    r[1] = (uint8_t)p;
+    r[2] = (uint8_t)f;
+    r[3] = (uint8_t)e.feel;
+    r[4] = (uint8_t)e.click;
+    memcpy(r + 5, &e.tune.kp, 4);
+    memcpy(r + 9, &e.tune.kd, 4);
+    memcpy(r + 13, &e.tune.shape, 4);
+    memcpy(r + 17, &e.tune.amp, 4);
+    memcpy(r + 21, &e.tune.pitch, 4);
+    r[25] = e.dirty ? EXT_HAPTICS_DIRTY : 0;
+    r[26] = HAPTIC_PROFILES[p].feels;
+    r[27] = HAPTIC_PROFILE_COUNT;
+    r[28] = HAPTIC_TYPE_COUNT;
+    r[29] = SNDCAL_CLICK_COUNT;
+    int32_t modes[MENU_MODE_HAPTICS];
+    menu_mode_haptics_get(modes);
+    for (int i = 0; i < MENU_MODE_HAPTICS; i++) r[30 + i] = (uint8_t)modes[i];
 }
 
 static void ack(uint8_t *r, uint8_t cmd, uint8_t status) {
@@ -441,6 +491,73 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             s_lights_gen = host_link_gen(link);
             atomic_store(&s_lights_pending, true);
             return false;
+        }
+        case EXT_CMD_IDLE: {
+            if (atomic_load(&s_idle_pending)) {
+                ack(r, in[0], EXT_ST_BAD_PARAM);
+                return true;
+            }
+            screen_t s;
+            screen_get(&s);
+            screen_t was = s;
+            if (in[2] != 0xFF) s.bright = in[2];
+            if (in[3] != 0xFF) s.saver = in[3];
+            if (rd_u16(in + 4) != 0xFFFF) s.saver_s = rd_u16(in + 4);
+            if (in[6] != 0xFF) s.sleep_on = in[6];
+            if (rd_u16(in + 7) != 0xFFFF) s.sleep_from = rd_u16(in + 7);
+            if (rd_u16(in + 9) != 0xFFFF) s.sleep_to = rd_u16(in + 9);
+            if (rd_u16(in + 11) != 0xFFFF) s.dark_s = rd_u16(in + 11);
+            if (in[13] != 0xFF) s.wake = in[13];
+            if (!(in[1] & EXT_IDLE_SAVE) && memcmp(&s, &was, sizeof(s)) == 0) { // only asking
+                build_idle(r);
+                return true;
+            }
+            s_idle_req = s;
+            s_idle_save = in[1] & EXT_IDLE_SAVE;
+            s_idle_link = link;
+            s_idle_gen = host_link_gen(link);
+            atomic_store(&s_idle_pending, true); // set (and stored) from ext_link_poll
+            return false;
+        }
+        case EXT_CMD_HAPTICS: {
+            int p = in[2], f = in[3];
+            if (p >= HAPTIC_PROFILE_COUNT || f >= HAPTIC_TYPE_COUNT
+                || (in[1] != EXT_HAPTICS_GET && in[1] != EXT_HAPTICS_SET)) {
+                ack(r, in[0], EXT_ST_BAD_PARAM);
+                return true;
+            }
+            if (in[1] == EXT_HAPTICS_SET) {
+                if (atomic_load(&s_hap_pending)) {
+                    ack(r, in[0], EXT_ST_BAD_PARAM);
+                    return true;
+                }
+                haptic_tune_t t;
+                memcpy(&t.kp, in + 8, 4);
+                memcpy(&t.kd, in + 12, 4);
+                memcpy(&t.shape, in + 16, 4);
+                memcpy(&t.amp, in + 20, 4);
+                memcpy(&t.pitch, in + 24, 4);
+                if (!menu_haptic_set(p, f, in[5] == 0xFF ? -1 : in[5], in[6] == 0xFF ? -1 : in[6],
+                                     (in[4] & EXT_HAPTICS_TUNE) ? &t : NULL)) {
+                    ack(r, in[0], EXT_ST_BAD_PARAM);
+                    return true;
+                }
+                if (in[4] & EXT_HAPTICS_MODES) {
+                    int32_t modes[MENU_MODE_HAPTICS];
+                    for (int i = 0; i < MENU_MODE_HAPTICS; i++) modes[i] = in[28 + i];
+                    menu_mode_haptics_set(modes);
+                }
+                if (in[4] & EXT_HAPTICS_SAVE) {
+                    s_hap_profile = p;
+                    s_hap_feel = f;
+                    s_hap_link = link;
+                    s_hap_gen = host_link_gen(link);
+                    atomic_store(&s_hap_pending, true); // stored and answered from ext_link_poll
+                    return false;
+                }
+            }
+            build_haptics(r, p, f);
+            return true;
         }
         case EXT_CMD_PREFS:
             build_prefs(r);
@@ -760,6 +877,21 @@ void ext_link_poll(void) {
         build_prefs(r);
         host_link_queue_to(s_lights_link, s_lights_gen, r);
         atomic_store(&s_lights_pending, false);
+    }
+    if (atomic_load(&s_idle_pending)) {
+        screen_set(&s_idle_req);
+        if (s_idle_save) menu_remote_save_screen();
+        memset(r, 0, sizeof(r));
+        build_idle(r);
+        host_link_queue_to(s_idle_link, s_idle_gen, r);
+        atomic_store(&s_idle_pending, false);
+    }
+    if (atomic_load(&s_hap_pending)) {
+        menu_remote_save_haptic();
+        memset(r, 0, sizeof(r));
+        build_haptics(r, s_hap_profile, s_hap_feel);
+        host_link_queue_to(s_hap_link, s_hap_gen, r);
+        atomic_store(&s_hap_pending, false);
     }
     if (atomic_load(&s_cover_end_pending)) {
         bool ok = media_cover_end();

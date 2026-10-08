@@ -1,4 +1,5 @@
 #include "menu.h"
+#include "clock.h"
 #include "config_store.h"
 #include "haptic_params.h"
 #include "app_profiles/app_profiles.h"
@@ -378,10 +379,57 @@ static void CONTROL_HOT rotate_rotation(int8_t dir) {
     if (v < 0) v += MENU_DISPLAY_ROTATIONS;
     atomic_store_explicit(&s_ph_rotation, v, memory_order_relaxed);
 }
+static void save_screen_part(bool sleep_part);
 static void action_save_display(void) {
     display_cfg_t cfg = {.rotation = atomic_load_explicit(&s_ph_rotation, memory_order_relaxed)};
     config_store_save_display(&cfg);
+    save_screen_part(false);
 }
+
+// DISPLAY's BRIGHT, SAVER, AFTER and the SLEEP screen (user_prefs.h screen_t). Direct screens
+// like LIGHTS: turning changes it live (the backlight follows at once), F2 keeps it. On SLEEP,
+// the rows after SLEEP only mean something with it on -- muted otherwise.
+static void fmt_bright(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    snprintf(buf, n, "%ld%%", (long)s.bright);
+}
+static void fmt_saver(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    snprintf(buf, n, "%s", screen_saver_name(s.saver));
+}
+static void fmt_saver_s(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    screen_format_secs(s.saver_s, buf, n);
+}
+static void fmt_sleep_on(char *buf, size_t n) {
+    // On, but the knob doesn't trust its local time (clock.h): the hours wait for it.
+    snprintf(buf, n, "%s", !screen_sleep_enabled() ? "OFF" : clock_trusted() ? "ON" : "NO TIME");
+}
+static void fmt_sleep_from(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    screen_format_time(s.sleep_from, buf, n);
+}
+static void fmt_sleep_to(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    screen_format_time(s.sleep_to, buf, n);
+}
+static void fmt_dark_s(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    screen_format_secs(s.dark_s, buf, n);
+}
+static void fmt_wake(char *buf, size_t n) {
+    screen_t s;
+    screen_get(&s);
+    snprintf(buf, n, "%s", screen_wake_name(s.wake));
+}
+static bool CONTROL_HOT sleep_rows_muted(void) { return !screen_sleep_enabled(); }
+static void action_save_sleep(void) { save_screen_part(true); }
 
 // DEVICE -> BINDINGS. Direct screen: turning switches it live (the next key report already
 // uses it), F2 keeps it.
@@ -498,11 +546,25 @@ static const menu_screen_t s_boot_screen = {
     MENU_SCREEN_BOOT, "Boot USB Mode", s_boot_items, sizeof(s_boot_items) / sizeof(s_boot_items[0]), true, action_save_boot
 };
 
-static const menu_item_t s_display_items[] = {
-    { .label = "ROTATION", .kind = MENU_ITEM_VALUE, .format_value = fmt_rotation, .on_rotate = rotate_rotation },
+static const menu_item_t s_display_items[MENU_DISPLAY_ROW_COUNT] = {
+    [MENU_DISPLAY_ROW_ROTATION] = { .label = "ROTATION", .kind = MENU_ITEM_VALUE, .format_value = fmt_rotation, .on_rotate = rotate_rotation },
+    [MENU_DISPLAY_ROW_BRIGHT]   = { .label = "BRIGHT",   .kind = MENU_ITEM_VALUE, .format_value = fmt_bright,   .on_rotate = screen_rotate_bright },
+    [MENU_DISPLAY_ROW_SAVER]    = { .label = "SAVER",    .kind = MENU_ITEM_VALUE, .format_value = fmt_saver,    .on_rotate = screen_rotate_saver },
+    [MENU_DISPLAY_ROW_AFTER]    = { .label = "AFTER",    .kind = MENU_ITEM_VALUE, .format_value = fmt_saver_s,  .on_rotate = screen_rotate_saver_s },
 };
 static const menu_screen_t s_display_screen = {
-    MENU_SCREEN_DISPLAY, "Display", s_display_items, 1, true, action_save_display
+    MENU_SCREEN_DISPLAY, "Display", s_display_items, MENU_DISPLAY_ROW_COUNT, true, action_save_display
+};
+
+static const menu_item_t s_sleep_items[MENU_SLEEP_ROW_COUNT] = {
+    [MENU_SLEEP_ROW_ON]   = { .label = "SLEEP",   .kind = MENU_ITEM_VALUE, .format_value = fmt_sleep_on,   .on_rotate = screen_rotate_sleep_on },
+    [MENU_SLEEP_ROW_FROM] = { .label = "FROM",    .kind = MENU_ITEM_VALUE, .format_value = fmt_sleep_from, .on_rotate = screen_rotate_sleep_from, .is_muted = sleep_rows_muted },
+    [MENU_SLEEP_ROW_TO]   = { .label = "TO",      .kind = MENU_ITEM_VALUE, .format_value = fmt_sleep_to,   .on_rotate = screen_rotate_sleep_to,   .is_muted = sleep_rows_muted },
+    [MENU_SLEEP_ROW_DARK] = { .label = "DARK IN", .kind = MENU_ITEM_VALUE, .format_value = fmt_dark_s,     .on_rotate = screen_rotate_dark_s,     .is_muted = sleep_rows_muted },
+    [MENU_SLEEP_ROW_WAKE] = { .label = "WAKE",    .kind = MENU_ITEM_VALUE, .format_value = fmt_wake,       .on_rotate = screen_rotate_wake,       .is_muted = sleep_rows_muted },
+};
+static const menu_screen_t s_sleep_screen = {
+    MENU_SCREEN_SLEEP, "Sleep", s_sleep_items, MENU_SLEEP_ROW_COUNT, true, action_save_sleep
 };
 
 static const menu_item_t s_lights_items[MENU_LIGHTS_ROW_COUNT] = {
@@ -595,6 +657,7 @@ static const menu_item_t s_root_items[] = {
     { .label = "PROFILES",  .kind = MENU_ITEM_SUBMENU, .submenu = &s_hid_screen },
     { .label = "HAPTICS",   .kind = MENU_ITEM_SUBMENU, .submenu = &s_haptic_screen },
     { .label = "DISPLAY",   .kind = MENU_ITEM_SUBMENU, .submenu = &s_display_screen },
+    { .label = "SLEEP",     .kind = MENU_ITEM_SUBMENU, .submenu = &s_sleep_screen },
     { .label = "LIGHTS",    .kind = MENU_ITEM_SUBMENU, .submenu = &s_lights_screen },
     { .label = "BOOT MODE", .kind = MENU_ITEM_SUBMENU, .submenu = &s_boot_screen },
     { .label = "DEVICE",    .kind = MENU_ITEM_SUBMENU, .submenu = &s_device_screen },
@@ -690,6 +753,7 @@ typedef struct {
     int32_t rotation;
     menu_host_t host;
     lights_t lights;
+    screen_t screen;
     int32_t hp_click[HAPTIC_PROFILE_COUNT];
     int click_axis;
 } settings_t;
@@ -714,6 +778,7 @@ static void settings_capture(settings_t *s) {
     s->rotation = atomic_load_explicit(&s_ph_rotation, memory_order_relaxed);
     s->host = atomic_load_explicit(&s_ph_host, memory_order_relaxed);
     lights_get(&s->lights);
+    screen_get(&s->screen);
     for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) s->hp_click[p] = LD(s_hp_click[p]);
     s->click_axis = motor_sound_axis();
 }
@@ -733,6 +798,7 @@ static void settings_restore(const settings_t *s) {
     atomic_store_explicit(&s_ph_rotation, s->rotation, memory_order_relaxed);
     atomic_store_explicit(&s_ph_host, s->host, memory_order_relaxed);
     lights_set(&s->lights);
+    screen_set(&s->screen);
     for (int p = 0; p < HAPTIC_PROFILE_COUNT; p++) ST(s_hp_click[p], s->hp_click[p]);
     motor_sound_set_axis(s->click_axis);
 }
@@ -761,6 +827,10 @@ static void settings_copy_group(settings_t *dst, const settings_t *src, menu_scr
             break;
         case MENU_SCREEN_DISPLAY:
             dst->rotation = src->rotation;
+            screen_copy_part(&dst->screen, &src->screen, false);
+            break;
+        case MENU_SCREEN_SLEEP:
+            screen_copy_part(&dst->screen, &src->screen, true);
             break;
         case MENU_SCREEN_BINDINGS:
             dst->host = src->host;
@@ -791,7 +861,9 @@ static bool settings_group_differs(const settings_t *a, const settings_t *b, men
         case MENU_SCREEN_BOOT:
             return a->boot_mode != b->boot_mode;
         case MENU_SCREEN_DISPLAY:
-            return a->rotation != b->rotation;
+            return a->rotation != b->rotation || screen_part_differs(&a->screen, &b->screen, false);
+        case MENU_SCREEN_SLEEP:
+            return screen_part_differs(&a->screen, &b->screen, true);
         case MENU_SCREEN_BINDINGS:
             return a->host != b->host;
         case MENU_SCREEN_LIGHTS:
@@ -817,6 +889,18 @@ static void revert_group_locked(menu_screen_id_t group) {
     settings_capture(&cur);
     settings_copy_group(&cur, &s_saved, group);
     settings_restore(&cur);
+}
+
+// One NVS blob holds both screens' fields: write this screen's live part over the other's saved
+// one, so saving DISPLAY never stores an unsaved SLEEP change (or the other way round). Core 1.
+static void save_screen_part(bool sleep_part) {
+    screen_t live, out;
+    screen_get(&live);
+    portENTER_CRITICAL(&s_state_mux);
+    out = s_saved.screen;
+    portEXIT_CRITICAL(&s_state_mux);
+    screen_copy_part(&out, &live, sleep_part);
+    screen_store(&out);
 }
 
 // F2's NVS commit, on Core 1. It used to run inline in menu_input_save(), i.e. inside a
@@ -1446,7 +1530,7 @@ static const struct {
     {MENU_SCREEN_HAPTIC, action_save_haptic},   {MENU_SCREEN_HID, action_save_hid},
     {MENU_SCREEN_BOOT, action_save_boot},       {MENU_SCREEN_DISPLAY, action_save_display},
     {MENU_SCREEN_BINDINGS, action_save_bindings}, {MENU_SCREEN_LIGHTS, action_save_lights},
-    {MENU_SCREEN_CLICK, action_save_click},
+    {MENU_SCREEN_CLICK, action_save_click},     {MENU_SCREEN_SLEEP, action_save_sleep},
 };
 
 void menu_remote_save(void) {
@@ -1498,6 +1582,77 @@ void menu_remote_save_lights(void) {
     }
     portENTER_CRITICAL(&s_state_mux);
     s_saved.lights = cur;
+    portEXIT_CRITICAL(&s_state_mux);
+    atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
+}
+
+bool menu_screen_dirty(void) {
+    screen_t cur;
+    screen_get(&cur);
+    portENTER_CRITICAL(&s_state_mux);
+    bool dirty = memcmp(&cur, &s_saved.screen, sizeof(cur)) != 0;
+    portEXIT_CRITICAL(&s_state_mux);
+    return dirty;
+}
+
+void menu_remote_save_screen(void) {
+    screen_t cur;
+    screen_get(&cur);
+    if (!menu_screen_dirty()) return;
+    if (!screen_store(&cur)) { // NVS failed: still unsaved
+        motor_sound_jingle(MOTOR_SOUND_JINGLE_CANCEL);
+        return;
+    }
+    portENTER_CRITICAL(&s_state_mux);
+    s_saved.screen = cur;
+    portEXIT_CRITICAL(&s_state_mux);
+    atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
+}
+
+bool menu_haptic_get(int p, int f, menu_haptic_entry_t *out) {
+    if (p < 0 || p >= HAPTIC_PROFILE_COUNT || f < 0 || f >= HAPTIC_TYPE_COUNT) return false;
+    out->feel = hp_feel(p);
+    out->click = LD(s_hp_click[p]);
+    hp_get_tune(p, f, &out->tune);
+    portENTER_CRITICAL(&s_state_mux);
+    out->dirty = out->feel != s_saved.hp_feel[p] || out->click != s_saved.hp_click[p]
+              || memcmp(&out->tune, &s_saved.hp_tune[p][f], sizeof(out->tune)) != 0;
+    portEXIT_CRITICAL(&s_state_mux);
+    return true;
+}
+
+bool menu_haptic_set(int p, int f, int use_feel, int click, const haptic_tune_t *tune) {
+    if (p < 0 || p >= HAPTIC_PROFILE_COUNT || f < 0 || f >= HAPTIC_TYPE_COUNT) return false;
+    uint8_t feels = HAPTIC_PROFILES[p].feels;
+    if (tune != NULL && !(feels & (1u << f))) return false;
+    if (use_feel >= 0 && (use_feel >= HAPTIC_TYPE_COUNT || !(feels & (1u << use_feel)))) return false;
+    if (click >= SNDCAL_CLICK_COUNT) return false;
+    if (tune != NULL) hp_set_tune(p, f, tune);
+    if (use_feel >= 0) ST(s_hp_feel[p], use_feel);
+    if (click >= 0) ST(s_hp_click[p], click);
+    return true;
+}
+
+void menu_mode_haptics_get(int32_t out[MENU_MODE_HAPTICS]) {
+    for (int i = 0; i < MENU_MODE_HAPTICS; i++) out[i] = LD(s_mode_hp[i]);
+}
+
+void menu_mode_haptics_set(const int32_t in[MENU_MODE_HAPTICS]) {
+    for (int i = 0; i < MENU_MODE_HAPTICS; i++) ST(s_mode_hp[i], clampi(in[i], 0, HAPTIC_PROFILE_COUNT - 1));
+}
+
+void menu_remote_save_haptic(void) {
+    static settings_t cur, saved; // the usb task only
+    settings_capture(&cur);
+    portENTER_CRITICAL(&s_state_mux);
+    saved = s_saved;
+    portEXIT_CRITICAL(&s_state_mux);
+    if (!settings_group_differs(&cur, &saved, MENU_SCREEN_HAPTIC)) return;
+    action_save_haptic();
+    portENTER_CRITICAL(&s_state_mux);
+    settings_copy_group(&s_saved, &cur, MENU_SCREEN_HAPTIC);
     portEXIT_CRITICAL(&s_state_mux);
     atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
     motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);

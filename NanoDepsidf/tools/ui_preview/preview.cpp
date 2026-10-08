@@ -515,13 +515,46 @@ int main() {
         }
     }
 
-    menu_render_snapshot_t disp = {};
-    disp.open = true;
-    disp.screen = MENU_SCREEN_DISPLAY;
-    disp.dirty = true;
-    disp.row_count = 1;
-    ui::draw_display(disp, 1, true);
-    keep("display rotation 90, unsaved");
+    {
+        const char *DV[MENU_DISPLAY_ROW_COUNT][2] = {{"ROTATION", "90"}, {"BRIGHT", "80%"}, {"SAVER", "CLOCK"}, {"AFTER", "30 S"}};
+        for (int sel : {MENU_DISPLAY_ROW_SAVER, MENU_DISPLAY_ROW_ROTATION}) {
+            menu_render_snapshot_t s = {};
+            s.open = true;
+            s.screen = MENU_SCREEN_DISPLAY;
+            s.dirty = sel == MENU_DISPLAY_ROW_SAVER;
+            s.selected = sel;
+            s.row_count = MENU_DISPLAY_ROW_COUNT;
+            for (int i = 0; i < MENU_DISPLAY_ROW_COUNT; i++) s.rows[i] = row(DV[i][0], "", DV[i][1], i == sel);
+            ui::draw_display(s, true);
+            keep(sel == MENU_DISPLAY_ROW_SAVER ? "display: saver, unsaved" : "display: rotation");
+        }
+        const char *SV[MENU_SLEEP_ROW_COUNT][2] = {{"SLEEP", "ON"}, {"FROM", "23:00"}, {"TO", "07:00"}, {"DARK IN", "30 S"}, {"WAKE", "DIM"}};
+        struct { int sel; bool on, trusted, sleeping; const char *name; } cases[] = {
+            {MENU_SLEEP_ROW_FROM, true, true, false, "sleep: hours, awake"},
+            {MENU_SLEEP_ROW_ON, true, false, false, "sleep: no time yet"},
+            {MENU_SLEEP_ROW_ON, false, true, false, "sleep: off"},
+        };
+        for (const auto &c : cases) {
+            menu_render_snapshot_t s = {};
+            s.open = true;
+            s.screen = MENU_SCREEN_SLEEP;
+            s.selected = c.sel;
+            s.row_count = MENU_SLEEP_ROW_COUNT;
+            for (int i = 0; i < MENU_SLEEP_ROW_COUNT; i++) s.rows[i] = row(SV[i][0], "", SV[i][1], i == c.sel);
+            if (!c.on) {
+                snprintf(s.rows[0].value, sizeof(s.rows[0].value), "OFF");
+                for (int i = 1; i < MENU_SLEEP_ROW_COUNT; i++) s.rows[i].muted = true, snprintf(s.rows[i].value, sizeof(s.rows[i].value), "--");
+            } else if (!c.trusted) {
+                snprintf(s.rows[0].value, sizeof(s.rows[0].value), "NO TIME");
+            }
+            ui::draw_sleep(s, {c.on, c.trusted, c.sleeping, true});
+            keep(c.name);
+        }
+        ui::draw_clock_saver({true, 23, 47, 3, 8, 9, true, 0});
+        keep("saver: clock, 24h");
+        ui::draw_clock_saver({true, 7, 5, 4, 9, 9, false, 17});
+        keep("saver: clock, 12h, moved");
+    }
 
     menu_render_snapshot_t dev = {};
     dev.open = true;

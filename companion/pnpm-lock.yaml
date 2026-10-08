@@ -14,6 +14,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.0
         version: 2.12.0
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2.8.1
+        version: 2.8.1
       preact:
         specifier: ^11.0.0
         version: 11.0.0
@@ -224,6 +227,9 @@ packages:
     resolution: {integrity: sha512-GIShnAR4C16kSTA8NO02fo8fOw/I5z5sAUEB5S2HlPHFnBkbihL4c9a/MpkxOm1+q5S+tFd3X4QUjHWxfyGzpQ==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-dialog@2.8.1':
+    resolution: {integrity: sha512-/DtE3B62JgpYuWFL5ATXM6KOXUq7pca7cJWOgSqULhZsgyjLk0PWKek1dbRDvhNBW6flNsOfWphsKnb+738Dmw==}
 
   '@types/w3c-web-hid@1.0.7':
     resolution: {integrity: sha512-/y97wBH7fYB5vKoDIn11O1ZDMNFLCAVqZ9af0OWDN7VSO2ClErEN2HlGbBuPgHBTUmZOVx1og2ZHX1U2gEJM4Q==}
@@ -646,6 +652,10 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.12.0
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.0
       '@tauri-apps/cli-win32-x64-msvc': 2.12.0
+
+  '@tauri-apps/plugin-dialog@2.8.1':
+    dependencies:
+      '@tauri-apps/api': 2.12.0
 
   '@types/w3c-web-hid@1.0.7': {}
 

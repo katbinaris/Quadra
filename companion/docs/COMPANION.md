@@ -36,7 +36,7 @@ There are two ways to run the companion, with the same screens:
 
 | | Quadra app | Web page |
 |---|---|---|
-| Runs in | Its own window (macOS) | Chrome or Edge |
+| Runs in | Its own window (macOS or Windows) | Chrome or Edge |
 | Connecting | Finds the knob itself, and again after a replug; over Wi-Fi once paired | Click **Connect** once and pick the knob; automatic after that |
 | Safari, Firefox | – | Not supported (no WebHID): the page says **No USB access here** |
 
@@ -55,11 +55,16 @@ they come to this app over Wi-Fi and it types and scrolls on this Mac, once you 
 under **System Settings › Privacy & Security › Accessibility** (**Device › Wi-Fi › Allow**
 asks for it). Keys, the wheel, drags and media keys all work; on a weak signal a drag can
 stutter now and then, and if the link drops, nothing stays held down. The music cover, agent
-requests and the clock's time come from the Mac service, which reaches the knob over Wi-Fi
-too.
+requests and the clock's time come from the Mac service (or the Windows service), which
+reaches the knob over Wi-Fi too.
 
 The app is signed for this Mac only (ad hoc), so macOS forgets that permission when the app is
 rebuilt: remove Quadra from the Accessibility list and allow it again.
+
+On Windows there's nothing to allow: the controls type and scroll on this PC as soon as the
+app is paired. Windows keeps them out of apps running as administrator. Set **Device ›
+Computer** to **PC** there, so shortcuts written with ⌘ arrive as Ctrl; the app says so when
+it isn't. On Windows the app also names keys the PC's way: Ctrl, Alt, Shift, Backspace, Enter.
 
 Neither needs a driver, and macOS doesn't ask for Input Monitoring permission.
 
@@ -114,7 +119,7 @@ music cover style, the clock, Wi-Fi, and the lamps' names, icons and order. Thei
 
 ## 4. Mode
 
-<img src="app-mode.png" width="720" alt="Mode: App, Home, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; Edit and Duplicate">
+<img src="app-mode.png" width="720" alt="Mode: App, Home, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; New profile and Import profile; Edit, Duplicate and Export">
 
 **Mode** is what the knob sends to the computer:
 
@@ -137,8 +142,11 @@ from:
 | **Yours** | A profile you made, stored on the knob |
 | **Not saved** | Has edits that are live but not stored |
 
-**Edit** opens the profile in use, **Duplicate** makes a copy of it, and **New profile** makes an
-empty one; both new ones open straight away, in use. The knob holds up to 16 profiles.
+**Edit** opens the profile in use, **Duplicate** makes a copy of it, **New profile** makes an
+empty one, and **Import profile** brings one in from a file (an **Export…**, from this app or
+someone else's); the new one opens straight away, in use. An imported profile never replaces one
+on the knob: when its id or name is taken, it comes in beside it as RESTORED 2 (say). **Export…**
+writes the profile in use to a file you pick. The knob holds up to 16 profiles.
 
 In **Mouse** and **Keys**, the page shows which haptic profile the knob uses in that mode; each
 mode keeps its own:
@@ -191,7 +199,7 @@ These are stored on the knob at once, over USB or Wi-Fi (firmware with extension
 **Import from Xiaomi…** puts the lamps of your Xiaomi account on the knob, in four steps:
 
 1. **Account:** the list of your devices and their keys, saved by the token extractor in
-   `~/.quadra/xiaomi-devices.json`. **Sign in to Xiaomi…** opens the extractor in Terminal for
+   `~/.quadra/xiaomi-devices.json`. **Sign in to Xiaomi…** opens the extractor in Terminal (on Windows, a command window) for
    a new list (sign in with the QR code in Mi Home, or your password, and choose your server);
    **Look again** reads it once it's done. The extractor has to be installed in
    `~/.quadra/token-extractor` (see the README's HOME section).
@@ -203,7 +211,7 @@ These are stored on the knob at once, over USB or Wi-Fi (firmware with extension
    from the model) and order. The knob holds 12.
 4. **Send:** over USB only, since it carries the lamps' keys. It replaces the lamps on the knob.
 
-The keys stay in that file on this Mac and on the knob; the app never shows them. The import
+The keys stay in that file on this computer and on the knob; the app never shows them. The import
 needs the Quadra app (a web page can't read the file or look on the network); in a terminal,
 `quadra.py home import` does the same.
 
@@ -218,8 +226,9 @@ changes reach the knob a moment after you make them, **Save to knob** keeps them
 On the left are the knob's synths, each with its maker's mark and where it comes from
 (**Built-in**, **Built-in, changed**, **Yours**), and below them the knob's screen for the
 parameter you're on: live when it's the synth in use. **New synth** starts one with four
-parameters, **Import a file…** adds one from a JSON file, and **Duplicate** and **Export…** (to
-Downloads) are at the top of each synth. The knob holds 16 synths.
+parameters, **Import a file…** adds one from a JSON file (one with the same id replaces it), and
+**Duplicate** and **Export…** (to a file you pick) are at the top of each synth. The knob holds
+16 synths.
 
 **Parameters** lists them in the order F1 steps through, by group. The one the knob is on now
 has a green dot and its value. Click one to change it:
@@ -305,7 +314,9 @@ on the Haptics screen does the same.
 
 Click a profile in the sidebar to open it. Every profile can be edited, the built-in ones too.
 The header shows its state: **In use** (or a **Use on the knob** button), where it comes from,
-and **Live, not saved** while it has unsaved edits. An edit goes to the knob a moment after you
+and **Live, not saved** while it has unsaved edits; **Duplicate** and **Export…** are beside it.
+**Import profile…** under the profiles in the sidebar brings one in from a file, as on
+[Mode](#4-mode). Dropping a profile's file on the window does the same. An edit goes to the knob a moment after you
 make it, so you can try it straight away; the line under the name says when it's sent, or what
 the knob refused and why.
 
@@ -357,7 +368,7 @@ click one to set it up below. Each is set to one of these:
 - **F4** has no press actions: held still, it opens the knob's menu.
 
 To set a shortcut, click its field and press the keys. Hover over it for the ⌃ ⌥ ⇧ ⌘ buttons,
-for shortcuts the system keeps to itself (⌘Q, ⌘Tab); × clears it.
+for shortcuts the system keeps to itself (⌘Q, ⌘Tab; on Windows Alt+Tab, Win+L); × clears it.
 
 ## 10. Command wheel
 
@@ -396,7 +407,7 @@ Build a macro with **+ Key**, **+ Text** and **+ Pause**, or record one:
 2. Click **Record** and type.
 3. Click **Stop**.
 
-Shortcuts the system takes first (⌘Q, ⌘Tab) can't be recorded. Add those with **+ Key**.
+Shortcuts the system takes first (⌘Q, ⌘Tab; on Windows Alt+Tab, Win+L) can't be recorded. Add those with **+ Key**.
 
 To use a macro, set a key to **Tap** and choose **Macro**, set a key's **Quick tap** to
 **Macro**, or set a command to **Macro**. The list says how often each macro is used. Renaming a
@@ -430,13 +441,18 @@ the knob's own Lights screen). Changes made on the knob show up here within a se
 | **Idle word** | The word on the idle screen, up to 12 characters (lowercase draws as small capitals). **Back to QUADRA** restores it. Stored on the knob as soon as you press **Set** |
 | **Music cover** | How the Music app shows the cover while something plays: **Flat** (full screen), **Record** (the glass is a spinning record, the cover its label), **Slide** (a sleeve the record slides out of) or **Bleed** (a big sleeve that slides off the glass). Stored on the knob at once. On the knob, a tap of F4 on the now-playing screen steps through them (extensions v8 and later) |
 | **Screen rotation** | 0, 90, 180 or 270 degrees. Kept by Save to knob |
+| **Brightness** | The screen's backlight, 10 to 100%. Kept by Save to knob (extensions v13 and later, as are the next two) |
+| **Screensaver** | What the knob shows when it's left alone: **Auto** (what's playing, else the clock, else the icon), **Icon**, **Bounce**, **Clock**, **Music**, **Blank** (the screen off) or **Never**; and **Starts after**, 5 s to 10 min without a turn or a key. Kept by Save to knob |
+| **Sleep hours** | **Sleep** on or off; **From** and **To** (they can run past midnight); **Goes dark**, how long into the screensaver the screen and LEDs turn off; and **Woken**, **Normal** or **Dim**. In the sleep hours only a turn or a key wakes the knob. They need the knob to know the local time, which the Quadra service on the computer sends: without it they pause, the knob stays on as by day, and this box says so. Kept by Save to knob |
+
+<img src="app-look-sleep.png" width="720" alt="Look, Screen & music, further down: brightness, the seven screensaver choices, and sleep hours from 23:00 to 07:00, dark 30 s into the screensaver, woken dim">
 
 <img src="app-look-clock.png" width="720" alt="Look, Clock: 24-hour, seconds and date on; local time; Tokyo and New York as world zones">
 
 **Clock** (the Clock app, extensions v5 and later): what it shows — **24-hour**, **Seconds**,
 **Date**, **Seconds on the LED ring**, and **Board: every zone at once** (the airline board in
 place of the flap clock) — and up to four world zones besides the local time,
-which is this computer's (the Mac service sends the time and the zone; with Wi-Fi on, the knob
+which is this computer's (the Mac or Windows service sends the time and the zone; with Wi-Fi on, the knob
 also sets its clock from the internet). Each zone follows its own daylight-saving rules. In the
 Clock app on the knob, turning steps through the zones; F1 switches 12 / 24 hours, F2 the
 seconds, F3 the date, and a tap on F4 the screen. Stored on the knob as you change them.
@@ -462,8 +478,36 @@ it. Switch back in the knob's own menu: **BOOT MODE › USB MODE › HID**, then
 USB; the password stays on the knob) and its address, then **This app over Wi-Fi** (the app
 only, not the web page): **Pair this app** (see [Connecting](#1-connecting)), **New key** (asks
 once more: every other paired computer has to pair again) and **Forget**. With firmware that
-has it, **The knob's controls** shows whether they come to this Mac over Wi-Fi (**On**), or
-whether macOS still needs to allow it (**Allow**).
+has it, **The knob's controls** shows whether they come to this computer over Wi-Fi (**On**),
+or whether macOS still needs to allow it (**Allow**; Windows never asks).
+
+<img src="app-device-backup.png" width="720" alt="Device, Backup: Back up to a file, what is and isn't in a backup, and Restore from a file">
+
+**Backup** puts the knob's setup in one file, and brings any part of one back:
+
+| In a backup | Not in a backup |
+|---|---|
+| Mode and device: the mode, the profile and synth in use, the MIDI channel, Mac or PC, the screen's rotation, how it starts | Wi-Fi, and this app's pairing |
+| Look: lights, the idle word, the music cover, brightness, screensaver and sleep hours | The lamps in Home mode: their keys can't be read back. **Lamps › Import** brings them in again |
+| Clock: the format and your four zones | The motor and sound calibration: they belong to this knob |
+| Haptics: all five haptic profiles in every feel, their clicks, and the one each mode uses | |
+| Your app profiles and synths, and the built-in ones you've changed | |
+
+**Back up to a file…** asks where to save it and takes what's on the knob now, unsaved changes
+included. **Restore from a file…** (or dropping a backup on the window) shows what the file
+would change, part by part:
+
+<img src="app-device-restore.png" width="720" alt="Device, Backup: a restore's summary, with what changes in each part, a box to tick for each, and the profiles one by one">
+
+Untick what you want to keep as it is; each app profile and synth has a box of its own, and one
+the knob would refuse (a name too long, say) is shown with why and left out. A profile or synth
+with the same id as one on the knob replaces it. **Back up what's on the knob first** is ticked:
+the app asks where to save that before it changes anything, and stops if you cancel. **Restore
+and save** then writes what's ticked and saves it on the knob. If the mode changes to or from
+MIDI, the knob reconnects at the end.
+
+Haptics need firmware with extensions v14; with older firmware a backup has no haptics in it
+and a restore leaves them out.
 
 ## 14. System info
 
@@ -492,7 +536,9 @@ report, so the app doesn't ask for them otherwise.
 | **Connect your Quadra** (web page) | Click **Connect** and pick the knob; the browser asks once |
 | A setting came back after a restart | It wasn't saved. Change it again and press **Save to knob** |
 | An edit is refused, with a message under the profile's name | The message says which field: for example a name that's too long, or text that isn't plain ASCII |
-| **New profile** and **Duplicate** are greyed out | The knob already holds 16 profiles. Delete one |
+| **New profile**, **Import profile** and **Duplicate** are greyed out | The knob already holds 16 profiles. Delete one |
+| A restore says **The knob holds 16 app profiles** for a profile | It would be one too many. Untick another, or delete one from the knob first |
+| A profile file says **That isn't an app profile** | It's a backup or a synth: open a backup under Device › Backup, a synth under Synths. Dropping any of them on the window works too |
 | **Sign in to Xiaomi…** says the extractor isn't installed | Install it in `~/.quadra/token-extractor` with its `.venv` (README, HOME) |
 | The import finds a lamp but says **Not answering** | It's off at the switch, or on another network. Import it anyway: the knob finds it when it's back |
 | **Send** is greyed out in the import | The knob is on Wi-Fi: the lamps' keys only go over USB. Plug it in |

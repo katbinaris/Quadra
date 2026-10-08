@@ -15,7 +15,7 @@
 [![ESP-IDF 6.1](https://img.shields.io/badge/ESP--IDF-6.1-E7352C?logo=espressif&logoColor=white)](#building-and-flashing)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%207.1.3-F6822B?logo=platformio&logoColor=white)](#building-and-flashing)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](#desktop-companion)
-[![macOS](https://img.shields.io/badge/companion-macOS-000000?logo=apple&logoColor=white)](#desktop-companion)
+[![macOS | Windows](https://img.shields.io/badge/companion-macOS%20%7C%20Windows-000000)](#desktop-companion)
 [![WebHID](https://img.shields.io/badge/web-Chrome%20%7C%20Edge%20(WebHID)-4285F4?logo=googlechrome&logoColor=white)](#desktop-companion)
 
 **A haptic knob for creative software, by Kafi Devices.**
@@ -109,14 +109,14 @@ shows, at 2× scale.
   or a new one made, from the companion; edited profiles and macros are stored on the device.
   Blender and AutoCAD are listed as empty profiles (the knob scrolls) until they are designed.
 - **MUSIC.** The knob is the computer's volume and the keys play, pause and skip, as media
-  keys the system handles itself. With the optional Mac service running, the screen shows
+  keys the system handles itself. With the optional [Mac](#the-mac-service) or [Windows](#the-windows-service) service running, the screen shows
   the album cover, title and artist, and a volume ring that moves with the knob.
 - **AGENTS.** Claude Code, Codex, Cursor and VS Code Copilot can show their permission requests on the knob,
-  through the optional Mac service and its hooks. Hold F1 to allow, F3 to deny. The knob plays
+  through the optional Mac or Windows service and its hooks. Hold F1 to allow, F3 to deny. The knob plays
   three rising notes for a request, two soft ones for other notifications, and answers an
   allow or a deny with its own sound. A dashboard
   shows which sessions are working or waiting, and a command wheel types their commands.
-- **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
+- **CLOCK.** The time in up to five zones, with daylight saving, set from the computer or from
   the internet over WiFi.
 - **HOME.** The knob as a remote for Xiaomi lamps on your network: pick a lamp, turn its
   brightness, white or colour, switch it on and off. It talks to the lamps itself over WiFi
@@ -127,8 +127,8 @@ shows, at 2× scale.
   the Roland JU-06A and TR-8S, and General MIDI, each editable in the companion, and your own
   synths besides. It sends over USB MIDI and the TRS jacks at once.
 - **WiFi.** The knob can join a network and work without a cable, over an encrypted link
-  paired over USB. The companion app and the Mac service connect at the same time, and on a
-  charger the knob's controls type and scroll on the Mac through the app.
+  paired over USB. The companion app and the Mac or Windows service connect at the same time, and on a
+  charger the knob's controls type and scroll on the computer through the app.
 - **Command wheel.** Hold a key, turn to pick a command, release to run it. Each command has
   a small animated illustration of what it does.
 - **Parameter mode.** After a modelling command starts, the knob sets its value: fine clicks,
@@ -140,7 +140,10 @@ shows, at 2× scale.
   in any orientation.
 - **Idle screen.** Arcade attract mode: the active app's icon (or the QUADRA wordmark, or a
   word of your own) jumps around or explodes onto the screen with squash and stretch, dust,
-  debris and sparkles, in that app's colours. A routine is picked at random each time.
+  debris and sparkles, in that app's colours. A routine is picked at random each time. Or the
+  screensaver shows the clock, what's playing, or nothing, after a delay you choose.
+- **Sleep hours.** At night the screen and every LED go dark a little after the screensaver
+  starts; a turn or a key wakes the knob, at full brightness or a dim night level.
 - **LEDs in the app's colours.** A 60-LED ring around the knob and two LEDs under each key:
   a dim gradient at rest, a spot that follows the knob and pulses on every detent, the
   command wheel's segments, a flash at an end stop. The colour, effect and brightness can
@@ -241,7 +244,8 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
   <img src="NanoDepsidf/docs/images/hid-home.png" width="180" alt="PROFILES carousel on HOME">
   <img src="NanoDepsidf/docs/images/hid-mouse.png" width="180" alt="PROFILES on MOUSE: the mode's haptic profile">
   <img src="NanoDepsidf/docs/images/profile-figma.png" width="180" alt="App profile carousel on FIGMA">
-  <img src="NanoDepsidf/docs/images/display-rotation.png" width="180" alt="Display rotation at 90 degrees">
+  <img src="NanoDepsidf/docs/images/display.png" width="180" alt="DISPLAY: rotation, brightness, the screensaver (CLOCK) and its delay, unsaved">
+  <img src="NanoDepsidf/docs/images/sleep.png" width="180" alt="SLEEP: on, from 23:00 to 07:00, dark 30 s in, woken dim">
   <img src="NanoDepsidf/docs/images/lights.png" width="180" alt="LIGHTS: a custom blue, editing EFFECT (SPIN); the rim mirrors the LED ring">
   <img src="NanoDepsidf/docs/images/sysinfo-power.png" width="180" alt="SYS INFO: estimated power draw against the USB contract">
   <img src="NanoDepsidf/docs/images/sysinfo-cpu.png" width="180" alt="SYS INFO: core load and control-loop timing">
@@ -252,13 +256,15 @@ opens the menu** instead. In HOME mode the knob and F1–F3 drive the lamps (see
 |---|---|
 | **PROFILES** | APP, HOME, KEYBOARD, MOUSE or MIDI. With APP, F1 opens **PROFILE**, a carousel of the installed app profiles. With KEYBOARD or MOUSE, F1 moves to **HAPTIC**, the haptic profile the knob uses in that mode. With MIDI, F1 moves to the channel, then to **SYNTH**, the synth profile. |
 | **HAPTICS** | STEPS picks a haptic profile: WIDE, COARSE, MEDIUM or FINE (8, 12, 24 or 36 detents per turn) or SMOOTH (no steps). Each profile keeps its own FEEL (SAW or SINE; SMOOTH is always VISCOSE), SNAP (Kp), DAMP (Kd), SHAPE (how late and steep SAW's pull rises), AMP and PITCH, within safe limits for that profile and feel. Each profile also keeps its own CLICK, the wave the motor plays: nine to choose from: sine or square, 2 or 4 ms, a C for a falling pitch, and TICK (short and high), TING (a small bell) and TAP (a knock of noise), each drawn as it sounds. A step one way clicks a little higher than a step the other way; a list at its end answers with a low knock; saving plays two rising notes, cancelling an edit one low note. An item that doesn't apply in the current feel shows `--`. The menu always turns with MEDIUM's feel, whatever mode you opened it from; this screen turns with the profile it shows, so you feel what you tune. Only while you pick STEPS (after F1) does it stay on MEDIUM, so the profiles go by in even steps; the one you confirm takes over. Changes are live while you tune; F2 saves; holding F2 for 1.5 s puts the shown profile back to factory. |
-| **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°. The screen turns live while you turn the knob. |
+| **DISPLAY** | ROTATION: 0°, 90°, 180° or 270°; the screen turns live. BRIGHT: the screen's backlight, 10–100%. SAVER: what the [screensaver](#idle-screen) shows: AUTO, ICON, BOUNCE, CLOCK, MUSIC, BLANK or NEVER. AFTER: how long without a turn or a key before it starts, 5 s to 10 min. |
+| **SLEEP** | The [sleep hours](#sleep-hours). SLEEP: ON or OFF (NO TIME while the knob doesn't know the local time). FROM and TO, in 15-minute steps; the hours can run past midnight. DARK IN: how long the screensaver runs before the screen and LEDs go dark, from NOW to 10 min. WAKE: NORMAL or DIM, the brightness of a knob woken in the sleep hours. |
 | **LIGHTS** | The LED look. COLOR: APP (the profile's colours, or the album cover's while music plays) or CUSTOM, with HUE and SAT. EFFECT at rest: GRADIENT, SOLID, BREATHE, SPIN, RAINBOW or OFF, with SPEED for the moving ones. LEVEL: brightness, 10–200% of the standard level. The screen's rim mirrors the ring while you tune. |
 | **BOOT MODE** | USB MODE: HID (the normal composite device) or SERIAL (for flashing). Applies after a restart. |
 | **DEVICE** | **SYS INFO**: live readings on five pages, turn to move between them, F1 resets the peaks and counters. POWER: estimated draw (motor, LEDs, board) against what the USB-C / PD chip negotiated at boot. HEAT: chip temperature, motor coil current and heat. CPU: load per core, control-loop rate, spikes per second, worst compute time, jitter, missed ticks. LOOP: where one control iteration's time goes (input, sensor, force, motor), plus sensor CRC errors. SYSTEM: free RAM, dropped HID reports, uptime. **BINDINGS**: MAC or PC. Profiles are written with Mac shortcuts; on PC every Cmd is sent as Ctrl (Option is Alt on both). Switches as you turn, F2 saves. **RECALIBRATE**: F1, then F1 again, restarts and recalibrates the motor (see [First calibration](#first-calibration)). **CLICK**: the AXIS the motor's sounds play on (D rings the housing, Q shakes the knob). Turn to switch and hear it, F2 saves. The wave is each haptic profile's own (HAPTICS → CLICK). **SOUND CAL**: finds the pitch the knob rings at, for the clicks the motor plays. Hands off the knob, F1 to start: it plays a sweep two ways and asks which was louder (F1 first, F3 second), then asks about each tone (F1 heard, F3 not heard, F2 again). F4 stops it. |
 
-Screens with a single choice (PROFILES, DISPLAY, BOOT MODE, BINDINGS) change the value directly as you
-turn. LIGHTS, like HAPTICS, is live while you tune and kept by F2. Leaving without F2 puts the saved value back. Saved settings live in NVS flash and
+Screens with a single choice (PROFILES, BOOT MODE, BINDINGS) change the value directly as you
+turn. DISPLAY, SLEEP and LIGHTS list their fields: turning changes the one picked, F1 moves to
+the next. Like HAPTICS, they are live while you tune and kept by F2. Leaving without F2 puts the saved value back. Saved settings live in NVS flash and
 survive power cycles.
 
 ### APP mode and profiles
@@ -404,7 +410,8 @@ With **BINDINGS** on PC the knob sends plain volume keys.
 
 **Now playing** needs the optional [Mac service](#the-mac-service). It reads what the Mac is
 playing (any player that shows in Control Center: Music, Spotify, a browser tab, Kaset) and
-sends it to the knob:
+sends it to the knob. On Windows the [Windows service](#the-windows-service) does the same with
+any player in the volume flyout's media controls (Spotify, Media Player, a browser tab):
 - **Cover:** shown in one of four styles. A tap of F4 steps through them, and the LOOK tab
   in the companion sets them too; the choice is kept.
   - **FLAT:** full screen, darkened under the title and artist.
@@ -446,7 +453,7 @@ A console for AI coding agents: Claude Code, Codex, Cursor and GitHub Copilot in
 
 Commands that type text never press Enter, so you check a command before sending it.
 
-**Requests on the knob.** With the [Mac service](#the-mac-service) installed, an agent's
+**Requests on the knob.** With the [Mac](#the-mac-service) or [Windows](#the-windows-service) service installed, an agent's
 permission request appears on the knob in any profile, with the menu closed:
 - **The card:** the agent's badge and colour, and what it wants to do (the command, or the
   file it wants to edit). The ring breathes in the agent's colour.
@@ -500,7 +507,7 @@ zone at once, a row each, like an airport departure board, with the chosen zone 
 flaps rattle through the letters to reach the new one. A zone's name is cut to 7 letters on the
 board.
 
-The knob learns the time from the [Mac service](#the-mac-service), which sends the time and
+The knob learns the time from the [Mac](#the-mac-service) or [Windows](#the-windows-service) service, which sends the time and
 the local zone every few minutes, or from the internet when [WiFi](#wifi) is on. Zones and
 the format are set in the companion app (**Look › Clock**) or with `quadra.py clock`. LED
 SECONDS turns the ring into a seconds hand. The clock never goes to the idle screen.
@@ -700,6 +707,35 @@ internet traffic is for covers: it downloads artwork from the link the player gi
 a track has none, sends the artist and title to the iTunes Store's search. Settings are in
 `~/.quadra/config.json`.
 
+### The Windows service
+
+`NanoDepsidf/tools/windows/` is the same service for Windows: MUSIC's now playing, the AGENTS
+requests and dashboard, and CLOCK's local time, over USB or Wi-Fi as on the Mac. It is the Mac
+service's own code with the Mac's parts swapped out: now playing comes from Windows' media
+controls (whatever shows in the volume flyout), the volume from the default output device, and
+the local zone from Windows' setting, with daylight saving.
+
+Now playing sees a player only when it shows in Windows' media controls (press a volume key:
+the flyout shows the track). Some players do that only once an option or plugin for it is
+turned on.
+
+```powershell
+py -m pip install hidapi Pillow cryptography pycaw tzdata tzlocal winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections
+py NanoDepsidf\tools\windows\install_win.py             # install or update
+py NanoDepsidf\tools\windows\install_win.py --dry-run   # show what would change
+py NanoDepsidf\tools\windows\install_win.py --uninstall # take it all out again
+```
+
+The installer:
+- copies the service to `%USERPROFILE%\.quadra\` and runs it as a scheduled task (`Quadra`,
+  at logon, as you, without administrator rights; log in `%LOCALAPPDATA%\Quadra\quadrad.log`);
+- adds the same hooks as on the Mac, backed up and removed the same way.
+
+Windows has no Unix socket for the hooks, so the service listens on `127.0.0.1` only, on a
+random port, and answers only a connection that starts with the token it keeps in
+`%USERPROFILE%\.quadra\agentd.json` (readable by you, as your profile folder is). The
+service runs with the Python the installer was run with: install the packages for that one.
+
 ### The command wheel
 
 Hold the wheel key (F3) and the screen turns into a carousel of commands:
@@ -796,8 +832,26 @@ and spin-jump. At the top they split with a flash, circle each other once and co
 by side (the motor knocks, then plays the startup chime), and POWERED BY ESP32-S3 types in
 below. The knob is live from about 1 s in.
 
-After 12 s without input the screen goes into an arcade-style attract mode: the active app's
-48×48 icon, or the QUADRA wordmark outside APP mode, performs **Jump**. It never leaves the
+After a while without input (15 s unless you change **DISPLAY → AFTER**, from 5 s to 10 min)
+the screensaver starts. **DISPLAY → SAVER**, or **Look › Screen & music** in the companion,
+picks what it shows:
+
+<p>
+  <img src="NanoDepsidf/docs/images/saver-clock.png" width="200" alt="The CLOCK screensaver: 23:47 in large grey digits, WED 8 OCT under it">
+</p>
+
+| SAVER | Shows |
+|---|---|
+| AUTO | What's playing (MUSIC below) while a track plays, else CLOCK while the knob knows the local time, else ICON. The standard choice. |
+| ICON | The arcade attract mode below |
+| BOUNCE | The icon rattling around inside the glass over parallax stars |
+| CLOCK | The local time, large and grey, with the date; it moves a few pixels each minute |
+| MUSIC | The cover, title and artist of the track playing (from the Mac service), falling back like AUTO when nothing plays |
+| BLANK | Nothing: the backlight goes off |
+| NEVER | No screensaver; the screen stays as it is |
+
+ICON is an arcade-style attract mode: the active app's 48×48 icon, or the QUADRA wordmark
+outside APP mode, performs **Jump**. It never leaves the
 screen: two small hops, a crouch and a big jump with afterimages, a hard landing (squash,
 screen shake, dust, debris), a gleam, hops left and right, a spinning jump, then it breathes
 with sparkles around it. While music plays (MUSIC) or the clock is up (CLOCK), those stay on
@@ -806,9 +860,8 @@ the synth maker's logo (KORG or Roland), in white at 3×. In AGENTS the dashboar
 while any agent is working or asking; once every agent is idle or waiting for your next
 prompt, the attract mode starts as usual.
 
-A second routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
-built but switched off. Set `ROUTINE_ON[ATTRACT_BOUNCE]` to `true` in `src/ui_fx.cpp` to put
-it back; the two then take turns. (Boom, an explosion, was removed in October 2026.)
+The second routine, **Bounce** (the icon rattling around inside the glass like a pinball), is
+the BOUNCE screensaver. (Boom, an explosion, was removed in October 2026.)
 
 Everything is whole pixels; squash and stretch scale the icon nearest-neighbour. Accents
 (sparks, sparkles) use the app's colours: Figma's purple, blue and
@@ -823,6 +876,23 @@ does its job too: no second press.
 **Your own word.** An idle word of up to 12 characters, set from the companion app (**Look ›
 Screen & music**) or with `quadra.py text`, replaces QUADRA in the idle
 animation. With an app icon up, the word and the icon take turns, one routine each.
+
+#### Sleep hours
+
+**SLEEP** in the menu, or **Look › Screen & music** in the companion, sets hours when the knob
+should be dark, 23:00 to 07:00 to begin with. In those hours:
+- The screensaver starts after **AFTER** over any screen. Nothing holds it off: not music, the
+  clock, a notification or a busy agent.
+- **DARK IN** later the backlight and every LED go off, notifications included.
+- Only a turn or a key wakes it (the key does its job too); a notification, a new track or an
+  agent waits until then. With **WAKE** = DIM the screen comes back at 15% and the LEDs at a
+  third of their level; the screensaver and dark follow again once it's left alone.
+
+The hours need the knob's local time: the zone comes from the [Mac service](#the-mac-service),
+which sends it every few minutes; WiFi's time server alone only gives UTC. The knob has no
+clock battery, so if it loses the time (a power cut), hasn't had it confirmed for a day, or
+never had the zone, the sleep hours pause and the knob behaves as by day: a dark screen comes
+back on. The menu shows NO TIME and the companion says so until the service sends it again.
 
 ### LEDs
 
@@ -840,6 +910,8 @@ of that, and **LIGHTS** also sets a custom colour and a different effect at rest
 | End stop | A short white flash of the whole ring | — |
 | Menu | Amber | Amber |
 | Idle | The gradient drifts slowly and dims | Dimmed |
+| Sleep hours, dark | Off | Off |
+| Sleep hours, woken with WAKE = DIM | A third of the level | A third of the level |
 | An agent's request | Breathes in the agent's colour; one arc per waiting agent; fills green while F1 is held | — |
 | MUSIC, turning the knob | The volume, as an arc in the cover's colour | — |
 | CLOCK with LED SECONDS | A seconds hand | — |
@@ -871,7 +943,8 @@ Once connected:
   pairs by itself whenever it sees the knob on USB. The knob serves both at once.
 - **Controls:** with no cable in (the knob on a charger), turning it and pressing F1–F4 type
   and scroll on the Mac through the companion app, once macOS allows it under Accessibility
-  (**Device › Wi-Fi › Allow**). With a cable in, they go over USB as always.
+  (**Device › Wi-Fi › Allow**). On Windows they need no permission, but Windows keeps them
+  out of apps running as administrator. With a cable in, they go over USB as always.
 
 **The encrypted link.** It runs on TCP port 3333:
 - Each connection proves both sides hold the key, and every message is encrypted, so
@@ -1048,8 +1121,9 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | `tools/send_icon.py` | Uploads a 48×48 image to the device over the vendor HID interface (`icon.png`, `--test-pattern`, `--clear`, `--list`, `--dry-run --preview out.png`). |
 | `tools/gen_icon_c.py` | Converts a PNG into an RGB565 C array for a profile icon (24×24 status bar, 48×48 profile screen and idle screen). |
 | `tools/gen_silkscreen_font.py` | Regenerates the pixel fonts in `src/fonts/` from Silkscreen. |
-| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob), `home import` / `home list` (HOME's lamps, see [HOME](#home-xiaomi-lamps)) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
+| `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `idle` (brightness, screensaver, sleep hours), `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob), `home import` / `home list` (HOME's lamps, see [HOME](#home-xiaomi-lamps)) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
 | `tools/mac/` | The optional [Mac service](#the-mac-service): now playing, agent requests, the local time. |
+| `tools/windows/` | The same for Windows: the [Windows service](#the-windows-service). |
 | `tools/midi_monitor.html` | A MIDI monitor for the browser (Chrome, Edge or Firefox; Safari has no Web MIDI): open the file, Connect MIDI, and every message from the knob in [MIDI](#midi) mode is decoded with the minilogue xd's map, 10-bit values and programs included; it also sends values back to test pick-up. |
 | `tools/tz_test/`, `tools/net_pend_test/` | Host checks for CLOCK's time-zone rules (against Python's zoneinfo) and for how the WiFi link queues handshakes. |
 
@@ -1064,7 +1138,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
   <img src="companion/docs/app-sys-info.png" width="440" alt="Companion app: System info, with power, heat, CPU and system tiles and the last minute">
 </p>
 
-`companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings, app
+`companion/` is a macOS and Windows app (Tauri, about 5 MB) that changes the knob's settings, app
 profiles, lamps and synths from the computer:
 
 - **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use (for
@@ -1077,10 +1151,14 @@ profiles, lamps and synths from the computer:
   volume and Click pitch, with a reset to factory.
 - **App profiles:** one page each, built-ins included: name, icon, key labels, what the knob
   and keys send and which haptic profile each uses, the command wheel and macros. New profiles
-  can be made from scratch or by duplicating one.
+  can be made from scratch, by duplicating one, or from a file; **Export…** writes one to a file
+  to keep or share.
 - **Look:** the lights, the idle word, the music cover style, screen rotation, and the Clock
   app's zones and format.
-- **Device:** Mac or PC, the start mode, Wi-Fi and pairing, and the firmware version.
+- **Device:** Mac or PC, the start mode, Wi-Fi and pairing, the firmware version, and
+  **Backup**: the knob's setup in one file (settings, look, clock, every haptic profile's tuning,
+  your profiles and synths), and a restore that shows what would change and brings back only the
+  parts you tick. Wi-Fi, the lamps and the motor and sound calibration stay out of it.
 - **System info:** power, heat, CPU and system, with a minute of history.
 
 Changes are live on the knob; **Save to knob** stores them all (settings, lights, profiles and synths),
@@ -1093,7 +1171,7 @@ the knob over [WiFi](#wifi).
 cd companion && pnpm install
 pnpm tauri dev                 # the app
 pnpm dev                       # the page (open http://localhost:1420; add ?demo for a simulated knob)
-pnpm tauri build               # Quadra.app
+pnpm tauri build               # Quadra.app (on Windows, an installer)
 ```
 
 Every screen is covered in the [user guide](companion/docs/COMPANION.md). Building, WebHID and
@@ -1198,7 +1276,7 @@ NanoDepsidf/                   the firmware (PlatformIO project)
 │   ├── ui_cards.cpp           command cards, wheel, parameter dials (scene renderer)
 │   ├── ui_shape.cpp           the CAD profiles' isometric micro-interaction
 │   └── ui_fx.cpp              boot animation, idle screen (arcade attract mode)
-├── tools/                     host tools (see above); tools/mac/ is the Mac service
+├── tools/                     host tools (see above); tools/mac/ and tools/windows/ are the services
 └── docs/
     ├── FIRMWARE.md            technical documentation: how the firmware works
     ├── PIXEL_ART.md           how every screen, sprite, icon and card is drawn (read before UI work)
@@ -1251,7 +1329,6 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
   at 4 in SAW and 2 in SINE).
 - Automatic profile switching from the frontmost app.
 - A Figma plugin for direct value control over HID.
-- The companion on Windows.
 
 **Known assumptions:**
 - Shortcuts are written for **macOS**; on Windows set the companion's Device › Computer (or the knob's BINDINGS) to PC (Cmd is sent

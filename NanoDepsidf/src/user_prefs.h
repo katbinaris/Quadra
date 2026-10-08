@@ -70,3 +70,66 @@ bool lights_fx_animated(void); // the effect uses SPEED
 
 // The custom colour as RGB888 at full value (hue/sat only), for swatches and the LED palette.
 uint32_t lights_hsv(float hue_deg, float sat, float val);
+
+// --- SCREEN: brightness, the screensaver, and the sleep hours ---
+// The same model as LIGHTS: live atomics, F2 saves (screen_save), leaving puts them back; the
+// host sets them with EXT_CMD_IDLE. During the sleep hours the screensaver goes dark (backlight
+// and every LED off) DARK AFTER seconds after it starts; only touching the knob wakes it, to
+// the full or the night (DIM) level. The sleep hours only apply while the knob trusts its
+// local time (clock_trusted): otherwise the screen behaves as by day.
+typedef enum {
+    SAVER_AUTO = 0, // MUSIC while a track plays, else CLOCK when the time is known, else ICON
+    SAVER_ICON,     // the jumping icon or word (ui_fx.cpp)
+    SAVER_BOUNCE,   // the icon rattling round the rim over stars
+    SAVER_CLOCK,
+    SAVER_MUSIC,    // the cover, title and artist (falls back like AUTO with nothing playing)
+    SAVER_BLANK,    // the backlight off
+    SAVER_NEVER,
+    SAVER_COUNT
+} saver_t;
+typedef enum { WAKE_NORMAL = 0, WAKE_DIM, WAKE_COUNT } wake_t;
+
+typedef struct {
+    int32_t bright;     // backlight, 10..100 %
+    int32_t saver;      // saver_t
+    int32_t saver_s;    // seconds idle before the screensaver (one of SCREEN_SAVER_STEPS)
+    int32_t sleep_on;   // 0 / 1
+    int32_t sleep_from; // minutes of the day the sleep hours start, 0..1439 (15 min steps)
+    int32_t sleep_to;   // ... and end; before sleep_from = across midnight
+    int32_t dark_s;     // seconds of screensaver before dark, in the sleep hours (SCREEN_DARK_STEPS)
+    int32_t wake;       // wake_t: how bright it wakes in the sleep hours
+} screen_t;
+
+#define SCREEN_BRIGHT_STEP 10
+#define SCREEN_TIME_STEP 15 // minutes
+#define SCREEN_DIM_BRIGHT 15 // %: WAKE_DIM's backlight
+#define SCREEN_DIM_LEDS 0.3f // and its LED scale
+
+void screen_get(screen_t *out);           // any core
+void screen_set(const screen_t *in);      // clamps every field (times to 15 min, delays to a step); any core
+bool screen_store(const screen_t *s);     // -> NVS (Core 1); menu.c says which (its saved baseline)
+// Which fields each menu screen owns: DISPLAY bright, saver, saver_s; SLEEP the rest.
+void screen_copy_part(screen_t *dst, const screen_t *src, bool sleep_part);
+bool screen_part_differs(const screen_t *a, const screen_t *b, bool sleep_part);
+
+// The sleep hours apply right now: on, the time trusted, and inside the window. Reads the clock:
+// call it about once a second, not per frame (the display task caches it, screen_sleeping()).
+bool screen_sleep_now(void);
+bool screen_sleeping(void);       // the display task's last answer; any core
+void screen_set_sleeping(bool s); // display task
+bool screen_dim_now(void);        // ON WAKE = DIM (only meaningful while screen_sleeping())
+
+// Menu field callbacks (menu.c): rotate on Core 0 (CONTROL_HOT), format on Core 1.
+void screen_rotate_bright(int8_t dir);
+void screen_rotate_saver(int8_t dir);
+void screen_rotate_saver_s(int8_t dir);
+void screen_rotate_sleep_on(int8_t dir);
+void screen_rotate_sleep_from(int8_t dir);
+void screen_rotate_sleep_to(int8_t dir);
+void screen_rotate_dark_s(int8_t dir);
+void screen_rotate_wake(int8_t dir);
+const char *screen_saver_name(int32_t saver);
+const char *screen_wake_name(int32_t wake);
+void screen_format_secs(int32_t s, char *out, size_t n); // "15 S", "2 MIN", "NOW"
+void screen_format_time(int32_t min, char *out, size_t n); // "23:00"
+bool screen_sleep_enabled(void); // sleep_on (Core 0 safe: the menu's mute callbacks)

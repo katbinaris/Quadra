@@ -2,6 +2,8 @@
 // and app_profile.h (what the fields mean). Change both. A field that's missing reads as 0 /
 // false / none on the device, so the editor leaves out what's 0.
 
+import { isWindows } from "./platform";
+
 export const PROFILE_FORMAT = 1;
 
 export type Key = [modifier: number, keycode: number];
@@ -160,6 +162,18 @@ export function problem(p: ProfileJson): string | null {
   return null;
 }
 
+// A profile from a file (an export, a backup's, or tools/profile_json_test's): checked. Throws.
+export function parseProfile(data: unknown): ProfileJson {
+  const p = data as ProfileJson;
+  if (!p || typeof p !== "object" || typeof p.id !== "string" || !Array.isArray(p.legend)) throw new Error("That isn't an app profile");
+  if ((p.format ?? PROFILE_FORMAT) > PROFILE_FORMAT) throw new Error("That profile is from newer firmware: update the knob first");
+  p.format = PROFILE_FORMAT;
+  p.name ??= "";
+  const bad = problem(p);
+  if (bad) throw new Error(`${p.name || p.id}: ${bad}`);
+  return p;
+}
+
 // Drops what's 0 / empty, the way the device writes it, so a round trip is stable.
 export function tidy(p: ProfileJson): ProfileJson {
   const clean = (v: unknown): unknown => {
@@ -218,10 +232,17 @@ export function modifiersFromEvent(e: KeyboardEvent): number {
   return (e.ctrlKey ? Mod.CTRL : 0) | (e.shiftKey ? Mod.SHIFT : 0) | (e.altKey ? Mod.ALT : 0) | (e.metaKey ? Mod.GUI : 0);
 }
 
-// "CMD+SHIFT+Z" -- Mac names: the device sends Cmd as Ctrl when BINDINGS = PC.
+// "CMD+SHIFT+Z" -- Mac names: the device sends Cmd as Ctrl when BINDINGS = PC. On Windows the
+// PC's ("CTRL+SHIFT+Z"), Cmd as the Ctrl it becomes.
 export function modifierName(m: number): string {
   m = (m & 0x0f) | ((m & RIGHT_MODS) >> 4);
   const parts: string[] = [];
+  if (isWindows) {
+    if (m & (Mod.CTRL | Mod.GUI)) parts.push("CTRL");
+    if (m & Mod.ALT) parts.push("ALT");
+    if (m & Mod.SHIFT) parts.push("SHIFT");
+    return parts.join("+");
+  }
   if (m & Mod.CTRL) parts.push("CTRL");
   if (m & Mod.ALT) parts.push("OPT");
   if (m & Mod.SHIFT) parts.push("SHIFT");

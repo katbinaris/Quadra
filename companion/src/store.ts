@@ -39,7 +39,7 @@ export const connected = computed(() => (use("conn", "settings"), device.status 
 // --- route ---
 
 // #/mode, #/haptics, #/lamps[/import], #/synths/<id>/<tab>, #/profile/<id>/<tab>[/<input>],
-// #/look/<tab>, #/device/<tab>, #/sys
+// #/look/<tab>, #/device/<tab> (general, wifi, backup), #/sys
 export type Route =
   | { page: "mode" }
   | { page: "haptics" }
@@ -47,7 +47,7 @@ export type Route =
   | { page: "synths"; id: string; tab: SynthTab }
   | { page: "profile"; id: string; tab: ProfileTab; input: string }
   | { page: "look"; tab: "lights" | "screen" | "clock" }
-  | { page: "device"; tab: "general" | "wifi" }
+  | { page: "device"; tab: "general" | "wifi" | "backup" }
   | { page: "sys" };
 export type ProfileTab = "general" | "keys" | "wheel" | "macros";
 export type SynthTab = "params" | "programs" | "monitor";
@@ -66,7 +66,7 @@ function parse(hash: string): Route {
     case "look":
       return { page, tab: a === "screen" || a === "clock" ? a : "lights" };
     case "device":
-      return { page, tab: a === "wifi" ? "wifi" : "general" };
+      return { page, tab: a === "wifi" || a === "backup" ? a : "general" };
     case "sys":
       return { page };
     default:
@@ -126,9 +126,10 @@ export interface Unsaved {
 }
 
 export const unsaved = computed<Unsaved>(() => {
-  use("settings", "prefs", "profiles", "synths");
+  use("settings", "prefs", "idle", "profiles", "synths");
   const dirty = device.settings?.dirty ?? 0;
   const settings = SETTING_PAGES.filter(([, bits]) => bits.some((b) => (dirty >> b) & 1)).map(([name]) => name);
+  if (device.idle?.dirty && !settings.includes("Screen")) settings.push("Screen");
   if (device.prefs?.lightsDirty) settings.push("Lights");
   const profiles = device.profiles.filter((p) => p && p.flags & ProfileFlag.LIVE).map((p) => ({ index: p.index, id: p.id, name: p.name }));
   const ed = openEditor.value;
@@ -148,6 +149,13 @@ export const unsavedCount = computed(() => unsaved.value.settings.length + unsav
 
 export const saving = signal(false);
 export const saveError = signal<string | null>(null);
+// A passing word in the top bar ("Saved as …"), gone after a few seconds.
+export const saveNote = signal<string | null>(null);
+let noteTimer: number | undefined;
+saveNote.subscribe((v) => {
+  window.clearTimeout(noteTimer);
+  if (v) noteTimer = window.setTimeout(() => (saveNote.value = null), 6000);
+});
 
 async function job(fn: () => Promise<void>) {
   saving.value = true;

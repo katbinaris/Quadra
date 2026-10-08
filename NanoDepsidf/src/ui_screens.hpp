@@ -92,10 +92,6 @@ void draw_app_profile(const menu_render_snapshot_t &snap, const ProfileInputs &i
 
 void draw_boot_mode(const menu_render_snapshot_t &snap, boot_usb_mode_t selected, bool serial_in_use, bool blink_on);
 
-// DISPLAY: screen rotation. The screen turns live while this is adjusted, so an arrow marks
-// which way is up now; the value is the angle in degrees.
-void draw_display(const menu_render_snapshot_t &snap, int rotation, bool blink_on);
-
 // DEVICE -> SYS INFO: one page per snapshot row (MENU_SYSINFO_*), the selected one shown, dots
 // for the others. `power` is the USB contract the STUSB4500 negotiated (read at boot).
 void draw_sysinfo(const menu_render_snapshot_t &snap, const sysmon_info_t &info, const pd_status_t &power);

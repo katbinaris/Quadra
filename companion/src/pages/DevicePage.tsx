@@ -1,29 +1,31 @@
-// DEVICE: the computer it talks to (MAC / PC), how it starts (HID / SERIAL), the firmware, and
-// WiFi: the network, and this app paired to reach the knob without a cable.
+// DEVICE: the computer it talks to (MAC / PC), how it starts (HID / SERIAL), the firmware;
+// WiFi: the network, and this app paired to reach the knob without a cable; and Backup: the
+// knob's setup to a file and back (device/Backup.tsx).
 
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
+import { isWindows, thisComputer } from "../platform";
 import { Boot, EXT_CONTROLS_VERSION, EXT_NET_VERSION, EXT_WIFI_LINK_VERSION, Host, NET_STATE, NetState, Set } from "../proto";
 import { device, use } from "../store";
 import { Box, Card, Confirm, PageHead, Row, SubTabs, Text } from "../ui/controls";
 import { titleCase } from "../ui/shell";
+import { BackupTab } from "./device/Backup";
 
-export function DevicePage(p: { tab: "general" | "wifi" }) {
+export function DevicePage(p: { tab: "general" | "wifi" | "backup" }) {
   use("conn");
   const wifi = (device.ext ?? 0) >= EXT_NET_VERSION;
   return (
     <>
       <PageHead title="Device" hint="The computer it talks to, how it starts, and what runs on it" />
-      {wifi && (
-        <SubTabs
-          tabs={[
-            { value: "general", label: "General", href: "#/device/general" },
-            { value: "wifi", label: "Wi-Fi", href: "#/device/wifi" },
-          ]}
-          value={p.tab}
-        />
-      )}
-      {p.tab === "wifi" && wifi ? <WifiTab /> : <GeneralTab />}
+      <SubTabs
+        tabs={[
+          { value: "general" as const, label: "General", href: "#/device/general" },
+          ...(wifi ? [{ value: "wifi" as const, label: "Wi-Fi", href: "#/device/wifi" }] : []),
+          { value: "backup" as const, label: "Backup", href: "#/device/backup" },
+        ]}
+        value={p.tab}
+      />
+      {p.tab === "wifi" && wifi ? <WifiTab /> : p.tab === "backup" ? <BackupTab /> : <GeneralTab />}
     </>
   );
 }
@@ -48,6 +50,7 @@ function GeneralTab() {
               <span class="sub">⌘ is sent as Ctrl</span>
             </Card>
           </div>
+          {isWindows && s.host === Host.MAC && <span class="hint amber">This computer runs Windows: choose PC, or ⌘ shortcuts arrive as the Windows key.</span>}
         </Box>
         <Box title="Starts in" note="After the next restart">
           <div class="cards">
@@ -164,7 +167,11 @@ function WifiTab() {
                   </button>
                 )}
               </div>
-              <span class="hint">With no cable in, turning the knob and pressing F1–F4 type and scroll on this Mac over Wi-Fi. macOS asks once to allow Quadra under Accessibility.</span>
+              <span class="hint">
+                {isWindows
+                  ? `With no cable in, turning the knob and pressing F1–F4 type and scroll on ${thisComputer} over Wi-Fi. Windows keeps them away from apps running as administrator.`
+                  : `With no cable in, turning the knob and pressing F1–F4 type and scroll on ${thisComputer} over Wi-Fi. macOS asks once to allow Quadra under Accessibility.`}
+              </span>
             </>
           )}
         </Box>

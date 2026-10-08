@@ -7,7 +7,7 @@
 
 import { chromium, webkit } from "playwright";
 import { fileURLToPath } from "node:url";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const BASE = process.argv[2] ?? "http://localhost:1420";
 const OUT = fileURLToPath(new URL("../docs/", import.meta.url));
@@ -115,12 +115,34 @@ await go("#/look/lights");
 await shot("app-look");
 await go("#/look/screen");
 await shot("app-look-screen");
+await pg.locator(".box", { hasText: "Screensaver" }).first().evaluate((e) => e.scrollIntoView({ block: "start" }));
+await shot("app-look-sleep");
 await go("#/look/clock");
 await shot("app-look-clock");
 await go("#/device/general");
 await shot("app-device");
 await go("#/device/wifi");
 await shot("app-device-wifi");
+await go("#/device/backup");
+await shot("app-device-backup");
+// A restore's summary: this knob's own backup, with a few things changed in it.
+{
+  const [dl] = await Promise.all([pg.waitForEvent("download"), click("button", "Back up to a file")]);
+  const chunks = [];
+  for await (const c of await dl.createReadStream()) chunks.push(c);
+  const b = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  b.look.screen.bright = 60;
+  b.look.screen.sleepFrom = 22 * 60;
+  b.haptics.profiles[2].tune[0].kp = 3.2;
+  b.settings.host = 1;
+  const figma = JSON.parse(readFileSync(new URL("../src/demo_builtins.json", import.meta.url), "utf8")).find((p) => p.id === "figma");
+  b.profiles.push({ ...figma, id: "figma", name: "FIGMA" }, { ...figma, id: "sketch", name: "SKETCH" });
+  const [fc] = await Promise.all([pg.waitForEvent("filechooser"), click("button", "Restore from a file")]);
+  await fc.setFiles({ name: "quadra-backup-2026-10-01.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(b)) });
+  await pg.waitForTimeout(2000);
+  await shot("app-device-restore");
+  await click("button", "Cancel");
+}
 await go("#/sys", 6000); // some history in the charts
 await shot("app-sys-info");
 await br.close();

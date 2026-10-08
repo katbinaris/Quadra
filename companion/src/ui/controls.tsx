@@ -5,6 +5,7 @@
 import type { ComponentChildren, HTMLAttributes } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { hidFromCode, keyName, Mod, modifiersFromEvent, type Key } from "../profile";
+import { isWindows, MOD_WORDS } from "../platform";
 import { waveY } from "./draw";
 import type { ClickWaveDef } from "../proto";
 
@@ -186,19 +187,38 @@ export function Num(p: { value: number; min: number; max: number; step?: number;
 
 // --- keys ---
 
-const MOD_GLYPHS: [number, string, string][] = [
-  [Mod.CTRL, "⌃", "Control"],
-  [Mod.ALT, "⌥", "Option"],
-  [Mod.SHIFT, "⇧", "Shift"],
-  [Mod.GUI, "⌘", "Command"],
+// Mac order; Windows writes Ctrl first, and Cmd is the Ctrl it becomes there.
+const MOD_GLYPHS = (
+  isWindows
+    ? [
+        [Mod.CTRL, ...MOD_WORDS.ctrl],
+        [Mod.GUI, ...MOD_WORDS.gui],
+        [Mod.ALT, ...MOD_WORDS.alt],
+        [Mod.SHIFT, ...MOD_WORDS.shift],
+      ]
+    : [
+        [Mod.CTRL, ...MOD_WORDS.ctrl],
+        [Mod.ALT, ...MOD_WORDS.alt],
+        [Mod.SHIFT, ...MOD_WORDS.shift],
+        [Mod.GUI, ...MOD_WORDS.gui],
+      ]
+) as [number, string, string][];
+// The modifier buttons on Windows: Ctrl and Cmd are one there.
+const WIN_MODS: [number, string][] = [
+  [Mod.CTRL | Mod.GUI, "Ctrl"],
+  [Mod.ALT, "Alt"],
+  [Mod.SHIFT, "Shift"],
 ];
-const KEY_WORDS: Record<string, string> = { ENTER: "Return", ESC: "Esc", BKSP: "Delete", TAB: "Tab", SPACE: "Space", CAPS: "Caps Lock", DEL: "⌦", LEFT: "←", RIGHT: "→", UP: "↑", DOWN: "↓", PGUP: "Page Up", PGDN: "Page Down", HOME: "Home", END: "End" };
+const KEY_WORDS: Record<string, string> = isWindows
+  ? { ENTER: "Enter", ESC: "Esc", BKSP: "Backspace", TAB: "Tab", SPACE: "Space", CAPS: "Caps Lock", DEL: "Del", LEFT: "←", RIGHT: "→", UP: "↑", DOWN: "↓", PGUP: "Page Up", PGDN: "Page Down", HOME: "Home", END: "End" }
+  : { ENTER: "Return", ESC: "Esc", BKSP: "Delete", TAB: "Tab", SPACE: "Space", CAPS: "Caps Lock", DEL: "⌦", LEFT: "←", RIGHT: "→", UP: "↑", DOWN: "↓", PGUP: "Page Up", PGDN: "Page Down", HOME: "Home", END: "End" };
 
-// A shortcut as keycaps: ⌃⌥⇧⌘ then the key (Mac order and names).
+// A shortcut as keycaps: ⌃⌥⇧⌘ then the key (Mac order and names; Windows': platform.ts).
 export function Keycaps(p: { k: Key | undefined; empty?: string }) {
   const k = p.k;
   if (!k || (!k[0] && !k[1])) return <span class="hint">{p.empty ?? "None"}</span>;
-  const m = (k[0] & 0x0f) | ((k[0] & 0xf0) >> 4);
+  let m = (k[0] & 0x0f) | ((k[0] & 0xf0) >> 4);
+  if (isWindows && m & Mod.GUI) m &= ~Mod.CTRL; // both are Ctrl on a PC: one keycap
   const name = keyName([0, k[1]]);
   return (
     <span class="keycap" aria-label={keyName(k)}>
@@ -211,7 +231,7 @@ export function Keycaps(p: { k: Key | undefined; empty?: string }) {
 }
 
 // A shortcut: click Record, then press it. The modifiers can also be set by hand -- the system
-// takes ⌘Q, ⌘Tab and friends before the page sees them.
+// takes ⌘Q, ⌘Tab and friends (Alt+Tab, Win+L on Windows) before the page sees them.
 export function KeyField(p: { value: Key | undefined; on: (k: Key | undefined) => void }) {
   const [listening, setListening] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -242,11 +262,21 @@ export function KeyField(p: { value: Key | undefined; on: (k: Key | undefined) =
         {listening ? <span class="amber">Press the shortcut…</span> : <Keycaps k={p.value} empty="Click to record" />}
       </button>
       <span class="seg mods">
-        {MOD_GLYPHS.map(([b, g, t]) => (
-          <button type="button" title={t} aria-pressed={(k[0] & b) !== 0} class={cls("opt", (k[0] & b) !== 0 && "on")} onClick={() => set([k[0] ^ b, k[1]])}>
-            {g}
-          </button>
-        ))}
+        {isWindows
+          ? WIN_MODS.map(([b, g]) => {
+              // Ctrl stands for Cmd too (the same key on a PC): lit by either, clears both.
+              const on = (k[0] & b) !== 0;
+              return (
+                <button type="button" title={g} aria-pressed={on} class={cls("opt", on && "on")} onClick={() => set([on ? k[0] & ~b : k[0] | (b & ~Mod.GUI), k[1]])}>
+                  {g}
+                </button>
+              );
+            })
+          : MOD_GLYPHS.map(([b, g, t]) => (
+              <button type="button" title={t} aria-pressed={(k[0] & b) !== 0} class={cls("opt", (k[0] & b) !== 0 && "on")} onClick={() => set([k[0] ^ b, k[1]])}>
+                {g}
+              </button>
+            ))}
       </span>
       {(k[0] || k[1]) ? (
         <button type="button" class="x" aria-label="Clear" onClick={() => set([0, 0])}>
@@ -258,6 +288,22 @@ export function KeyField(p: { value: Key | undefined; on: (k: Key | undefined) =
 }
 
 // A button that asks once: the first click arms it, a second within 3 s does it.
+// A box to tick, with its label beside it.
+export function Check(p: { on: boolean; set: (v: boolean) => void; disabled?: boolean; children?: ComponentChildren }) {
+  return (
+    <button type="button" role="checkbox" aria-checked={p.on} class={cls("check", p.on && "on")} disabled={p.disabled} onClick={() => p.set(!p.on)}>
+      <i aria-hidden="true">
+        {p.on && (
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2.5 6.2l2.3 2.3 4.7-4.8" />
+          </svg>
+        )}
+      </i>
+      <span>{p.children}</span>
+    </button>
+  );
+}
+
 export function Confirm(p: { label: string; ask?: string; on: () => void; class?: string }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
