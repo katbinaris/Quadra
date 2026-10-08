@@ -1151,10 +1151,14 @@ profiles, lamps and synths from the computer:
   volume and Click pitch, with a reset to factory.
 - **App profiles:** one page each, built-ins included: name, icon, key labels, what the knob
   and keys send and which haptic profile each uses, the command wheel and macros. New profiles
-  can be made from scratch or by duplicating one.
+  can be made from scratch, by duplicating one, or from a file; **Export…** writes one to a file
+  to keep or share.
 - **Look:** the lights, the idle word, the music cover style, screen rotation, and the Clock
   app's zones and format.
-- **Device:** Mac or PC, the start mode, Wi-Fi and pairing, and the firmware version.
+- **Device:** Mac or PC, the start mode, Wi-Fi and pairing, the firmware version, and
+  **Backup**: the knob's setup in one file (settings, look, clock, every haptic profile's tuning,
+  your profiles and synths), and a restore that shows what would change and brings back only the
+  parts you tick. Wi-Fi, the lamps and the motor and sound calibration stay out of it.
 - **System info:** power, heat, CPU and system, with a minute of history.
 
 Changes are live on the knob; **Save to knob** stores them all (settings, lights, profiles and synths),

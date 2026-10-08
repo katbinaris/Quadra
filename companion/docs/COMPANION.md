@@ -119,7 +119,7 @@ music cover style, the clock, Wi-Fi, and the lamps' names, icons and order. Thei
 
 ## 4. Mode
 
-<img src="app-mode.png" width="720" alt="Mode: App, Home, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; Edit and Duplicate">
+<img src="app-mode.png" width="720" alt="Mode: App, Home, Mouse, Keys and MIDI; the eight built-in profiles, Plasticity in use; New profile and Import profile; Edit, Duplicate and Export">
 
 **Mode** is what the knob sends to the computer:
 
@@ -142,8 +142,11 @@ from:
 | **Yours** | A profile you made, stored on the knob |
 | **Not saved** | Has edits that are live but not stored |
 
-**Edit** opens the profile in use, **Duplicate** makes a copy of it, and **New profile** makes an
-empty one; both new ones open straight away, in use. The knob holds up to 16 profiles.
+**Edit** opens the profile in use, **Duplicate** makes a copy of it, **New profile** makes an
+empty one, and **Import profile** brings one in from a file (an **Export…**, from this app or
+someone else's); the new one opens straight away, in use. An imported profile never replaces one
+on the knob: when its id or name is taken, it comes in beside it as RESTORED 2 (say). **Export…**
+writes the profile in use to a file you pick. The knob holds up to 16 profiles.
 
 In **Mouse** and **Keys**, the page shows which haptic profile the knob uses in that mode; each
 mode keeps its own:
@@ -223,8 +226,9 @@ changes reach the knob a moment after you make them, **Save to knob** keeps them
 On the left are the knob's synths, each with its maker's mark and where it comes from
 (**Built-in**, **Built-in, changed**, **Yours**), and below them the knob's screen for the
 parameter you're on: live when it's the synth in use. **New synth** starts one with four
-parameters, **Import a file…** adds one from a JSON file, and **Duplicate** and **Export…** (to
-Downloads) are at the top of each synth. The knob holds 16 synths.
+parameters, **Import a file…** adds one from a JSON file (one with the same id replaces it), and
+**Duplicate** and **Export…** (to a file you pick) are at the top of each synth. The knob holds
+16 synths.
 
 **Parameters** lists them in the order F1 steps through, by group. The one the knob is on now
 has a green dot and its value. Click one to change it:
@@ -310,7 +314,9 @@ on the Haptics screen does the same.
 
 Click a profile in the sidebar to open it. Every profile can be edited, the built-in ones too.
 The header shows its state: **In use** (or a **Use on the knob** button), where it comes from,
-and **Live, not saved** while it has unsaved edits. An edit goes to the knob a moment after you
+and **Live, not saved** while it has unsaved edits; **Duplicate** and **Export…** are beside it.
+**Import profile…** under the profiles in the sidebar brings one in from a file, as on
+[Mode](#4-mode). Dropping a profile's file on the window does the same. An edit goes to the knob a moment after you
 make it, so you can try it straight away; the line under the name says when it's sent, or what
 the knob refused and why.
 
@@ -475,6 +481,34 @@ once more: every other paired computer has to pair again) and **Forget**. With f
 has it, **The knob's controls** shows whether they come to this computer over Wi-Fi (**On**),
 or whether macOS still needs to allow it (**Allow**; Windows never asks).
 
+<img src="app-device-backup.png" width="720" alt="Device, Backup: Back up to a file, what is and isn't in a backup, and Restore from a file">
+
+**Backup** puts the knob's setup in one file, and brings any part of one back:
+
+| In a backup | Not in a backup |
+|---|---|
+| Mode and device: the mode, the profile and synth in use, the MIDI channel, Mac or PC, the screen's rotation, how it starts | Wi-Fi, and this app's pairing |
+| Look: lights, the idle word, the music cover, brightness, screensaver and sleep hours | The lamps in Home mode: their keys can't be read back. **Lamps › Import** brings them in again |
+| Clock: the format and your four zones | The motor and sound calibration: they belong to this knob |
+| Haptics: all five haptic profiles in every feel, their clicks, and the one each mode uses | |
+| Your app profiles and synths, and the built-in ones you've changed | |
+
+**Back up to a file…** asks where to save it and takes what's on the knob now, unsaved changes
+included. **Restore from a file…** (or dropping a backup on the window) shows what the file
+would change, part by part:
+
+<img src="app-device-restore.png" width="720" alt="Device, Backup: a restore's summary, with what changes in each part, a box to tick for each, and the profiles one by one">
+
+Untick what you want to keep as it is; each app profile and synth has a box of its own, and one
+the knob would refuse (a name too long, say) is shown with why and left out. A profile or synth
+with the same id as one on the knob replaces it. **Back up what's on the knob first** is ticked:
+the app asks where to save that before it changes anything, and stops if you cancel. **Restore
+and save** then writes what's ticked and saves it on the knob. If the mode changes to or from
+MIDI, the knob reconnects at the end.
+
+Haptics need firmware with extensions v14; with older firmware a backup has no haptics in it
+and a restore leaves them out.
+
 ## 14. System info
 
 <img src="app-sys-info.png" width="720" alt="System info: power, heat, CPU and system tiles with gauges and the last minute">
@@ -502,7 +536,9 @@ report, so the app doesn't ask for them otherwise.
 | **Connect your Quadra** (web page) | Click **Connect** and pick the knob; the browser asks once |
 | A setting came back after a restart | It wasn't saved. Change it again and press **Save to knob** |
 | An edit is refused, with a message under the profile's name | The message says which field: for example a name that's too long, or text that isn't plain ASCII |
-| **New profile** and **Duplicate** are greyed out | The knob already holds 16 profiles. Delete one |
+| **New profile**, **Import profile** and **Duplicate** are greyed out | The knob already holds 16 profiles. Delete one |
+| A restore says **The knob holds 16 app profiles** for a profile | It would be one too many. Untick another, or delete one from the knob first |
+| A profile file says **That isn't an app profile** | It's a backup or a synth: open a backup under Device › Backup, a synth under Synths. Dropping any of them on the window works too |
 | **Sign in to Xiaomi…** says the extractor isn't installed | Install it in `~/.quadra/token-extractor` with its `.venv` (README, HOME) |
 | The import finds a lamp but says **Not answering** | It's off at the switch, or on another network. Import it anyway: the knob finds it when it's back |
 | **Send** is greyed out in the import | The knob is on Wi-Fi: the lamps' keys only go over USB. Plug it in |
