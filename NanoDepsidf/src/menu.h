@@ -35,7 +35,7 @@ typedef enum {
     MENU_SCREEN_HID,
     MENU_SCREEN_BOOT,
     MENU_SCREEN_APP_PROFILE, // PROFILES = APP -> F1: choose the app profile
-    MENU_SCREEN_DISPLAY,     // screen rotation
+    MENU_SCREEN_DISPLAY,     // rotation, brightness, the screensaver (user_prefs.h screen_t)
     MENU_SCREEN_DEVICE,      // a list: SYS INFO, BINDINGS, RECALIBRATE, CLICK, SOUND CAL
     MENU_SCREEN_SYSINFO,     // live readings (sysmon.h), one page per row; F1 resets the peaks
     MENU_SCREEN_RECALIBRATE, // forget the motor calibration and restart
@@ -43,7 +43,25 @@ typedef enum {
     MENU_SCREEN_LIGHTS,      // LED colour, effect, speed, level (user_prefs.h)
     MENU_SCREEN_CLICK,       // the axis the motor's sounds play on (motor_sound.h)
     MENU_SCREEN_SOUND_CAL,   // the motor's click: find the frequency the knob rings at (motor_sound.h)
+    MENU_SCREEN_SLEEP,       // the sleep hours (user_prefs.h screen_t)
 } menu_screen_id_t;
+
+// Rows of the DISPLAY and SLEEP screens -- display_task.cpp draws each by index.
+enum {
+    MENU_DISPLAY_ROW_ROTATION = 0,
+    MENU_DISPLAY_ROW_BRIGHT,
+    MENU_DISPLAY_ROW_SAVER,
+    MENU_DISPLAY_ROW_AFTER,
+    MENU_DISPLAY_ROW_COUNT,
+};
+enum {
+    MENU_SLEEP_ROW_ON = 0,
+    MENU_SLEEP_ROW_FROM,
+    MENU_SLEEP_ROW_TO,
+    MENU_SLEEP_ROW_DARK,
+    MENU_SLEEP_ROW_WAKE,
+    MENU_SLEEP_ROW_COUNT,
+};
 
 // Rows of the LIGHTS screen -- display_task.cpp draws each by index.
 enum {
@@ -254,3 +272,6 @@ void menu_remote_revert(void); // every group back to what NVS holds
 // LIGHTS alone (ext_link.c): whether the live look differs from NVS, and saving just that.
 bool menu_lights_dirty(void);
 void menu_remote_save_lights(void);
+// SCREEN (DISPLAY's brightness and screensaver, and SLEEP) alike, for EXT_CMD_IDLE.
+bool menu_screen_dirty(void);
+void menu_remote_save_screen(void);

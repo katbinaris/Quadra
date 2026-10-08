@@ -10,6 +10,7 @@ import { device, use } from "../store";
 import { CITIES } from "../tzdata";
 import { Box, Card, cls, PageHead, Row, Slider, SubTabs, Text } from "../ui/controls";
 import { titleCase } from "../ui/shell";
+import { Screensaver } from "./look/Screensaver";
 
 const TABS = [
   { value: "lights" as const, label: "Lights", href: "#/look/lights" },
@@ -170,6 +171,7 @@ function ScreenTab() {
           ))}
         </div>
       </Box>
+      <Screensaver />
     </>
   );
 }

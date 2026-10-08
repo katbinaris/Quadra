@@ -59,21 +59,21 @@ static const char *TAG = "display";
 //     HID carousel slide) so a 60-320ms move gets every frame it can.
 // Everything else stays event-driven at the 30ms poll, as before.
 //
-// Views: one per menu screen, plus the loading screen and the attract animation. Every view
-// change goes through the iris wipe. Attract starts after ATTRACT_IDLE_MS with no knob
-// movement or button change on the Main Screen; any input ends it, and the key that
-// ends it does its job too.
+// Views: one per menu screen, plus the loading screen, the screensaver and dark. Every view
+// change goes through the iris wipe. The screensaver (DISPLAY -> SAVER, user_prefs.h) starts
+// after DISPLAY -> AFTER with no knob movement or button change on the Main Screen; any input
+// ends it, and the key that ends it does its job too. In the sleep hours it starts over any
+// screen, only input counts, and DARK IN later the screen goes dark: backlight off, LEDs off.
 
 #define LCD_LEDC_TIMER LEDC_TIMER_0
 #define LCD_LEDC_CHANNEL LEDC_CHANNEL_0
 #define LCD_LEDC_FREQ_HZ 5000
-#define LCD_BACKLIGHT_DUTY_PERCENT 80 // starting point, not tuned against ambient light yet
 
 #define UI_REDRAW_PERIOD_MS 30 // idle poll
 #define UI_ANIM_DELAY_MS 20    // between frames of a looping animation (+~13ms frame = ~30fps)
 
 #define IRIS_MS 320
-#define ATTRACT_IDLE_MS 12000 // by request (5 s until 2026-10-07): without touching the knob or buttons
+#define SLEEP_CHECK_US 1000000 // how often the sleep hours are looked at (they read the clock)
 #define TOAST_MS 1300
 #define FEEL_MORPH_MS 250
 #define HID_SLIDE_MS 160
@@ -107,6 +107,9 @@ static void backlight_init(void) {
 }
 
 static void backlight_set_percent(uint32_t percent) {
+    static int32_t s_set = -1; // only a change touches the LEDC
+    if ((int32_t)percent == s_set) return;
+    s_set = (int32_t)percent;
     uint32_t duty = (255 * percent) / 100;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LCD_LEDC_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LCD_LEDC_CHANNEL);
@@ -139,7 +142,7 @@ void display_frame_reserve(void) {
 
 enum View : uint8_t {
     V_BOOT, V_MAIN, V_ROOT, V_HAPTIC, V_HID, V_BOOTMODE, V_APP_PROFILE, V_DISPLAY, V_DEVICE, V_SYSINFO, V_RECAL, V_BINDINGS, V_ATTRACT,
-    V_LIGHTS, V_NOTIFY, V_SOUNDCAL, V_CLICK
+    V_LIGHTS, V_NOTIFY, V_SOUNDCAL, V_CLICK, V_SLEEP, V_DARK
 };
 
 static View view_for(const menu_render_snapshot_t &s) {
@@ -157,13 +160,14 @@ static View view_for(const menu_render_snapshot_t &s) {
         case MENU_SCREEN_LIGHTS: return V_LIGHTS;
         case MENU_SCREEN_SOUND_CAL: return V_SOUNDCAL;
         case MENU_SCREEN_CLICK: return V_CLICK;
+        case MENU_SCREEN_SLEEP: return V_SLEEP;
         default: return V_MAIN;
     }
 }
 
 static inline bool is_settings_view(View v) {
     return v == V_HAPTIC || v == V_HID || v == V_BOOTMODE || v == V_APP_PROFILE || v == V_DISPLAY || v == V_BINDINGS
-        || v == V_LIGHTS || v == V_CLICK;
+        || v == V_LIGHTS || v == V_CLICK || v == V_SLEEP;
 }
 
 // --- MUSIC: the now-playing cover (media.h) ---
@@ -435,8 +439,41 @@ static int64_t s_iris_start_us = 0;
 static menu_render_snapshot_t s_iris_from_snap;
 
 static bool s_attract_on = false;
+static bool s_dark = false; // the sleep hours: backlight and LEDs off
 static int64_t s_attract_start_us = 0;
 static uint32_t s_attract_seed = 0; // picks this idle session's random routines
+static int s_saver_mode = SAVER_ICON; // what the screensaver shows now (never AUTO)
+
+// What the screensaver shows: AUTO and MUSIC fall back to the clock while nothing plays, the clock
+// to the icon while the knob doesn't know the local time.
+static int saver_resolve(int saver) {
+    media_track_t trk;
+    bool playing = media_get_track(&trk) && trk.playing;
+    if ((saver == SAVER_AUTO || saver == SAVER_MUSIC) && playing) return SAVER_MUSIC;
+    if (saver == SAVER_AUTO || saver == SAVER_MUSIC || saver == SAVER_CLOCK) return clock_trusted() ? SAVER_CLOCK : SAVER_ICON;
+    if (saver == SAVER_NEVER) return SAVER_BLANK; // only reached in the sleep hours, going dark
+    return saver;
+}
+
+static void draw_saver_clock(int64_t now) {
+    struct tm tm = {};
+    bool valid = clock_now(0, &tm, NULL, NULL);
+    uint8_t f = clock_flags();
+    ui::draw_clock_saver({valid, tm.tm_hour, tm.tm_min, tm.tm_wday, tm.tm_mday, tm.tm_mon, (f & CLOCK_24H) != 0,
+                          (uint32_t)(now / 60000000LL)});
+}
+
+static void draw_saver_music(void) {
+    media_track_t trk;
+    if (!media_get_track(&trk)) return;
+    if (s_cover_ok) {
+        s_cover.pushSprite(&s_frame, 0, 0);
+        darken_band((uint16_t *)s_frame.getBuffer());
+    }
+    ui::NowPlayingInputs np = {trk.title, trk.artist, s_cover_ok, app_profiles_get(menu_get_app_profile())->icon48,
+                               trk.palette[0] ? trk.palette[0] : ui::AMBER, trk.playing, -1, 0, ui::NP_GLYPH_NONE, 0};
+    ui::draw_now_playing(np);
+}
 static int64_t s_last_activity_us = 0;
 
 static menu_render_snapshot_t s_last_snap;
@@ -1008,8 +1045,14 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             ui::draw_boot_mode(snap, menu_get_boot_mode(), ui_state_get_usb_serial_active(), blink_on);
             break;
         case V_DISPLAY:
-            ui::draw_display(snap, (int)menu_get_display_rotation(), blink_on);
+            ui::draw_display(snap, blink_on);
             break;
+        case V_SLEEP: {
+            ui::draw_sleep(snap, {screen_sleep_enabled(), clock_trusted(), screen_sleeping(), blink_on});
+            break;
+        }
+        case V_DARK:
+            break; // black, behind a backlight that's off
         case V_SYSINFO: {
             sysmon_info_t info;
             sysmon_get(&info);
@@ -1051,6 +1094,15 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             break;
         }
         case V_ATTRACT: {
+            if (s_saver_mode == SAVER_CLOCK) {
+                draw_saver_clock(now);
+                break;
+            }
+            if (s_saver_mode == SAVER_MUSIC) {
+                draw_saver_music();
+                break;
+            }
+            if (s_saver_mode == SAVER_BLANK) break; // and the backlight is off
             // APP mode: the active profile's icon (and colours) instead of the QUADRA wordmark.
             // MIDI: the synth maker's logo (KORG, Roland), if it has one.
             const uint8_t *icon = nullptr;
@@ -1065,7 +1117,8 @@ static void draw_view(View v, const menu_render_snapshot_t &snap, int64_t now) {
             } else if (menu_get_hid_type() == MENU_HID_MIDI) {
                 mark = ui::maker_logo(midi_synth_get(menu_get_midi_synth())->maker);
             }
-            ui::fx_attract((uint32_t)((now - s_attract_start_us) / 1000), icon, heat, s_attract_seed, -1, mark);
+            ui::fx_attract((uint32_t)((now - s_attract_start_us) / 1000), icon, heat, s_attract_seed,
+                           s_saver_mode == SAVER_BOUNCE ? ui::ATTRACT_BOUNCE : -1, mark);
             break;
         }
     }
@@ -1271,11 +1324,24 @@ static Pace update_ui(void) {
     // A new icon counts as activity so an upload wakes the screen and shows it; so does a new
     // track, and a new mode or profile. While music plays, its cover stays up instead of the
     // idle animation.
-    bool activity = snapshot_changed || buttons_changed || detent != s_last_detent || icon_changed || notice_changed
-                 || mode_changed || (music_on && media_changed) || home_changed || midi_changed;
-    // A clock isn't screensaved; nor is AGENTS' dashboard while an agent works or asks (by
-    // request, 2026-10-07): it idles once every agent is idle or waiting for the next prompt.
-    if (activity || notice || music_playing || clock_on || home_scan || board_live) s_last_activity_us = now;
+    bool input = snapshot_changed || buttons_changed || detent != s_last_detent; // someone touched it
+    bool activity = input || icon_changed || notice_changed || mode_changed || (music_on && media_changed) || home_changed
+                 || midi_changed;
+    // The sleep hours (user_prefs.h): only while the knob trusts its local time, so a knob that
+    // lost it (a power cut: no clock battery) behaves as by day.
+    static int64_t s_sleep_check_us = -(1LL << 40);
+    if (now - s_sleep_check_us >= SLEEP_CHECK_US) {
+        s_sleep_check_us = now;
+        screen_set_sleeping(screen_sleep_now());
+    }
+    const bool sleeping = screen_sleeping();
+    screen_t scr;
+    screen_get(&scr);
+    // By day, a clock isn't screensaved; nor is AGENTS' dashboard while an agent works or asks (by
+    // request, 2026-10-07): it idles once every agent is idle or waiting for the next prompt. In
+    // the sleep hours nothing holds it off and only touching the knob wakes it (by request,
+    // 2026-10-08): a notification, a track or an agent waits for the next touch.
+    if (sleeping ? input : (activity || notice || music_playing || clock_on || home_scan || board_live)) s_last_activity_us = now;
 
     if (snap.save_count != s_last_save_count) {
         s_last_save_count = snap.save_count;
@@ -1327,23 +1393,46 @@ static Pace update_ui(void) {
         s_last_activity_us = now; // idle timer starts once the Main Screen is actually up
     }
     View target;
+    bool wake_saver_redraw = false; // the screensaver's picture changed (it doesn't loop)
     if (s_booting) {
         target = V_BOOT;
     } else {
         target = view_for(snap);
         if (notice && target == V_MAIN) target = V_NOTIFY;
-        if (target != V_MAIN) {
-            s_attract_on = false;
-        } else if (s_attract_on) {
-            if (activity) s_attract_on = false;
-        } else if (now - s_last_activity_us >= ATTRACT_IDLE_MS * 1000LL) {
-            s_attract_on = true;
+        // By day the screensaver only takes the Main Screen's place; in the sleep hours any screen's.
+        const int64_t idle = now - s_last_activity_us, after = scr.saver_s * 1000000LL;
+        const bool dark = sleeping && idle >= after + scr.dark_s * 1000000LL;
+        const bool saver = !dark && (sleeping || target == V_MAIN) && scr.saver != SAVER_NEVER && idle >= after;
+        if (saver && !s_attract_on) {
             s_attract_start_us = now;
             s_attract_seed = esp_random();
         }
-        if (s_attract_on) target = V_ATTRACT;
+        s_attract_on = saver;
+        s_dark = dark;
+        if (s_attract_on) {
+            int mode = saver_resolve(scr.saver);
+            if (mode != s_saver_mode) wake_saver_redraw = true;
+            s_saver_mode = mode;
+            target = V_ATTRACT;
+        }
+        if (s_dark) target = V_DARK;
     }
-    ui_state_set_screensaver(s_attract_on);
+    ui_state_set_screensaver(s_dark ? UI_SAVER_DARK : s_attract_on ? UI_SAVER_ON : UI_SAVER_OFF);
+    // The backlight: DISPLAY -> BRIGHT, the night level awake in the sleep hours with WAKE = DIM,
+    // off while dark or for the BLANK screensaver.
+    {
+        int32_t pct = scr.bright;
+        if (sleeping && scr.wake == WAKE_DIM && pct > SCREEN_DIM_BRIGHT) pct = SCREEN_DIM_BRIGHT;
+        if (s_dark || (s_attract_on && s_saver_mode == SAVER_BLANK)) pct = 0;
+        if (!s_booting) backlight_set_percent((uint32_t)pct);
+    }
+    // The clock screensaver turns over each minute; the music one shows a new track.
+    static int64_t s_saver_minute = -1;
+    if (s_attract_on && s_saver_mode == SAVER_CLOCK && now / 60000000LL != s_saver_minute) {
+        s_saver_minute = now / 60000000LL;
+        wake_saver_redraw = true;
+    }
+    if (s_attract_on && s_saver_mode == SAVER_MUSIC && media_changed) wake_saver_redraw = true;
 
     // APP mode's live slot changes a beat after the raw buttons (it's debounced) -- redraw
     // when it does, or the middle would show the previous action.
@@ -1379,7 +1468,7 @@ static Pace update_ui(void) {
     bool redraw = first || snapshot_changed || sndcal_changed || buttons_changed || mode_changed || icon_changed || app_slot_changed || wheel_changed
                || rotation_changed || (sys_changed && s_view == V_SYSINFO) || text_changed || notice_changed
                || media_changed || board_changed || np_overlay_ended || clock_changed || (music_on && style_changed)
-               || home_changed || midi_changed || midi_prog_ended;
+               || home_changed || midi_changed || midi_prog_ended || wake_saver_redraw;
     // The spinning record: on its own pace, not every tick (now playing polls every tick, PACE_TICK).
     static int64_t s_vinyl_frame_us = 0;
     static bool s_vinyl_was_live = false;
@@ -1412,7 +1501,8 @@ static Pace update_ui(void) {
              || (s_view == V_MAIN && shape_live)
              || (s_view == V_MAIN && now - s_wheel_slide_us < WHEEL_SLIDE_MS * 1000LL)
              || (s_view == V_MAIN && home_on && now - s_home_slide_start_us < HID_SLIDE_MS * 1000LL);
-    bool looping = s_booting || s_view == V_ATTRACT || s_view == V_NOTIFY // the notification breathes
+    bool saver_loops = s_saver_mode == SAVER_ICON || s_saver_mode == SAVER_BOUNCE; // the clock, music, blank don't
+    bool looping = s_booting || (s_view == V_ATTRACT && saver_loops) || s_view == V_NOTIFY // the notification breathes
                 || s_view == V_LIGHTS // the rim mirrors the animated LED ring
                 || (s_view == V_MAIN && ((np_overlay && !vinyl_paced) || board_live)) // volume ring / key glyph, board dots
                 || (s_view == V_MAIN && (wheel_live || param_live)) // card animations, value dial
@@ -1486,7 +1576,9 @@ static void display_task_fn(void *arg) {
 
     s_boot_start_us = esp_timer_get_time();
     update_ui(); // first (black) frame of the loading screen before the backlight comes up
-    backlight_set_percent(LCD_BACKLIGHT_DUTY_PERCENT);
+    screen_t scr;
+    screen_get(&scr);
+    backlight_set_percent((uint32_t)scr.bright); // update_ui() keeps it from here, once booted
     ESP_LOGI(TAG, "display init done");
 
     while (1) {

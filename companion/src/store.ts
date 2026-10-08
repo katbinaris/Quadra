@@ -126,9 +126,10 @@ export interface Unsaved {
 }
 
 export const unsaved = computed<Unsaved>(() => {
-  use("settings", "prefs", "profiles", "synths");
+  use("settings", "prefs", "idle", "profiles", "synths");
   const dirty = device.settings?.dirty ?? 0;
   const settings = SETTING_PAGES.filter(([, bits]) => bits.some((b) => (dirty >> b) & 1)).map(([name]) => name);
+  if (device.idle?.dirty && !settings.includes("Screen")) settings.push("Screen");
   if (device.prefs?.lightsDirty) settings.push("Lights");
   const profiles = device.profiles.filter((p) => p && p.flags & ProfileFlag.LIVE).map((p) => ({ index: p.index, id: p.id, name: p.name }));
   const ed = openEditor.value;

@@ -1,6 +1,7 @@
 #include "clock.h"
 #include "tzrule.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "nvs.h"
 #include <stdatomic.h>
@@ -12,6 +13,7 @@ static const char *TAG = "clock";
 
 #define NVS_NS "clock"
 #define VALID_AFTER 1704067200 // 2024-01-01: the chip starts at 1970
+#define TRUST_US (24LL * 3600 * 1000000) // a sync this recent: the crystal hasn't drifted far
 
 typedef struct {
     char label[CLOCK_LABEL_MAX + 1];
@@ -24,6 +26,8 @@ static tzrule_t s_rules[CLOCK_SLOTS]; // parsed from s_slots, under s_mux
 static _Atomic uint8_t s_flags = CLOCK_FLAGS_DEFAULT;
 static _Atomic uint32_t s_version = 1;
 static _Atomic uint32_t s_dirty = 0; // bit i: slot i; DIRTY_FLAGS: the format
+static _Atomic int64_t s_synced_us = -1; // esp_timer when the time was last set, -1 never
+static _Atomic bool s_local_known = false; // LOCAL's zone came from a host (now or stored)
 #define DIRTY_FLAGS (1u << 31)
 
 static bool printable(const char *s, size_t max) {
@@ -50,6 +54,7 @@ void clock_init(void) {
         }
         nvs_close(h);
     }
+    atomic_store(&s_local_known, s_slots[0].label[0]);
     if (!s_slots[0].label[0]) { // LOCAL until the host says which zone that is
         strcpy(s_slots[0].label, "UTC");
         strcpy(s_slots[0].tz, "UTC0");
@@ -65,6 +70,16 @@ void clock_set_utc_ms(int64_t ms) {
     if (ms / 1000 < VALID_AFTER) return;
     struct timeval tv = {.tv_sec = (time_t)(ms / 1000), .tv_usec = (suseconds_t)(ms % 1000) * 1000};
     settimeofday(&tv, NULL);
+    clock_note_sync();
+}
+
+void clock_note_sync(void) {
+    atomic_store(&s_synced_us, esp_timer_get_time());
+}
+
+bool clock_trusted(void) {
+    int64_t at = atomic_load(&s_synced_us);
+    return clock_valid() && atomic_load(&s_local_known) && at >= 0 && esp_timer_get_time() - at < TRUST_US;
 }
 
 uint8_t clock_flags(void) {
@@ -103,6 +118,7 @@ bool clock_set_slot(int slot, const char *label, const char *tz) {
         s_rules[slot] = r;
     }
     portEXIT_CRITICAL(&s_mux);
+    if (slot == 0) atomic_store(&s_local_known, true);
     if (!same) { // the host sends LOCAL every few minutes: only a change is stored
         atomic_fetch_or(&s_dirty, 1u << slot);
         atomic_fetch_add(&s_version, 1);

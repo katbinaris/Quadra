@@ -493,21 +493,6 @@ void draw_app_profile(const menu_render_snapshot_t &snap, const ProfileInputs &i
 
 // --- Boot mode: two cards ---
 
-void draw_display(const menu_render_snapshot_t &snap, int rotation, bool blink_on) {
-    header("DISPLAY");
-    text("ROTATION", CX, 54, GREY, 1, CENTER);
-    // "This way up": a 4x arrow head on a short shaft.
-    sprite_c(SPR_TRI_U, CX, 76, WHITE, 4);
-    rect(CX - 2, 82, 4, 12, WHITE);
-    char deg[8];
-    snprintf(deg, sizeof(deg), "%d", rotation * 90);
-    int w = text(deg, CX, 106, WHITE, 3, CENTER);
-    frame_box((int)lroundf(CX + w / 2.0f) + 3, 106, 5, 5, WHITE); // degree mark
-    edit_arrows(CX, 106, w + 16, cap_height(3), AMBER);
-    text("TURN TO ROTATE", CX, 140, GREY, 1, CENTER);
-    save_hint(160, snap.dirty, blink_on);
-}
-
 void draw_boot_mode(const menu_render_snapshot_t &snap, boot_usb_mode_t selected, bool serial_in_use, bool blink_on) {
     header("BOOT MODE");
     struct Card { int x; const char *label; const Sprite *icon; boot_usb_mode_t mode; };

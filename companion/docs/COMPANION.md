@@ -435,6 +435,11 @@ the knob's own Lights screen). Changes made on the knob show up here within a se
 | **Idle word** | The word on the idle screen, up to 12 characters (lowercase draws as small capitals). **Back to QUADRA** restores it. Stored on the knob as soon as you press **Set** |
 | **Music cover** | How the Music app shows the cover while something plays: **Flat** (full screen), **Record** (the glass is a spinning record, the cover its label), **Slide** (a sleeve the record slides out of) or **Bleed** (a big sleeve that slides off the glass). Stored on the knob at once. On the knob, a tap of F4 on the now-playing screen steps through them (extensions v8 and later) |
 | **Screen rotation** | 0, 90, 180 or 270 degrees. Kept by Save to knob |
+| **Brightness** | The screen's backlight, 10 to 100%. Kept by Save to knob (extensions v13 and later, as are the next two) |
+| **Screensaver** | What the knob shows when it's left alone: **Auto** (what's playing, else the clock, else the icon), **Icon**, **Bounce**, **Clock**, **Music**, **Blank** (the screen off) or **Never**; and **Starts after**, 5 s to 10 min without a turn or a key. Kept by Save to knob |
+| **Sleep hours** | **Sleep** on or off; **From** and **To** (they can run past midnight); **Goes dark**, how long into the screensaver the screen and LEDs turn off; and **Woken**, **Normal** or **Dim**. In the sleep hours only a turn or a key wakes the knob. They need the knob to know the local time, which the Quadra service on the computer sends: without it they pause, the knob stays on as by day, and this box says so. Kept by Save to knob |
+
+<img src="app-look-sleep.png" width="720" alt="Look, Screen & music, further down: brightness, the seven screensaver choices, and sleep hours from 23:00 to 07:00, dark 30 s into the screensaver, woken dim">
 
 <img src="app-look-clock.png" width="720" alt="Look, Clock: 24-hour, seconds and date on; local time; Tokyo and New York as world zones">
 
