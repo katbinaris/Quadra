@@ -1610,3 +1610,50 @@ void menu_remote_save_screen(void) {
     atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
     motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
 }
+
+bool menu_haptic_get(int p, int f, menu_haptic_entry_t *out) {
+    if (p < 0 || p >= HAPTIC_PROFILE_COUNT || f < 0 || f >= HAPTIC_TYPE_COUNT) return false;
+    out->feel = hp_feel(p);
+    out->click = LD(s_hp_click[p]);
+    hp_get_tune(p, f, &out->tune);
+    portENTER_CRITICAL(&s_state_mux);
+    out->dirty = out->feel != s_saved.hp_feel[p] || out->click != s_saved.hp_click[p]
+              || memcmp(&out->tune, &s_saved.hp_tune[p][f], sizeof(out->tune)) != 0;
+    portEXIT_CRITICAL(&s_state_mux);
+    return true;
+}
+
+bool menu_haptic_set(int p, int f, int use_feel, int click, const haptic_tune_t *tune) {
+    if (p < 0 || p >= HAPTIC_PROFILE_COUNT || f < 0 || f >= HAPTIC_TYPE_COUNT) return false;
+    uint8_t feels = HAPTIC_PROFILES[p].feels;
+    if (tune != NULL && !(feels & (1u << f))) return false;
+    if (use_feel >= 0 && (use_feel >= HAPTIC_TYPE_COUNT || !(feels & (1u << use_feel)))) return false;
+    if (click >= SNDCAL_CLICK_COUNT) return false;
+    if (tune != NULL) hp_set_tune(p, f, tune);
+    if (use_feel >= 0) ST(s_hp_feel[p], use_feel);
+    if (click >= 0) ST(s_hp_click[p], click);
+    return true;
+}
+
+void menu_mode_haptics_get(int32_t out[MENU_MODE_HAPTICS]) {
+    for (int i = 0; i < MENU_MODE_HAPTICS; i++) out[i] = LD(s_mode_hp[i]);
+}
+
+void menu_mode_haptics_set(const int32_t in[MENU_MODE_HAPTICS]) {
+    for (int i = 0; i < MENU_MODE_HAPTICS; i++) ST(s_mode_hp[i], clampi(in[i], 0, HAPTIC_PROFILE_COUNT - 1));
+}
+
+void menu_remote_save_haptic(void) {
+    static settings_t cur, saved; // the usb task only
+    settings_capture(&cur);
+    portENTER_CRITICAL(&s_state_mux);
+    saved = s_saved;
+    portEXIT_CRITICAL(&s_state_mux);
+    if (!settings_group_differs(&cur, &saved, MENU_SCREEN_HAPTIC)) return;
+    action_save_haptic();
+    portENTER_CRITICAL(&s_state_mux);
+    settings_copy_group(&s_saved, &cur, MENU_SCREEN_HAPTIC);
+    portEXIT_CRITICAL(&s_state_mux);
+    atomic_fetch_add_explicit(&s_save_count, 1, memory_order_relaxed);
+    motor_sound_jingle(MOTOR_SOUND_JINGLE_SAVE);
+}

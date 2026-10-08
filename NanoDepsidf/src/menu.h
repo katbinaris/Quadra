@@ -275,3 +275,19 @@ void menu_remote_save_lights(void);
 // SCREEN (DISPLAY's brightness and screensaver, and SLEEP) alike, for EXT_CMD_IDLE.
 bool menu_screen_dirty(void);
 void menu_remote_save_screen(void);
+// One haptic profile in one feel, for the companion's backup (ext_link.c EXT_CMD_HAPTICS): its
+// values there, the feel it uses, its click, and whether any of that differs from NVS.
+typedef struct {
+    int32_t feel, click;
+    haptic_tune_t tune;
+    bool dirty;
+} menu_haptic_entry_t;
+bool menu_haptic_get(int profile, int feel, menu_haptic_entry_t *out); // false: out of range
+// Live, clamped like the knob's own edits. use_feel / click < 0: kept; tune NULL: kept. False: out
+// of range, or a feel the profile doesn't offer.
+bool menu_haptic_set(int profile, int feel, int use_feel, int click, const haptic_tune_t *tune);
+void menu_remote_save_haptic(void); // the HAPTIC group alone, when it differs
+// The haptic profile KEYBOARD, MOUSE, MIDI and APP each use (HID group; SAVE stores it).
+#define MENU_MODE_HAPTICS 4
+void menu_mode_haptics_get(int32_t out[MENU_MODE_HAPTICS]);
+void menu_mode_haptics_set(const int32_t in[MENU_MODE_HAPTICS]); // clamped

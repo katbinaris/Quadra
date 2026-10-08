@@ -6,7 +6,7 @@
 // range is full: new commands go in 0x30-0x3F (same handler, ext_link.c).
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 13 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+#define EXT_PROTO_VERSION 14 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
                              // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
                              // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi;
                              // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi);
@@ -14,6 +14,7 @@
                              // 12: EXT_HOME_EDIT, the lamp's icon / address in EXT_TAG_HOME,
                              //     EXT_CMD_SYNTH / EXT_TAG_SYNTH (MIDI's synth profiles);
                              // 13: EXT_CMD_IDLE / EXT_TAG_IDLE (brightness, screensaver, sleep hours)
+                             // 14: EXT_CMD_HAPTICS / EXT_TAG_HAPTICS (every haptic profile's tuning)
 
 // --- Host -> device ---
 enum {
@@ -102,6 +103,17 @@ enum {
                            //     -> EXT_TAG_SYNTH RESULT
                            //   STATUS -> EXT_TAG_SYNTH STATUS
                            //   GOTO: [2]=parameter: the knob moves to it (the synth in use)
+    EXT_CMD_HAPTICS = 0x33, // v14: one haptic profile (haptic_params.h) in one feel, for the
+                           //   companion's backup. [1]=EXT_HAPTICS_* [2]=profile [3]=feel
+                           //   GET -> EXT_TAG_HAPTICS
+                           //   SET: [4]=EXT_HAPTICS_SAVE / _TUNE flags [5]=the feel the profile
+                           //     uses (0xFF keep) [6]=its click shape (0xFF keep) [8..27]=TUNE:
+                           //     the values in [3], laid out as in EXT_TAG_HAPTICS [28..31]=MODES:
+                           //     each mode's profile, as in EXT_TAG_HAPTICS. Live at once, clamped
+                           //     like the knob's own edits; SAVE stores the HAPTIC group (MODES:
+                           //     the HID group, which Cmd SAVE stores)
+                           //     -> EXT_TAG_HAPTICS (ACK BAD_PARAM: out of range, or a feel the
+                           //     profile doesn't offer)
 };
 enum { EXT_INPUT_KEYS = 1, EXT_INPUT_TURN = 2 };
 enum { EXT_CLOCK_FORMAT = 1, EXT_CLOCK_ZONE = 2, EXT_CLOCK_GET = 3 };
@@ -113,6 +125,11 @@ enum { EXT_HOME_EDIT_NAME = 1, EXT_HOME_EDIT_KIND = 2, EXT_HOME_EDIT_MOVE = 3, E
 enum { EXT_SYNTH_LIST = 1, EXT_SYNTH_READ = 2, EXT_SYNTH_RESULT = 3, EXT_SYNTH_STATUS = 4, EXT_SYNTH_PUT_BEGIN = 5,
        EXT_SYNTH_PUT_DATA = 6, EXT_SYNTH_PUT_END = 7, EXT_SYNTH_OP = 8, EXT_SYNTH_GOTO = 10 };
 #define EXT_SYNTH_SAVE 0x01
+enum { EXT_HAPTICS_GET = 1, EXT_HAPTICS_SET = 2 };
+#define EXT_HAPTICS_SAVE 0x01  // SET [4]: also store the HAPTIC group
+#define EXT_HAPTICS_TUNE 0x02  // SET [4]: [8..27] holds the values
+#define EXT_HAPTICS_MODES 0x04 // SET [4]: [28..31] holds each mode's haptic profile
+#define EXT_HAPTICS_DIRTY 0x01 // EXT_TAG_HAPTICS [25]: the profile differs from what's stored
 #define EXT_SYNTH_CHUNK 48  // READ's bytes per report
 #define EXT_SYNTH_PUT_CHUNK 56
 #define EXT_HOME_ONLINE 0x01 // EXT_TAG_HOME [7]: answered this session
@@ -178,6 +195,12 @@ enum {
     EXT_TAG_IDLE = 0xCC,   // v13: [1]=brightness % [2]=saver_t [3..4]=seconds to the screensaver
                            // [5]=sleep hours on [6..7]=from [8..9]=to (minutes of the day)
                            // [10..11]=seconds of screensaver before dark [12]=wake_t [13]=EXT_IDLE_*
+    EXT_TAG_HAPTICS = 0xCD, // v14: [1]=profile [2]=feel [3]=the feel the profile uses [4]=its
+                           // click shape [5..8]=SNAP (float) [9..12]=DAMP (float) [13..16]=SHAPE %
+                           // (int32) [17..20]=AMP % (int32) [21..24]=PITCH (float), all in [2]
+                           // [25]=EXT_HAPTICS_* [26]=the feels it offers (1 << feel) [27]=profiles
+                           // [28]=feels [29]=click shapes [30..33]=the haptic profile KEYBOARD,
+                           // MOUSE, MIDI and APP each use
     EXT_TAG_HID = 0xC9,    // to the EXT_NET_CONTROLS client: the HID report USB would have carried,
                            //   the whole state each time (like HID). [1]=EXT_HID_*:
                            //   KEYBOARD: [2]=modifiers (HID bits) [3..8]=keys held (HID usages)
