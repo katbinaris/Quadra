@@ -55,8 +55,10 @@ uint8_t ui_state_get_buttons(void);
 void ui_state_set_usb_serial_active(bool serial);
 bool ui_state_get_usb_serial_active(void);
 
-// Pixel UI: set by the display (Core 1) while the attract animation runs, read by
-// control_task.c (Core 0) so the button press that wakes the screen is swallowed instead of
-// also opening the menu.
-void ui_state_set_screensaver(bool active);
-bool ui_state_get_screensaver(void);
+// Set by the display (Core 1): whether the screensaver is up, and whether the screen has gone
+// dark for the sleep hours (user_prefs.h). The LEDs follow both (led_task.c), and the companion
+// sees them in HOST_TAG_STATE. The key that wakes it still does its job.
+typedef enum { UI_SAVER_OFF = 0, UI_SAVER_ON, UI_SAVER_DARK } ui_saver_t;
+void ui_state_set_screensaver(ui_saver_t state);
+bool ui_state_get_screensaver(void); // on or dark
+ui_saver_t ui_state_get_saver(void);

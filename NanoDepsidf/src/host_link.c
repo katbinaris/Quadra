@@ -387,7 +387,7 @@ static void build_state(uint8_t *r, uint16_t seq) {
     put_i32(r + 8, ui_state_get_detent());
     r[12] = ui_state_get_buttons();
     r[13] = (uint8_t)menu_current_screen();
-    r[14] = ui_state_get_screensaver();
+    r[14] = ui_state_get_saver();
     r[15] = (uint8_t)app_mode_live_slot();
     put_i32(r + 16, (int32_t)ui_state_get_clicks());
     put_i32(r + 20, (int32_t)ui_state_get_walls());
