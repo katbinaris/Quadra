@@ -6,13 +6,14 @@
 // range is full: new commands go in 0x30-0x3F (same handler, ext_link.c).
 // Host side: tools/quadra.py, tools/agents/.
 
-#define EXT_PROTO_VERSION 12 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
+#define EXT_PROTO_VERSION 13 // 4: EXT_CMD_NET; 5: EXT_CMD_TIME / _CLOCK; 6: _SCREEN / _INPUT;
                              // 7: the companion over WiFi (net_link.h), EXT_NET_KEY; 8: EXT_CMD_MUSIC;
                              // 9: EXT_CMD_PD, two WiFi clients, the cover over WiFi;
                              // 10: EXT_NET_CONTROLS / EXT_TAG_HID (the controls over WiFi);
                              // 11: EXT_CMD_HOME / EXT_TAG_HOME (HOME's lamps);
                              // 12: EXT_HOME_EDIT, the lamp's icon / address in EXT_TAG_HOME,
-                             //     EXT_CMD_SYNTH / EXT_TAG_SYNTH (MIDI's synth profiles)
+                             //     EXT_CMD_SYNTH / EXT_TAG_SYNTH (MIDI's synth profiles);
+                             // 13: EXT_CMD_IDLE / EXT_TAG_IDLE (brightness, screensaver, sleep hours)
 
 // --- Host -> device ---
 enum {
@@ -82,6 +83,12 @@ enum {
                            //     [8..]=NAME: the name, NUL-padded (19) / KIND: HOME_KIND_* /
                            //     MOVE: the slot it goes to / REMOVE: nothing.
                            //     Stored at once -> EXT_TAG_ACK (EXT_ST_STORAGE: not stored)
+    EXT_CMD_IDLE = 0x32,   // the screen (user_prefs.h screen_t), v13. [1]=EXT_IDLE_SAVE or 0
+                           //   [2]=brightness % [3]=saver_t [4..5]=seconds to the screensaver
+                           //   [6]=sleep hours on [7..8]=from, [9..10]=to, minutes of the day
+                           //   [11..12]=seconds of screensaver before dark [13]=wake_t;
+                           //   0xFF / 0xFFFF = keep that field (all kept, no SAVE: just asks).
+                           //   Live at once, like turning the knob. -> EXT_TAG_IDLE
     EXT_CMD_SYNTH = 0x31,  // MIDI's synth profiles (midi.h), v12. [1]=EXT_SYNTH_*:
                            //   LIST: [2]=index -> EXT_TAG_SYNTH LIST
                            //   READ: [2]=index [4..7]=offset -> EXT_TAG_SYNTH READ: its JSON from
@@ -126,6 +133,11 @@ enum {
 };
 
 #define EXT_LIGHTS_SAVE 0x01 // also store them (otherwise live only, shown as unsaved)
+#define EXT_IDLE_SAVE 0x01   // the same for EXT_CMD_IDLE
+#define EXT_IDLE_DIRTY 0x01   // EXT_TAG_IDLE [13]: differs from what's stored
+#define EXT_IDLE_TRUSTED 0x02 // the knob trusts its local time (clock.h clock_trusted)
+#define EXT_IDLE_SLEEPING 0x04 // inside the sleep hours now
+#define EXT_IDLE_DARK 0x08    // the screen is dark now
 
 enum { EXT_NOTIFY_POST = 1, EXT_NOTIFY_CLEAR = 2, EXT_NOTIFY_CLEAR_ALL = 3 };
 
@@ -163,6 +175,9 @@ enum {
                            //     [5..6]=its value (int16, -1 unknown) [7]=1: F1 held, picking
                            //     [8..9]=program sent last (int16, -1 none) [10]=channel [11]=1: USB
                            //     MIDI up [12]=1: TRS up [13..16]=messages sent [17..20]=received
+    EXT_TAG_IDLE = 0xCC,   // v13: [1]=brightness % [2]=saver_t [3..4]=seconds to the screensaver
+                           // [5]=sleep hours on [6..7]=from [8..9]=to (minutes of the day)
+                           // [10..11]=seconds of screensaver before dark [12]=wake_t [13]=EXT_IDLE_*
     EXT_TAG_HID = 0xC9,    // to the EXT_NET_CONTROLS client: the HID report USB would have carried,
                            //   the whole state each time (like HID). [1]=EXT_HID_*:
                            //   KEYBOARD: [2]=modifiers (HID bits) [3..8]=keys held (HID usages)

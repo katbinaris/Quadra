@@ -64,6 +64,89 @@ void draw_lights(const menu_render_snapshot_t &snap, const LightsInputs &in) {
     else text("TURN  F1 NEXT  F3 BACK", CX, 154, DARK, 1, CENTER);
 }
 
+// --- DISPLAY, SLEEP ---
+
+// LIGHTS' rows, under a title; returns the y below the last.
+static int setting_rows(const char *title, const menu_render_snapshot_t &snap) {
+    text(title, CX, 26, GREY, 1, CENTER);
+    rect(70, 40, 100, 1, DARK);
+    int y = 52;
+    for (int i = 0; i < snap.row_count; i++, y += 16) {
+        const menu_render_row_t &r = snap.rows[i];
+        if (r.selected) cut(42, y - 4, 156, 15, AMBER);
+        text(r.label, 50, y, r.selected ? BLACK : GREY);
+        text(r.value, 190, y, r.selected ? BLACK : r.muted ? DARK : WHITE, 1, RIGHT);
+    }
+    return y;
+}
+
+static void setting_hint(const menu_render_snapshot_t &snap, bool blink_on) {
+    if (snap.dirty && blink_on) text("F2 SAVE", CX, 154, AMBER, 1, CENTER);
+    else text("TURN  F1 NEXT  F3 BACK", CX, 154, DARK, 1, CENTER);
+}
+
+void draw_display(const menu_render_snapshot_t &snap, bool blink_on) {
+    int y = setting_rows("DISPLAY", snap) + 6;
+    const char *about = "";
+    switch (snap.selected) {
+        case MENU_DISPLAY_ROW_ROTATION: about = "TURNS THE SCREEN"; break;
+        case MENU_DISPLAY_ROW_BRIGHT: about = "HOW BRIGHT THE SCREEN IS"; break;
+        case MENU_DISPLAY_ROW_AFTER: about = "IDLE BEFORE THE SAVER"; break;
+        case MENU_DISPLAY_ROW_SAVER: {
+            const char *v = snap.rows[MENU_DISPLAY_ROW_SAVER].value;
+            about = !strcmp(v, "AUTO")     ? "MUSIC, CLOCK OR ICON"
+                  : !strcmp(v, "ICON")     ? "THE ICON JUMPS"
+                  : !strcmp(v, "BOUNCE")   ? "THE ICON BOUNCES"
+                  : !strcmp(v, "CLOCK")    ? "THE TIME"
+                  : !strcmp(v, "MUSIC")    ? "THE TRACK PLAYING"
+                  : !strcmp(v, "BLANK")    ? "THE SCREEN GOES OFF"
+                                           : "THE SCREEN STAYS ON";
+            break;
+        }
+        default: break;
+    }
+    text(about, CX, y, GREY, 1, CENTER);
+    setting_hint(snap, blink_on);
+}
+
+void draw_sleep(const menu_render_snapshot_t &snap, const SleepInputs &in) {
+    int y = setting_rows("SLEEP", snap) + 4;
+    if (!in.on) {
+        text("SCREEN AND LIGHTS OFF", CX, y, GREY, 1, CENTER);
+        text("AT NIGHT", CX, y + 12, GREY, 1, CENTER);
+    } else if (!in.trusted) { // the fail-safe: no trusted local time, no sleep hours
+        text("WAITING FOR THE TIME", CX, y, AMBER, 1, CENTER);
+        text("RUN THE QUADRA SERVICE", CX, y + 12, GREY, 1, CENTER);
+    } else {
+        text(in.sleeping ? "SLEEPING NOW" : "AWAKE NOW", CX, y, GREY, 1, CENTER);
+        text("A TOUCH WAKES IT", CX, y + 12, GREY, 1, CENTER);
+    }
+    if (snap.dirty && in.blink_on) text("F2 SAVE", CX, 184, AMBER, 1, CENTER);
+    else text("TURN  F1 NEXT  F3 BACK", CX, 184, DARK, 1, CENTER);
+}
+
+void draw_clock_saver(const ClockSaverInputs &in) {
+    char t[12], d[16];
+    if (!in.valid) {
+        snprintf(t, sizeof(t), "--:--");
+    } else {
+        int h = in.h24 ? in.hour : in.hour % 12 ? in.hour % 12 : 12;
+        snprintf(t, sizeof(t), "%d:%02d", h % 24, in.minute % 60);
+    }
+    static const char *const WDAY[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+    static const char *const MON[12] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+    snprintf(d, sizeof(d), "%s %d %s", WDAY[in.wday % 7], in.mday % 100, MON[in.mon % 12]);
+    // A new spot each minute, well inside the glass.
+    const int dx = (int)lroundf((rnd((int)in.minute_index, 1) - 0.5f) * 40);
+    const int dy = (int)lroundf((rnd((int)in.minute_index, 2) - 0.5f) * 50);
+    const int sc = fit_scale("00:00", 150, 6), y = (int)CY - cap_height(sc) / 2 - 8 + dy;
+    text(t, CX + dx, y, GREY, sc, CENTER);
+    if (in.valid) {
+        text(d, CX + dx, y + cap_height(sc) + 12, DARK, 1, CENTER);
+        if (!in.h24) text(in.hour < 12 ? "AM" : "PM", CX + dx, y - 14, DARK, 1, CENTER);
+    }
+}
+
 // --- agent notification ---
 
 // The agents' marks, drawn black on the coloured badge.

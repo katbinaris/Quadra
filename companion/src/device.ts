@@ -1,7 +1,7 @@
 // One knob, as the UI sees it: connection, the latest settings / state / SYS INFO, the app
 // profiles with their icons, and a short history for the charts. Views subscribe and redraw.
 
-import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_CONTROLS_VERSION, EXT_HOME_VERSION, EXT_SYNTH_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SYNTH_RESULT, SynthOp, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Lamp, type Lights, type MidiStatus, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SynthEntry, type SysA, type SysB } from "./proto";
+import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_IDLE_VERSION, EXT_CONTROLS_VERSION, EXT_HOME_VERSION, EXT_SYNTH_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SYNTH_RESULT, SynthOp, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Idle, type ScreenPrefs, type Lamp, type Lights, type MidiStatus, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SynthEntry, type SysA, type SysB } from "./proto";
 import { tidySynth, type SynthJson } from "./synth";
 import { rgb565ToImage, tidy, type ProfileJson } from "./profile";
 import { loadPairing, savePairing, type Pairing, type Transport } from "./transport";
@@ -10,7 +10,7 @@ export type Status = "searching" | "needs-permission" | "connected" | "unsupport
 
 // What changed, so a view redraws only for what it shows: "state" arrives 30 times a second
 // while streaming, the rest when something really changes.
-export const TOPICS = ["conn", "settings", "state", "profiles", "sys", "prefs", "net", "clock", "lamps", "synths", "midi"] as const;
+export const TOPICS = ["conn", "settings", "state", "profiles", "sys", "prefs", "idle", "net", "clock", "lamps", "synths", "midi"] as const;
 export type Topic = (typeof TOPICS)[number];
 
 export interface ProfileEntry extends Profile {
@@ -69,6 +69,7 @@ export class Device {
   // LIGHTS + the idle word.
   ext: number | null = null;
   prefs: Prefs | null = null;
+  idle: Idle | null = null; // the screen: brightness, screensaver, sleep hours (extensions v13)
   net: Net | null = null; // WiFi, from extensions v4
   paired: Pairing | null = loadPairing(); // this app over WiFi, from extensions v7
   // The knob's controls over WiFi (extensions v10): this app types and scrolls for it. null: not
@@ -107,6 +108,7 @@ export class Device {
   private listTimer: number | undefined;
   private listReload: number | undefined;
   private lightsSent: { l: Lights; save: boolean; retried: boolean } | null = null;
+  private idleSent: { s: Partial<ScreenPrefs>; save: boolean; retried: boolean } | null = null;
 
   constructor(private transport: Transport | null) {
     if (!transport) {
@@ -211,7 +213,7 @@ export class Device {
     this.synthRead = null;
     this.status = "searching";
     this.hello = this.settings = this.state = this.sysA = this.sysB = null;
-    this.ext = this.prefs = this.net = null;
+    this.ext = this.prefs = this.idle = this.net = null;
     this.controls = null;
     this.clockSlots = [];
     window.clearInterval(this.prefsTimer);
@@ -237,14 +239,18 @@ export class Device {
   set(id: SetId, value: number) {
     return this.send(encode.set(id, value));
   }
-  // SAVE and REVERT cover LIGHTS too (menu_remote_save / _revert).
+  // SAVE and REVERT cover LIGHTS and the screen too (menu_remote_save / _revert).
   async save() {
     await this.send(encode.save());
-    if (this.ext) await this.send(encode.extPrefs());
+    await this.askPrefs();
   }
   async revert() {
     await this.send(encode.revert());
+    await this.askPrefs();
+  }
+  private async askPrefs() {
     if (this.ext) await this.send(encode.extPrefs());
+    if ((this.ext ?? 0) >= EXT_IDLE_VERSION) await this.send(encode.idle({}));
   }
   setIdleText(text: string) {
     return this.send(encode.idleText(text));
@@ -300,6 +306,12 @@ export class Device {
   }
   setClockZone(slot: number, label: string, rule: string) {
     return this.send(encode.clockZone(slot, label, rule));
+  }
+  // The screen (only the fields given): live at once, `save` stores it too.
+  setIdle(s: Partial<ScreenPrefs>, save = false) {
+    if ((this.ext ?? 0) < EXT_IDLE_VERSION) return Promise.resolve();
+    this.idleSent = { s: { ...s }, save, retried: false };
+    return this.send(encode.idle(s, save));
   }
   setLights(l: Lights, save = false) {
     this.lightsSent = { l: { ...l }, save, retried: false };
@@ -476,6 +488,7 @@ export class Device {
             // Settings too: a mode or profile picked on the knob shows here within a second
             void this.send(encode.getSettings());
             void this.send(encode.extPrefs());
+            if ((this.ext ?? 0) >= EXT_IDLE_VERSION) void this.send(encode.idle({}));
             // CLOCK: the format every second, the zones every 5 (the CLI can change them too)
             if ((this.ext ?? 0) >= EXT_CLOCK_VERSION && tick++ % 5 === 4) for (let s = 1; s < CLOCK_SLOTS; s++) void this.send(encode.clockGet(s));
             if ((this.ext ?? 0) >= EXT_NET_VERSION) void this.send(encode.net(NetOp.STATUS));
@@ -527,6 +540,10 @@ export class Device {
         if ("prefs" in m) this.prefs = m.prefs;
         topic = "prefs";
         break;
+      case ExtTag.IDLE:
+        if ("idle" in m) this.idle = m.idle;
+        topic = "idle";
+        break;
       case ExtTag.NET:
         if ("net" in m) {
           this.net = m.net;
@@ -570,6 +587,12 @@ export class Device {
           if (m.cmd === ExtCmd.LIGHTS && m.status === ExtStatus.BAD_PARAM && sent && !sent.retried) {
             sent.retried = true; // the knob was still applying the one before
             window.setTimeout(() => void this.send(encode.lights(sent.l, sent.save)), LIGHTS_RETRY_MS);
+            return;
+          }
+          const isent = this.idleSent;
+          if (m.cmd === ExtCmd.IDLE && m.status === ExtStatus.BAD_PARAM && isent && !isent.retried) {
+            isent.retried = true; // likewise
+            window.setTimeout(() => void this.send(encode.idle(isent.s, isent.save)), LIGHTS_RETRY_MS);
             return;
           }
           if (m.status !== ExtStatus.OK)

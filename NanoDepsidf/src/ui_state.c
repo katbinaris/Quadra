@@ -6,7 +6,7 @@ static _Atomic int32_t s_detent = 0;
 static _Atomic uint8_t s_buttons = 0;
 static _Atomic int32_t s_knob_angle = 0;
 static _Atomic bool s_usb_serial_active = false;
-static _Atomic bool s_screensaver = false;
+static _Atomic uint8_t s_screensaver = UI_SAVER_OFF;
 static _Atomic uint32_t s_clicks = 0, s_walls = 0;
 static _Atomic int32_t s_turns = 0;
 
@@ -21,7 +21,7 @@ void ui_state_init(void) {
     atomic_store_explicit(&s_detent, 0, memory_order_relaxed);
     atomic_store_explicit(&s_buttons, 0, memory_order_relaxed);
     atomic_store_explicit(&s_usb_serial_active, false, memory_order_relaxed);
-    atomic_store_explicit(&s_screensaver, false, memory_order_relaxed);
+    atomic_store_explicit(&s_screensaver, UI_SAVER_OFF, memory_order_relaxed);
 }
 
 void CONTROL_HOT ui_state_set_detent(int32_t wrapped_index) {
@@ -56,10 +56,14 @@ bool ui_state_get_usb_serial_active(void) {
     return atomic_load_explicit(&s_usb_serial_active, memory_order_relaxed);
 }
 
-void ui_state_set_screensaver(bool active) {
-    atomic_store_explicit(&s_screensaver, active, memory_order_relaxed);
+void ui_state_set_screensaver(ui_saver_t state) {
+    atomic_store_explicit(&s_screensaver, (uint8_t)state, memory_order_relaxed);
 }
 
 bool CONTROL_HOT ui_state_get_screensaver(void) {
-    return atomic_load_explicit(&s_screensaver, memory_order_relaxed);
+    return atomic_load_explicit(&s_screensaver, memory_order_relaxed) != UI_SAVER_OFF;
+}
+
+ui_saver_t CONTROL_HOT ui_state_get_saver(void) {
+    return (ui_saver_t)atomic_load_explicit(&s_screensaver, memory_order_relaxed);
 }

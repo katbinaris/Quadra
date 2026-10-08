@@ -104,7 +104,7 @@ enum {
     HOST_TAG_STATE = 0xB5,
     // [1..2]=sequence [4..7]=knob angle i32, 1e-4 rad, continuous [8..11]=detent i32
     // [12]=buttons held (bit0 F1..bit3 F4) [13]=menu screen (menu_screen_id_t, 0 = closed)
-    // [14]=screensaver on [15]=APP live slot [16..19]=clicks i32 [20..23]=end-stop hits i32
+    // [14]=screensaver: 0 off, 1 on, 2 dark (the sleep hours) [15]=APP live slot [16..19]=clicks i32 [20..23]=end-stop hits i32
     HOST_TAG_SYS_A = 0xB6,
     // power + heat: [4..5]=motor mA [6..7]=led mA [8..9]=board mA [10..11]=total mA
     // [12..13]=total peak mA [14]=chip ok [16..19]=chip C f32 [20..23]=chip peak C f32

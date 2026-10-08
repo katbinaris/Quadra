@@ -1,5 +1,5 @@
 #pragma once
-// This fork's screens (LIGHTS, agent notifications), drawn with the Pixel UI toolkit like
+// This fork's screens (LIGHTS, DISPLAY, SLEEP, agent notifications), drawn with the Pixel UI toolkit like
 // ui_screens.cpp and kept apart from it so upstream changes merge cleanly.
 
 #include <stdint.h>
@@ -20,6 +20,28 @@ struct LightsInputs {
     bool blink_on;
 };
 void draw_lights(const menu_render_snapshot_t &snap, const LightsInputs &in);
+
+// DISPLAY and SLEEP (user_prefs.h screen_t): LIGHTS' look, a row per field (MENU_DISPLAY_ROW_*,
+// MENU_SLEEP_ROW_*), the focused one on an amber bar, a line about it underneath.
+void draw_display(const menu_render_snapshot_t &snap, bool blink_on);
+struct SleepInputs {
+    bool on;       // SLEEP is on
+    bool trusted;  // the knob trusts its local time (clock_trusted): the hours apply
+    bool sleeping; // inside them now
+    bool blink_on;
+};
+void draw_sleep(const menu_render_snapshot_t &snap, const SleepInputs &in);
+
+// The CLOCK screensaver: LOCAL's time, big and grey, the date under it. It moves a little each
+// minute (`minute_index`, minutes since boot), so nothing sits in one place all night.
+struct ClockSaverInputs {
+    bool valid;
+    int hour, minute;
+    int wday, mday, mon;
+    bool h24;
+    uint32_t minute_index;
+};
+void draw_clock_saver(const ClockSaverInputs &in);
 
 // An agent notification (notify.h). Takes the whole screen while the menu is closed.
 enum { AGENT_CLAUDE = 0, AGENT_CODEX, AGENT_CURSOR, AGENT_OTHER };

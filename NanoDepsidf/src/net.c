@@ -1,5 +1,6 @@
 #include "net.h"
 #include "net_link.h"
+#include "clock.h"
 #include "tasks_common.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -60,6 +61,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
 
 static void on_time(struct timeval *tv) {
     atomic_store(&s_time_set, true); // lwIP's task (core 1)
+    clock_note_sync();
 }
 
 // --- net_task (core 1) ---

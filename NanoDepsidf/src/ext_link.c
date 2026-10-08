@@ -48,6 +48,11 @@ static _Atomic bool s_text_pending = false;
 static lights_t s_lights_req;
 static bool s_lights_save;
 static _Atomic bool s_lights_pending = false;
+static screen_t s_idle_req; // EXT_CMD_IDLE, likewise
+static bool s_idle_save;
+static _Atomic bool s_idle_pending = false;
+static host_link_t s_idle_link;
+static uint32_t s_idle_gen;
 static _Atomic bool s_cover_end_pending = false;
 static host_link_t s_text_link, s_lights_link;
 static uint32_t s_text_gen, s_lights_gen; // host_link_gen() of the link that asked
@@ -169,6 +174,22 @@ static void build_prefs(uint8_t *r) {
     r[10] = (uint8_t)cover_style_get();
     r[11] = COVER_STYLE_COUNT;
     user_text_get((char *)r + 16, USER_TEXT_MAX + 1);
+}
+
+static void build_idle(uint8_t *r) {
+    screen_t s;
+    screen_get(&s);
+    r[0] = EXT_TAG_IDLE;
+    r[1] = (uint8_t)s.bright;
+    r[2] = (uint8_t)s.saver;
+    put_u16(r + 3, (uint16_t)s.saver_s);
+    r[5] = (uint8_t)s.sleep_on;
+    put_u16(r + 6, (uint16_t)s.sleep_from);
+    put_u16(r + 8, (uint16_t)s.sleep_to);
+    put_u16(r + 10, (uint16_t)s.dark_s);
+    r[12] = (uint8_t)s.wake;
+    r[13] = (menu_screen_dirty() ? EXT_IDLE_DIRTY : 0) | (clock_trusted() ? EXT_IDLE_TRUSTED : 0)
+          | (screen_sleeping() ? EXT_IDLE_SLEEPING : 0) | (ui_state_get_saver() == UI_SAVER_DARK ? EXT_IDLE_DARK : 0);
 }
 
 static void ack(uint8_t *r, uint8_t cmd, uint8_t status) {
@@ -440,6 +461,33 @@ bool ext_link_handle(host_link_t link, const uint8_t *in, uint8_t *r) {
             s_lights_link = link;
             s_lights_gen = host_link_gen(link);
             atomic_store(&s_lights_pending, true);
+            return false;
+        }
+        case EXT_CMD_IDLE: {
+            if (atomic_load(&s_idle_pending)) {
+                ack(r, in[0], EXT_ST_BAD_PARAM);
+                return true;
+            }
+            screen_t s;
+            screen_get(&s);
+            screen_t was = s;
+            if (in[2] != 0xFF) s.bright = in[2];
+            if (in[3] != 0xFF) s.saver = in[3];
+            if (rd_u16(in + 4) != 0xFFFF) s.saver_s = rd_u16(in + 4);
+            if (in[6] != 0xFF) s.sleep_on = in[6];
+            if (rd_u16(in + 7) != 0xFFFF) s.sleep_from = rd_u16(in + 7);
+            if (rd_u16(in + 9) != 0xFFFF) s.sleep_to = rd_u16(in + 9);
+            if (rd_u16(in + 11) != 0xFFFF) s.dark_s = rd_u16(in + 11);
+            if (in[13] != 0xFF) s.wake = in[13];
+            if (!(in[1] & EXT_IDLE_SAVE) && memcmp(&s, &was, sizeof(s)) == 0) { // only asking
+                build_idle(r);
+                return true;
+            }
+            s_idle_req = s;
+            s_idle_save = in[1] & EXT_IDLE_SAVE;
+            s_idle_link = link;
+            s_idle_gen = host_link_gen(link);
+            atomic_store(&s_idle_pending, true); // set (and stored) from ext_link_poll
             return false;
         }
         case EXT_CMD_PREFS:
@@ -760,6 +808,14 @@ void ext_link_poll(void) {
         build_prefs(r);
         host_link_queue_to(s_lights_link, s_lights_gen, r);
         atomic_store(&s_lights_pending, false);
+    }
+    if (atomic_load(&s_idle_pending)) {
+        screen_set(&s_idle_req);
+        if (s_idle_save) menu_remote_save_screen();
+        memset(r, 0, sizeof(r));
+        build_idle(r);
+        host_link_queue_to(s_idle_link, s_idle_gen, r);
+        atomic_store(&s_idle_pending, false);
     }
     if (atomic_load(&s_cover_end_pending)) {
         bool ok = media_cover_end();

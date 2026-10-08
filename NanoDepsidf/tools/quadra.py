@@ -363,6 +363,43 @@ def cmd_lights(args):
     show_prefs(r)
 
 
+EXT_IDLE, EXT_TAG_IDLE = 0x32, 0xCC
+SAVERS = ["auto", "icon", "bounce", "clock", "music", "blank", "never"]
+
+
+def hhmm(v: str) -> int:
+    h, _, m = v.partition(":")
+    return (int(h) * 60 + int(m or 0)) % 1440
+
+
+def cmd_idle(args):
+    """The screen (EXT_CMD_IDLE): brightness, the screensaver and the sleep hours."""
+    def b8(v):
+        return 0xFF if v is None else v
+    def b16(v):
+        return (0xFFFF if v is None else v).to_bytes(2, "little")
+    saver = None if args.saver is None else SAVERS.index(args.saver)
+    sleep = None if args.sleep is None else (1 if args.sleep == "on" else 0)
+    wake = None if args.wake is None else (1 if args.wake == "dim" else 0)
+    frm, to = (None, None) if args.hours is None else (hhmm(args.hours.split("-")[0]), hhmm(args.hours.split("-")[1]))
+    q = Quadra()
+    try:
+        r = q.request(bytes([EXT_IDLE, 1 if args.save else 0, b8(args.bright), b8(saver)]) + b16(args.after)
+                      + bytes([b8(sleep)]) + b16(frm) + b16(to) + b16(args.dark) + bytes([b8(wake)]), {EXT_TAG_IDLE}, 2.0)
+    finally:
+        q.close()
+    if not r or r[0] != EXT_TAG_IDLE:
+        raise SystemExit("no answer (firmware before extensions v13?)")
+    u16 = lambda i: r[i] | r[i + 1] << 8
+    t = lambda m: f"{m // 60:02d}:{m % 60:02d}"
+    f = r[13]
+    print(f"brightness {r[1]}%, screensaver {SAVERS[r[2]] if r[2] < len(SAVERS) else r[2]} after {u16(3)} s")
+    print(f"sleep hours {'on' if r[5] else 'off'} {t(u16(6))}-{t(u16(8))}, dark {u16(10)} s into the screensaver, "
+          f"wake {'dim' if r[12] else 'normal'}")
+    print(("unsaved" if f & 1 else "saved") + (", local time known" if f & 2 else ", local time NOT known (sleep hours paused)")
+          + (", in the sleep hours" if f & 4 else "") + (", dark" if f & 8 else ""))
+
+
 def cmd_notify(args):
     """Post one notification straight to the knob (no daemon) and wait for its answer."""
     src = {"claude": 0, "codex": 1, "cursor": 2, "other": 3}[args.agent]
@@ -1072,6 +1109,16 @@ def main():
     p.add_argument("--level", type=lambda v: max(10, min(200, int(v))), help="%% of the stock brightness")
     p.add_argument("--save", action="store_true")
     p.set_defaults(fn=cmd_lights)
+    p = sub.add_parser("idle", help="show or change the screen: brightness, screensaver, sleep hours (live; --save to keep it)")
+    p.add_argument("--bright", type=lambda v: max(10, min(100, int(v))), help="backlight %%")
+    p.add_argument("--saver", choices=SAVERS)
+    p.add_argument("--after", type=int, help="seconds idle before the screensaver (5-600)")
+    p.add_argument("--sleep", choices=["on", "off"])
+    p.add_argument("--hours", help="the sleep hours, e.g. 23:00-07:00")
+    p.add_argument("--dark", type=int, help="seconds of screensaver before dark, in the sleep hours (0-600)")
+    p.add_argument("--wake", choices=["normal", "dim"])
+    p.add_argument("--save", action="store_true")
+    p.set_defaults(fn=cmd_idle)
     p = sub.add_parser("cover", help="show an image as MUSIC's now-playing cover")
     p.add_argument("image")
     p.add_argument("--title", default="TEST COVER")
