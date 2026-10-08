@@ -16,15 +16,18 @@ What it does (tools/mac/install.py's job, the Windows way):
     quadra_hook_win.py; each file is backed up first, and only those entries are ever touched.
 
 The service needs, for this Python: hidapi, Pillow, pycaw, winrt-Windows.Media.Control,
-winrt-Windows.Storage.Streams, winrt-Windows.Foundation, tzdata and tzlocal; and cryptography to
+winrt-Windows.Storage.Streams, winrt-Windows.Foundation, winrt-Windows.Foundation.Collections,
+tzdata and tzlocal; and cryptography to
 reach the knob over WiFi (without it, USB only). The hook script only needs the standard library.
 """
 import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAC = os.path.join(HERE, "..", "mac")
@@ -42,7 +45,9 @@ FILES = [(MAC, "quadrad.py"), (MAC, "quadra_hook.py"), (os.path.join(HERE, "..")
 NEEDS = [("hid", "hidapi"), ("PIL", "Pillow"), ("pycaw", "pycaw"),
          ("winrt.windows.media.control", "winrt-Windows.Media.Control"),
          ("winrt.windows.storage.streams", "winrt-Windows.Storage.Streams"),
-         ("winrt.windows.foundation", "winrt-Windows.Foundation"), ("tzdata", "tzdata"), ("tzlocal", "tzlocal")]
+         ("winrt.windows.foundation", "winrt-Windows.Foundation"),
+         ("winrt.windows.foundation.collections", "winrt-Windows.Foundation.Collections"),
+         ("tzdata", "tzdata"), ("tzlocal", "tzlocal")]
 
 
 def hook_cmd(agent, event):
@@ -77,6 +82,23 @@ def schtasks(*args):
     return subprocess.run(["schtasks", *args], capture_output=True, text=True)
 
 
+def wait_gone(timeout=5.0):
+    """Until the old service has let go of its port: a new one that still finds it answering
+    takes it for itself and quits ("already running")."""
+    try:
+        with open(os.path.join(QDIR, "agentd.json")) as f:
+            port = int(json.load(f)["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+        except OSError:
+            return
+        time.sleep(0.2)
+
+
 def xml_escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
@@ -87,6 +109,7 @@ def daemon(uninstall, dry):
         return
     schtasks("/End", "/TN", TASK)
     schtasks("/Delete", "/TN", TASK, "/F")
+    wait_gone()
     if uninstall:
         print("service stopped and removed")
         return

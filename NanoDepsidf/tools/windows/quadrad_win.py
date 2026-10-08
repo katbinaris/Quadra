@@ -15,7 +15,8 @@ WiFi. This file imports it and swaps in Windows for the parts that are the Mac's
     read (the profile folder's own permissions). A connection without the token gets nothing.
 
 Needs, for this Python: hidapi, Pillow, pycaw, winrt-Windows.Media.Control,
-winrt-Windows.Storage.Streams, winrt-Windows.Foundation, tzdata, tzlocal; and cryptography for
+winrt-Windows.Storage.Streams, winrt-Windows.Foundation, winrt-Windows.Foundation.Collections,
+tzdata, tzlocal; and cryptography for
 WiFi. install_win.py installs it as a scheduled task that starts at logon.
 
 Log: stdout, or %LOCALAPPDATA%\\Quadra\\quadrad.log when it has none (pythonw, the task).
@@ -46,6 +47,30 @@ import quadrad  # noqa: E402
 from quadrad import log  # noqa: E402
 
 AGENTD = os.path.join(quadrad.HOME, "agentd.json")
+
+
+# ── the knob on USB ────────────────────────────────────────────────────────────
+
+def is_knob(d):
+    """The knob's vendor interface. Windows names it by its interface ("Quadra Data"), not
+    "Quadra" as the Mac does: any name that starts so, as the companion app takes it."""
+    return d.get("usage_page") == quadrad.VENDOR_USAGE_PAGE and (d.get("product_string") or "").startswith(quadrad.PRODUCT)
+
+
+def usb_present():
+    return not quadrad.NO_USB and any(is_knob(d) for d in quadrad.hid.enumerate())
+
+
+class WinDevice(quadrad.Device):
+    def _open(self):
+        if quadrad.NO_USB:
+            return None
+        for d in quadrad.hid.enumerate():
+            if is_knob(d):
+                dev = quadrad.hid.device()
+                dev.open_path(d["path"])
+                return quadrad.UsbLink(dev)
+        return None
 
 
 # ── the time zone ──────────────────────────────────────────────────────────────
@@ -259,6 +284,7 @@ async def main():
     use_tzdata()
     quadra.local_zone = local_zone
     quadrad.CoreAudio, quadrad.NowPlaying, quadrad.Music = WinAudio, SmtcNowPlaying, WinMusic
+    quadrad.Device, quadrad.usb_present = WinDevice, usb_present
     loop = asyncio.get_running_loop()
     d = quadrad.Daemon(loop)
     token = secrets.token_hex(16)
@@ -279,6 +305,7 @@ async def main():
     write_agentd(port, token)
     d.dev.start()
     log(f"listening on 127.0.0.1:{port} ({AGENTD}), config {d.cfg}")
+    log("now playing: Windows' media controls (SMTC: players that show in the volume flyout)")
     loop.create_task(d.janitor())
     loop.create_task(d.music.run())
     async with server:

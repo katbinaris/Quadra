@@ -709,8 +709,12 @@ service's own code with the Mac's parts swapped out: now playing comes from Wind
 controls (whatever shows in the volume flyout), the volume from the default output device, and
 the local zone from Windows' setting, with daylight saving.
 
+Now playing sees a player only when it shows in Windows' media controls (press a volume key:
+the flyout shows the track). Some players do that only once an option or plugin for it is
+turned on.
+
 ```powershell
-py -m pip install hidapi Pillow cryptography pycaw tzdata tzlocal winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation
+py -m pip install hidapi Pillow cryptography pycaw tzdata tzlocal winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections
 py NanoDepsidf\tools\windows\install_win.py             # install or update
 py NanoDepsidf\tools\windows\install_win.py --dry-run   # show what would change
 py NanoDepsidf\tools\windows\install_win.py --uninstall # take it all out again
