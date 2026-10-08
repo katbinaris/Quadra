@@ -1,9 +1,10 @@
-// Making profiles: a new one from scratch, or a copy. Each is sent to the knob live (not
-// saved), put in use, and opened in the editor.
+// Making profiles: a new one from scratch, a copy, or one from a file. Each is sent to the knob
+// live (not saved), put in use, and opened in the editor. And a profile out to a file.
 
-import { blankProfile, ID_RE, type ProfileJson } from "./profile";
+import { openJson, saveJson, savedText } from "./files";
+import { blankProfile, ID_RE, MAX, parseProfile, tidy, type ProfileJson } from "./profile";
 import { HidType, Set } from "./proto";
-import { device, go, saveError } from "./store";
+import { device, go, saveError, saveNote } from "./store";
 
 export const MAX_PROFILES = 16;
 
@@ -19,7 +20,7 @@ function freeId(name: string): string {
 }
 
 // The profile list reloads after a change; resolves once it shows what we're waiting for.
-function waitFor(ok: () => boolean, ms = 3000): Promise<void> {
+export function waitFor(ok: () => boolean, ms = 3000): Promise<void> {
   return new Promise((resolve) => {
     const t0 = performance.now();
     const tick = () => (ok() || performance.now() - t0 > ms ? resolve() : window.setTimeout(tick, 50));
@@ -37,7 +38,7 @@ async function addAndEdit(make: () => Promise<ProfileJson>) {
     await waitFor(() => device.profiles[r.index]?.id === p.id);
     go({ page: "profile", id: p.id, tab: "general", input: "knob" });
   } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e);
+    if (e !== null) saveError.value = e instanceof Error ? e.message : String(e);
   }
 }
 
@@ -51,4 +52,32 @@ export function duplicateProfile(index: number) {
     const name = `${p.name.slice(0, 10)} COPY`;
     return { ...p, id: freeId(name), name };
   });
+}
+
+// From a file (an export, or one tools/profile_json_test wrote). One with an id or a name the
+// knob has already comes in beside it, under a free id (and " 2" on the name).
+export function importProfile(data?: unknown) {
+  return addAndEdit(async () => {
+    if (data === undefined) {
+      const f = await openJson();
+      if (!f) throw null; // cancelled
+      data = f.data;
+    }
+    const p = structuredClone(parseProfile(data));
+    if (device.profiles.some((x) => x?.name === p.name)) p.name = `${p.name.slice(0, MAX.name - 2)} 2`;
+    if (device.profiles.some((x) => x?.id === p.id)) p.id = freeId(p.id);
+    return p;
+  });
+}
+
+// The profile at `index` as the knob has it now, to a file named after its id.
+export async function exportProfile(index: number) {
+  saveError.value = null;
+  try {
+    const p = tidy(await device.readProfile(index));
+    const path = await saveJson(`${p.id}.json`, p);
+    if (path !== null) saveNote.value = savedText(path);
+  } catch (e) {
+    saveError.value = e instanceof Error ? e.message : String(e);
+  }
 }

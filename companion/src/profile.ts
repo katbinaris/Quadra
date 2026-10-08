@@ -162,6 +162,18 @@ export function problem(p: ProfileJson): string | null {
   return null;
 }
 
+// A profile from a file (an export, a backup's, or tools/profile_json_test's): checked. Throws.
+export function parseProfile(data: unknown): ProfileJson {
+  const p = data as ProfileJson;
+  if (!p || typeof p !== "object" || typeof p.id !== "string" || !Array.isArray(p.legend)) throw new Error("That isn't an app profile");
+  if ((p.format ?? PROFILE_FORMAT) > PROFILE_FORMAT) throw new Error("That profile is from newer firmware: update the knob first");
+  p.format = PROFILE_FORMAT;
+  p.name ??= "";
+  const bad = problem(p);
+  if (bad) throw new Error(`${p.name || p.id}: ${bad}`);
+  return p;
+}
+
 // Drops what's 0 / empty, the way the device writes it, so a round trip is stable.
 export function tidy(p: ProfileJson): ProfileJson {
   const clean = (v: unknown): unknown => {

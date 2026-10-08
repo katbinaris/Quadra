@@ -23,6 +23,7 @@ mod input;
 #[cfg(windows)]
 #[path = "input_windows.rs"]
 mod input;
+mod files;
 mod home;
 mod midi;
 
@@ -427,6 +428,7 @@ fn input_trusted(prompt: bool) -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Link::default())
         .manage(Net::default())
         .manage(midi::Midi::default())
@@ -444,7 +446,8 @@ pub fn run() {
             home::home_probe,
             home::miot_spec,
             home::home_run_extractor,
-            home::save_download,
+            files::write_text,
+            files::read_text,
             midi::midi_watch,
             midi::midi_port
         ])

@@ -1,7 +1,7 @@
 // One knob, as the UI sees it: connection, the latest settings / state / SYS INFO, the app
 // profiles with their icons, and a short history for the charts. Views subscribe and redraw.
 
-import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_IDLE_VERSION, EXT_CONTROLS_VERSION, EXT_HOME_VERSION, EXT_SYNTH_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SYNTH_RESULT, SynthOp, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type Idle, type ScreenPrefs, type Lamp, type Lights, type MidiStatus, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SynthEntry, type SysA, type SysB } from "./proto";
+import { CLOCK_SLOTS, Cmd, EXT_CLOCK_VERSION, EXT_IDLE_VERSION, EXT_HAPTICS_VERSION, EXT_CONTROLS_VERSION, EXT_HOME_VERSION, EXT_SYNTH_VERSION, EXT_WIFI_LINK_VERSION, EXT_NET_VERSION, ExtCmd, ExtStatus, ExtTag, NetOp, Res, RES_TEXT, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SYNTH_RESULT, SynthOp, TEXT_CHUNK, Tag, crc32, decode, encode, ICON_BYTES, ICON_CHUNK, UploadFlag, type Hello, type ClockSlot, type HapticEntry, type HapticSet, type Idle, type ScreenPrefs, type Lamp, type Lights, type MidiStatus, type Net, type Prefs, type Profile, type Result, type SetId, type Settings, type State, type SynthEntry, type SysA, type SysB } from "./proto";
 import { tidySynth, type SynthJson } from "./synth";
 import { rgb565ToImage, tidy, type ProfileJson } from "./profile";
 import { loadPairing, savePairing, type Pairing, type Transport } from "./transport";
@@ -86,6 +86,7 @@ export class Device {
   error: string | null = null;
   private watching = new globalThis.Set<Watch>();
   private waitAck: { cmd: number; done: (status: number) => void } | null = null;
+  private waitHaptic: { profile: number; feel: number; done: (h: HapticEntry) => void; fail: (e: Error) => void } | null = null;
   private waitSynth: { what: number; done: (r: { res: number; index: number; removed: boolean; why: string }) => void } | null = null;
   private synthRead: { index: number; buf: Uint8Array | null; crc: number; have: globalThis.Set<number>; sent: number; at: number; done: (t: string) => void; fail: (e: Error) => void; tries: number } | null = null;
 
@@ -325,6 +326,31 @@ export class Device {
     return this.send(encode.resetPeaks());
   }
 
+  // --- every haptic profile's tuning (extensions v14), for backups ---
+
+  get hasHaptics() {
+    return (this.ext ?? 0) >= EXT_HAPTICS_VERSION;
+  }
+
+  private haptic(r: Uint8Array, profile: number, feel: number, what: string): Promise<HapticEntry> {
+    return this.serial(() =>
+      this.timeout(
+        new Promise<HapticEntry>((done, fail) => {
+          this.waitHaptic = { profile, feel, done, fail };
+          void this.send(r);
+        }),
+        what,
+      ),
+    );
+  }
+  getHaptic(profile: number, feel: number) {
+    return this.haptic(encode.hapticsGet(profile, feel), profile, feel, "Reading the haptics");
+  }
+  // Live at once; `save` stores the haptic profiles too.
+  setHaptic(profile: number, feel: number, h: HapticSet, save = false) {
+    return this.haptic(encode.hapticsSet(profile, feel, h, save), profile, feel, "Setting the haptics");
+  }
+
   // --- profiles (JSON, profile.ts) ---
 
   private serial<T>(job: () => Promise<T>): Promise<T> {
@@ -340,6 +366,7 @@ export class Device {
         this.waitResult = null;
         this.waitAck = null;
         this.waitSynth = null;
+        this.waitHaptic = null;
         reject(new DeviceError(`${what}: no answer from the knob`));
       }, ms);
       p.then(
@@ -536,6 +563,15 @@ export class Device {
           return;
         }
         break;
+      case ExtTag.HAPTICS:
+        if ("haptic" in m) {
+          const w = this.waitHaptic;
+          if (w && w.profile === m.haptic.profile && w.feel === m.haptic.feel) {
+            this.waitHaptic = null;
+            w.done(m.haptic);
+          }
+        }
+        return;
       case ExtTag.PREFS:
         if ("prefs" in m) this.prefs = m.prefs;
         topic = "prefs";
@@ -567,6 +603,12 @@ export class Device {
         break;
       case ExtTag.ACK:
         if ("status" in m) {
+          const wh = this.waitHaptic;
+          if (wh && m.cmd === ExtCmd.HAPTICS) {
+            this.waitHaptic = null;
+            wh.fail(new DeviceError("The knob refused those haptic values"));
+            return;
+          }
           const wa = this.waitAck;
           if (wa && wa.cmd === m.cmd) {
             this.waitAck = null;

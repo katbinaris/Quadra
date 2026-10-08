@@ -29,6 +29,7 @@ cbc = { version = "0.1", features = ["alloc"] }
 md5 = { package = "md-5", version = "0.10" }
 # The Synths page's monitor (src/midi.rs): the knob's USB MIDI port.
 midir = "0.10"
+tauri-plugin-dialog = "2"
 
 # The knob's controls over WiFi (src/input.rs): CGEvent for keys, the mouse and the wheel; NSEvent
 # for media keys; Accessibility's trust check.

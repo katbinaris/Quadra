@@ -304,19 +304,3 @@ fn extractor_windows(ex: &std::path::Path, py: &std::path::Path, out: &std::path
         .map_err(|e| e.to_string())?;
     Ok(())
 }
-
-// A synth profile (or anything else the app exports) into ~/Downloads, under a name not taken yet.
-#[tauri::command]
-pub fn save_download(name: String, text: String) -> Result<String, String> {
-    let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).collect();
-    let dir = home_dir().map(|h| h.join("Downloads")).ok_or("no home folder")?;
-    let (stem, ext) = name.rsplit_once('.').unwrap_or((&name, "txt"));
-    let mut path = dir.join(format!("{stem}.{ext}"));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem} {n}.{ext}"));
-        n += 1;
-    }
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
-    Ok(path.display().to_string())
-}

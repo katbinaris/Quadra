@@ -288,6 +288,22 @@ export function KeyField(p: { value: Key | undefined; on: (k: Key | undefined) =
 }
 
 // A button that asks once: the first click arms it, a second within 3 s does it.
+// A box to tick, with its label beside it.
+export function Check(p: { on: boolean; set: (v: boolean) => void; disabled?: boolean; children?: ComponentChildren }) {
+  return (
+    <button type="button" role="checkbox" aria-checked={p.on} class={cls("check", p.on && "on")} disabled={p.disabled} onClick={() => p.set(!p.on)}>
+      <i aria-hidden="true">
+        {p.on && (
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M2.5 6.2l2.3 2.3 4.7-4.8" />
+          </svg>
+        )}
+      </i>
+      <span>{p.children}</span>
+    </button>
+  );
+}
+
 export function Confirm(p: { label: string; ask?: string; on: () => void; class?: string }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {

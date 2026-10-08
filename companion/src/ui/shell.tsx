@@ -5,13 +5,13 @@ import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import deviceUrl from "../assets/device.png";
 import { HidType, MidiSynths, ProfileFlag } from "../proto";
-import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, revertSynth, route, saveAll, saveError, saving, unsaved, unsavedCount, use, type Route } from "../store";
+import { connected, device, href, inUse, revertAll, revertProfile, revertSettings, revertSynth, route, saveAll, saveError, saveNote, saving, unsaved, unsavedCount, use, type Route } from "../store";
 import { isWindows } from "../platform";
 import { isTauri } from "../transport";
 import { cls } from "./controls";
 import { drawMainScreen } from "./draw";
 import { ProfileIcon } from "./icons";
-import { createProfile, MAX_PROFILES } from "../profiles";
+import { createProfile, importProfile, MAX_PROFILES } from "../profiles";
 
 const MODE_NAMES: Record<number, string> = { [HidType.APP]: "App", [HidType.HOME]: "Home", [HidType.MOUSE]: "Mouse", [HidType.KEYBOARD]: "Keys", [HidType.MIDI]: "MIDI" };
 
@@ -73,6 +73,10 @@ function Sidebar() {
             <button type="button" class="nav" disabled={device.profiles.length >= MAX_PROFILES} onClick={() => void createProfile()}>
               <Icon d="M8 3v10M3 8h10" />
               <span class="nl">New profile</span>
+            </button>
+            <button type="button" class="nav" disabled={device.profiles.length >= MAX_PROFILES} onClick={() => void importProfile()}>
+              <Icon d="M8 2v8M5 7l3 3 3-3M3 12v2h10v-2" />
+              <span class="nl">Import profile…</span>
             </button>
           </div>
           <div class="grp">
@@ -179,7 +183,7 @@ function Topbar() {
         )}
       </div>
       <span class="spacer" data-tauri-drag-region />
-      {saveError.value && <span class="err" role="alert">{saveError.value}</span>}
+      {saveError.value ? <span class="err" role="alert">{saveError.value}</span> : saveNote.value && <span class="note" role="status" title={saveNote.value}>{saveNote.value}</span>}
       {on &&
         (n > 0 ? (
           <>

@@ -2,7 +2,7 @@
 // app profile in use, the haptic profile, the MIDI synth and channel.
 
 import { EXT_SYNTH_VERSION, HapticProfiles, HidType, HomeFlag, MidiSynths, ProfileFlag, Set } from "../proto";
-import { createProfile, duplicateProfile, MAX_PROFILES } from "../profiles";
+import { createProfile, duplicateProfile, exportProfile, importProfile, MAX_PROFILES } from "../profiles";
 import { device, href, inUse, use } from "../store";
 import { Box, Card, Dial, PageHead } from "../ui/controls";
 import { ProfileIcon } from "../ui/icons";
@@ -59,6 +59,11 @@ export function ModePage() {
                 <span class="nm">New profile</span>
                 <span class="sub">From scratch</span>
               </Card>
+              <Card dashed disabled={device.profiles.length >= MAX_PROFILES} onClick={() => void importProfile()}>
+                <span class="plus">↓</span>
+                <span class="nm">Import profile</span>
+                <span class="sub">From a file</span>
+              </Card>
             </div>
             {current && (
               <div class="line">
@@ -67,6 +72,9 @@ export function ModePage() {
                 </a>
                 <button class="btn ghost" disabled={device.profiles.length >= MAX_PROFILES} onClick={() => void duplicateProfile(current.index)}>
                   Duplicate {titleCase(current.name)}
+                </button>
+                <button class="btn ghost" onClick={() => void exportProfile(current.index)}>
+                  Export…
                 </button>
                 <span class="hint" style={{ marginLeft: "auto" }}>
                   {device.profiles.length} of {MAX_PROFILES} profiles

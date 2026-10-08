@@ -1,5 +1,6 @@
-// DEVICE: the computer it talks to (MAC / PC), how it starts (HID / SERIAL), the firmware, and
-// WiFi: the network, and this app paired to reach the knob without a cable.
+// DEVICE: the computer it talks to (MAC / PC), how it starts (HID / SERIAL), the firmware;
+// WiFi: the network, and this app paired to reach the knob without a cable; and Backup: the
+// knob's setup to a file and back (device/Backup.tsx).
 
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
@@ -8,23 +9,23 @@ import { Boot, EXT_CONTROLS_VERSION, EXT_NET_VERSION, EXT_WIFI_LINK_VERSION, Hos
 import { device, use } from "../store";
 import { Box, Card, Confirm, PageHead, Row, SubTabs, Text } from "../ui/controls";
 import { titleCase } from "../ui/shell";
+import { BackupTab } from "./device/Backup";
 
-export function DevicePage(p: { tab: "general" | "wifi" }) {
+export function DevicePage(p: { tab: "general" | "wifi" | "backup" }) {
   use("conn");
   const wifi = (device.ext ?? 0) >= EXT_NET_VERSION;
   return (
     <>
       <PageHead title="Device" hint="The computer it talks to, how it starts, and what runs on it" />
-      {wifi && (
-        <SubTabs
-          tabs={[
-            { value: "general", label: "General", href: "#/device/general" },
-            { value: "wifi", label: "Wi-Fi", href: "#/device/wifi" },
-          ]}
-          value={p.tab}
-        />
-      )}
-      {p.tab === "wifi" && wifi ? <WifiTab /> : <GeneralTab />}
+      <SubTabs
+        tabs={[
+          { value: "general" as const, label: "General", href: "#/device/general" },
+          ...(wifi ? [{ value: "wifi" as const, label: "Wi-Fi", href: "#/device/wifi" }] : []),
+          { value: "backup" as const, label: "Backup", href: "#/device/backup" },
+        ]}
+        value={p.tab}
+      />
+      {p.tab === "wifi" && wifi ? <WifiTab /> : p.tab === "backup" ? <BackupTab /> : <GeneralTab />}
     </>
   );
 }

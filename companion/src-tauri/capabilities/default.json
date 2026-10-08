@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: core APIs (events, invoking the HID commands), dragging by the header.",
+  "description": "The main window: core APIs (events, invoking the HID commands), dragging by the header, and the Save / Open dialogs for export and import.",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:allow-save", "dialog:allow-open"]
 }
