@@ -1,7 +1,7 @@
 // A pretend knob for working on the UI without hardware: open the page with ?demo. Answers
 // the protocol like host_link.c does and streams a slowly turning knob.
 
-import { CLOCK_SLOTS, ClickWaves, ClockOp, Cmd, EXT_SYNTH_VERSION, ExtCmd, ExtStatus, ExtTag, HomeCap, HomeEdit, HomeFlag, HomeKind, HomeOp, HomeProto, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SynthEdit, SynthFlag, SynthOp, Tag, TEXT_CHUNK, crc32 } from "./proto";
+import { CLOCK_SLOTS, ClickWaves, ClockOp, Cmd, EXT_IDLE_VERSION, ExtCmd, ExtStatus, ExtTag, HomeCap, HomeEdit, HomeFlag, HomeKind, HomeOp, HomeProto, ICON_BYTES, ICON_CHUNK, NetOp, LED_COUNT, Op, ProfileFlag, REPORT_SIZE, Res, Set, SYNTH_CHUNK, SYNTH_PUT_CHUNK, SynthEdit, SynthFlag, SynthOp, Tag, TEXT_CHUNK, crc32 } from "./proto";
 import { tidySynth, type SynthJson } from "./synth";
 import synthBuiltins from "./demo_synths.json";
 import { b64ToBytes, ID_RE, type ProfileJson } from "./profile";
@@ -57,6 +57,9 @@ export class MockTransport implements Transport {
   private lightsSaved = { ...this.lights };
   private idleText = "";
   private coverStyle = 2; // SLIDE
+  // The screen (EXT_CMD_IDLE, v13): saved by SAVE too. The demo knob knows the time.
+  private screen = { bright: 80, saver: 0, saverS: 15, sleepOn: 1, sleepFrom: 23 * 60, sleepTo: 7 * 60, darkS: 30, wake: 1 };
+  private screenSaved = { ...this.screen };
   // ext_proto.h: WiFi (EXT_CMD_NET, v4) and the CLOCK app (EXT_CMD_CLOCK, v5). The demo knob is
   // on a network already; the screen stream (v6) and the WiFi link (v7) it doesn't speak.
   private net = { state: 2, rssi: -52, ip: [192, 168, 1, 42], on: 1, ssid: "STUDIO", host: "quadra-7142" };
@@ -166,18 +169,36 @@ export class MockTransport implements Transport {
         this.saved = { ...this.live };
         this.hpSaved = structuredClone(this.hp);
         this.lightsSaved = { ...this.lights };
+        this.screenSaved = { ...this.screen };
         this.settings(out);
         return reply();
       case Cmd.REVERT:
         this.live = { ...this.saved };
         this.hp = { ...structuredClone(this.hpSaved), edit: this.hp.edit };
         this.lights = { ...this.lightsSaved };
+        this.screen = { ...this.screenSaved };
         this.settings(out);
         return reply();
       case ExtCmd.HELLO:
         out[0] = ExtTag.HELLO;
-        out[1] = EXT_SYNTH_VERSION;
+        out[1] = EXT_IDLE_VERSION;
         return reply();
+      case ExtCmd.IDLE: {
+        const s = this.screen;
+        const b = (i: number, k: "bright" | "saver" | "sleepOn" | "wake") => r[i] !== 0xff && (s[k] = r[i]);
+        const w = (i: number, k: "saverS" | "sleepFrom" | "sleepTo" | "darkS") => inV.getUint16(i, true) !== 0xffff && (s[k] = inV.getUint16(i, true));
+        b(2, "bright");
+        b(3, "saver");
+        w(4, "saverS");
+        b(6, "sleepOn");
+        w(7, "sleepFrom");
+        w(9, "sleepTo");
+        w(11, "darkS");
+        b(13, "wake");
+        if (r[1] & 1) this.screenSaved = { ...s };
+        this.idle(out);
+        return reply();
+      }
       case ExtCmd.HOME:
         return this.home(r, out, reply);
       case ExtCmd.SYNTH:
@@ -513,6 +534,20 @@ export class MockTransport implements Transport {
     out[10] = this.coverStyle;
     out[11] = 4; // cover styles: the demo knob has them
     out.set(new TextEncoder().encode(this.idleText), 16);
+  }
+
+  private idle(out: Uint8Array) {
+    const s = this.screen, v = new DataView(out.buffer);
+    out[0] = ExtTag.IDLE;
+    out[1] = s.bright;
+    out[2] = s.saver;
+    v.setUint16(3, s.saverS, true);
+    out[5] = s.sleepOn;
+    v.setUint16(6, s.sleepFrom, true);
+    v.setUint16(8, s.sleepTo, true);
+    v.setUint16(10, s.darkS, true);
+    out[12] = s.wake;
+    out[13] = (JSON.stringify(s) !== JSON.stringify(this.screenSaved) ? 1 : 0) | 2; // the time is known
   }
 
   private netStatus(out: Uint8Array) {

@@ -115,6 +115,8 @@ await go("#/look/lights");
 await shot("app-look");
 await go("#/look/screen");
 await shot("app-look-screen");
+await pg.locator(".box", { hasText: "Screensaver" }).first().evaluate((e) => e.scrollIntoView({ block: "start" }));
+await shot("app-look-sleep");
 await go("#/look/clock");
 await shot("app-look-clock");
 await go("#/device/general");
