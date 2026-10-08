@@ -6,6 +6,7 @@
 import { signal } from "@preact/signals";
 import { useEffect } from "preact/hooks";
 import { findLamps, isLight, KIND_NAMES, knobName, lampKind, lightProps, PROTO_NAMES, probeLamp, readDevices, runExtractor, tokenBytes, type LightProps, type XDevice, type XFile } from "../home";
+import { isWindows, thisComputer } from "../platform";
 import { EXT_HOME_VERSION, HOME_MAX_LAMPS, HOME_NAME_MAX, HomeProto } from "../proto";
 import { device, go, href, use } from "../store";
 import { isTauri } from "../transport";
@@ -176,20 +177,20 @@ export function LampImportPage() {
             }}
           >
             <span class="nm">Sign in to Xiaomi…</span>
-            <span class="sub">Opens the token extractor in Terminal: for new lamps, or after a lamp was reset</span>
+            <span class="sub">Opens the token extractor in {isWindows ? "a command window" : "Terminal"}: for new lamps, or after a lamp was reset</span>
           </Card>
         </div>
         {signinOpened.value && (
           <div class="banner info">
             <span>
-              In Terminal: sign in with the QR code (Mi Home › Profile › Scan) or your password, and choose your server (Europe is <span class="mono">de</span>). When it says it's done, come back here.
+              In {isWindows ? "the command window" : "Terminal"}: sign in with the QR code (Mi Home › Profile › Scan) or your password, and choose your server (Europe is <span class="mono">de</span>). When it says it's done, come back here.
             </span>
             <button class="btn sm" onClick={() => void reread().then(() => (found.value = []))}>
               Look again
             </button>
           </div>
         )}
-        <div class="banner info">The list holds each lamp's key. It stays on this Mac (readable by you only); the app sends the keys to the knob over USB and never shows them.</div>
+        <div class="banner info">The list holds each lamp's key. It stays on {thisComputer} (readable by you only); the app sends the keys to the knob over USB and never shows them.</div>
       </>
     );
   } else if (step.value === 1) {

@@ -52,6 +52,7 @@ input, select { user-select: text; -webkit-user-select: text; }
 .sb { background: var(--s1); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 .drag { height: 12px; flex-shrink: 0; }
 .tauri .drag { height: 36px; } /* the traffic lights sit here (overlay title bar) */
+.tauri.win .drag { height: 12px; } /* Windows: a title bar of its own above the page */
 .me { padding: 0 16px 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
 /* The render (800x1100), its body (x 55, y 120, 690x925) shown 150 wide; the glass is centred
    at (398, 498), r 170, in the render's pixels. */

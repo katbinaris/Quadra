@@ -15,7 +15,7 @@
 [![ESP-IDF 6.1](https://img.shields.io/badge/ESP--IDF-6.1-E7352C?logo=espressif&logoColor=white)](#building-and-flashing)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-espressif32%207.1.3-F6822B?logo=platformio&logoColor=white)](#building-and-flashing)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](#desktop-companion)
-[![macOS](https://img.shields.io/badge/companion-macOS-000000?logo=apple&logoColor=white)](#desktop-companion)
+[![macOS | Windows](https://img.shields.io/badge/companion-macOS%20%7C%20Windows-000000)](#desktop-companion)
 [![WebHID](https://img.shields.io/badge/web-Chrome%20%7C%20Edge%20(WebHID)-4285F4?logo=googlechrome&logoColor=white)](#desktop-companion)
 
 **A haptic knob for creative software, by Kafi Devices.**
@@ -109,14 +109,14 @@ shows, at 2× scale.
   or a new one made, from the companion; edited profiles and macros are stored on the device.
   Blender and AutoCAD are listed as empty profiles (the knob scrolls) until they are designed.
 - **MUSIC.** The knob is the computer's volume and the keys play, pause and skip, as media
-  keys the system handles itself. With the optional Mac service running, the screen shows
+  keys the system handles itself. With the optional [Mac](#the-mac-service) or [Windows](#the-windows-service) service running, the screen shows
   the album cover, title and artist, and a volume ring that moves with the knob.
 - **AGENTS.** Claude Code, Codex, Cursor and VS Code Copilot can show their permission requests on the knob,
-  through the optional Mac service and its hooks. Hold F1 to allow, F3 to deny. The knob plays
+  through the optional Mac or Windows service and its hooks. Hold F1 to allow, F3 to deny. The knob plays
   three rising notes for a request, two soft ones for other notifications, and answers an
   allow or a deny with its own sound. A dashboard
   shows which sessions are working or waiting, and a command wheel types their commands.
-- **CLOCK.** The time in up to five zones, with daylight saving, set from the Mac or from
+- **CLOCK.** The time in up to five zones, with daylight saving, set from the computer or from
   the internet over WiFi.
 - **HOME.** The knob as a remote for Xiaomi lamps on your network: pick a lamp, turn its
   brightness, white or colour, switch it on and off. It talks to the lamps itself over WiFi
@@ -127,8 +127,8 @@ shows, at 2× scale.
   the Roland JU-06A and TR-8S, and General MIDI, each editable in the companion, and your own
   synths besides. It sends over USB MIDI and the TRS jacks at once.
 - **WiFi.** The knob can join a network and work without a cable, over an encrypted link
-  paired over USB. The companion app and the Mac service connect at the same time, and on a
-  charger the knob's controls type and scroll on the Mac through the app.
+  paired over USB. The companion app and the Mac or Windows service connect at the same time, and on a
+  charger the knob's controls type and scroll on the computer through the app.
 - **Command wheel.** Hold a key, turn to pick a command, release to run it. Each command has
   a small animated illustration of what it does.
 - **Parameter mode.** After a modelling command starts, the knob sets its value: fine clicks,
@@ -404,7 +404,8 @@ With **BINDINGS** on PC the knob sends plain volume keys.
 
 **Now playing** needs the optional [Mac service](#the-mac-service). It reads what the Mac is
 playing (any player that shows in Control Center: Music, Spotify, a browser tab, Kaset) and
-sends it to the knob:
+sends it to the knob. On Windows the [Windows service](#the-windows-service) does the same with
+any player in the volume flyout's media controls (Spotify, Media Player, a browser tab):
 - **Cover:** shown in one of four styles. A tap of F4 steps through them, and the LOOK tab
   in the companion sets them too; the choice is kept.
   - **FLAT:** full screen, darkened under the title and artist.
@@ -446,7 +447,7 @@ A console for AI coding agents: Claude Code, Codex, Cursor and GitHub Copilot in
 
 Commands that type text never press Enter, so you check a command before sending it.
 
-**Requests on the knob.** With the [Mac service](#the-mac-service) installed, an agent's
+**Requests on the knob.** With the [Mac](#the-mac-service) or [Windows](#the-windows-service) service installed, an agent's
 permission request appears on the knob in any profile, with the menu closed:
 - **The card:** the agent's badge and colour, and what it wants to do (the command, or the
   file it wants to edit). The ring breathes in the agent's colour.
@@ -500,7 +501,7 @@ zone at once, a row each, like an airport departure board, with the chosen zone 
 flaps rattle through the letters to reach the new one. A zone's name is cut to 7 letters on the
 board.
 
-The knob learns the time from the [Mac service](#the-mac-service), which sends the time and
+The knob learns the time from the [Mac](#the-mac-service) or [Windows](#the-windows-service) service, which sends the time and
 the local zone every few minutes, or from the internet when [WiFi](#wifi) is on. Zones and
 the format are set in the companion app (**Look › Clock**) or with `quadra.py clock`. LED
 SECONDS turns the ring into a seconds hand. The clock never goes to the idle screen.
@@ -700,6 +701,35 @@ internet traffic is for covers: it downloads artwork from the link the player gi
 a track has none, sends the artist and title to the iTunes Store's search. Settings are in
 `~/.quadra/config.json`.
 
+### The Windows service
+
+`NanoDepsidf/tools/windows/` is the same service for Windows: MUSIC's now playing, the AGENTS
+requests and dashboard, and CLOCK's local time, over USB or Wi-Fi as on the Mac. It is the Mac
+service's own code with the Mac's parts swapped out: now playing comes from Windows' media
+controls (whatever shows in the volume flyout), the volume from the default output device, and
+the local zone from Windows' setting, with daylight saving.
+
+Now playing sees a player only when it shows in Windows' media controls (press a volume key:
+the flyout shows the track). Some players do that only once an option or plugin for it is
+turned on.
+
+```powershell
+py -m pip install hidapi Pillow cryptography pycaw tzdata tzlocal winrt-Windows.Media.Control winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections
+py NanoDepsidf\tools\windows\install_win.py             # install or update
+py NanoDepsidf\tools\windows\install_win.py --dry-run   # show what would change
+py NanoDepsidf\tools\windows\install_win.py --uninstall # take it all out again
+```
+
+The installer:
+- copies the service to `%USERPROFILE%\.quadra\` and runs it as a scheduled task (`Quadra`,
+  at logon, as you, without administrator rights; log in `%LOCALAPPDATA%\Quadra\quadrad.log`);
+- adds the same hooks as on the Mac, backed up and removed the same way.
+
+Windows has no Unix socket for the hooks, so the service listens on `127.0.0.1` only, on a
+random port, and answers only a connection that starts with the token it keeps in
+`%USERPROFILE%\.quadra\agentd.json` (readable by you, as your profile folder is). The
+service runs with the Python the installer was run with: install the packages for that one.
+
 ### The command wheel
 
 Hold the wheel key (F3) and the screen turns into a carousel of commands:
@@ -871,7 +901,8 @@ Once connected:
   pairs by itself whenever it sees the knob on USB. The knob serves both at once.
 - **Controls:** with no cable in (the knob on a charger), turning it and pressing F1–F4 type
   and scroll on the Mac through the companion app, once macOS allows it under Accessibility
-  (**Device › Wi-Fi › Allow**). With a cable in, they go over USB as always.
+  (**Device › Wi-Fi › Allow**). On Windows they need no permission, but Windows keeps them
+  out of apps running as administrator. With a cable in, they go over USB as always.
 
 **The encrypted link.** It runs on TCP port 3333:
 - Each connection proves both sides hold the key, and every message is encrypted, so
@@ -1050,6 +1081,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
 | `tools/gen_silkscreen_font.py` | Regenerates the pixel fonts in `src/fonts/` from Silkscreen. |
 | `tools/quadra.py` | The knob from the command line, over USB: `hello`, `profile [name]`, `text WORD` (idle word), `lights`, `clock`, `wifi`, `cover image.png`, `notify` (a test request), `reboot [--serial]`, `flash [firmware.bin] [--partitions table.bin]` (no keys needed), `loop` (the control loop's health), `wifi-check` (tests the WiFi link's security against this knob), `home import` / `home list` (HOME's lamps, see [HOME](#home-xiaomi-lamps)) and `pd [--write-5v]` (the USB-PD chip's stored settings: checks them, or makes them 5 V 3 A only, for good; saves a copy to `~/.quadra/` first). |
 | `tools/mac/` | The optional [Mac service](#the-mac-service): now playing, agent requests, the local time. |
+| `tools/windows/` | The same for Windows: the [Windows service](#the-windows-service). |
 | `tools/midi_monitor.html` | A MIDI monitor for the browser (Chrome, Edge or Firefox; Safari has no Web MIDI): open the file, Connect MIDI, and every message from the knob in [MIDI](#midi) mode is decoded with the minilogue xd's map, 10-bit values and programs included; it also sends values back to test pick-up. |
 | `tools/tz_test/`, `tools/net_pend_test/` | Host checks for CLOCK's time-zone rules (against Python's zoneinfo) and for how the WiFi link queues handshakes. |
 
@@ -1064,7 +1096,7 @@ NanoDepsidf/tools/.venv/bin/python NanoDepsidf/tools/quadra.py hello   # for exa
   <img src="companion/docs/app-sys-info.png" width="440" alt="Companion app: System info, with power, heat, CPU and system tiles and the last minute">
 </p>
 
-`companion/` is a macOS app (Tauri, about 5 MB) that changes the knob's settings, app
+`companion/` is a macOS and Windows app (Tauri, about 5 MB) that changes the knob's settings, app
 profiles, lamps and synths from the computer:
 
 - **Mode:** what the knob sends (App, Home, Mouse, Keys, MIDI), and the profile in use (for
@@ -1093,7 +1125,7 @@ the knob over [WiFi](#wifi).
 cd companion && pnpm install
 pnpm tauri dev                 # the app
 pnpm dev                       # the page (open http://localhost:1420; add ?demo for a simulated knob)
-pnpm tauri build               # Quadra.app
+pnpm tauri build               # Quadra.app (on Windows, an installer)
 ```
 
 Every screen is covered in the [user guide](companion/docs/COMPANION.md). Building, WebHID and
@@ -1198,7 +1230,7 @@ NanoDepsidf/                   the firmware (PlatformIO project)
 │   ├── ui_cards.cpp           command cards, wheel, parameter dials (scene renderer)
 │   ├── ui_shape.cpp           the CAD profiles' isometric micro-interaction
 │   └── ui_fx.cpp              boot animation, idle screen (arcade attract mode)
-├── tools/                     host tools (see above); tools/mac/ is the Mac service
+├── tools/                     host tools (see above); tools/mac/ and tools/windows/ are the services
 └── docs/
     ├── FIRMWARE.md            technical documentation: how the firmware works
     ├── PIXEL_ART.md           how every screen, sprite, icon and card is drawn (read before UI work)
@@ -1251,7 +1283,6 @@ companion/                     the desktop app (Tauri + TypeScript; see companio
   at 4 in SAW and 2 in SINE).
 - Automatic profile switching from the frontmost app.
 - A Figma plugin for direct value control over HID.
-- The companion on Windows.
 
 **Known assumptions:**
 - Shortcuts are written for **macOS**; on Windows set the companion's Device › Computer (or the knob's BINDINGS) to PC (Cmd is sent

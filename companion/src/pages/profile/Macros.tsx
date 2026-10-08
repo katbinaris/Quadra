@@ -5,6 +5,7 @@
 import { useSignal } from "@preact/signals";
 import { useEffect, useRef } from "preact/hooks";
 import { ASCII_RE, hidFromCode, MAX, modifiersFromEvent, type Macro, type ProfileJson, type Step } from "../../profile";
+import { isWindows } from "../../platform";
 import { Box, Card, cls, Confirm, KeyField, Num, Seg, Text } from "../../ui/controls";
 import { titleCase } from "../../ui/shell";
 import type { Session } from "./session";
@@ -205,7 +206,7 @@ function MacroEditor(x: { p: ProfileJson; m: Macro; touch: () => void; remove: (
           {recording.value ? "■ Stop" : "● Record"}
         </button>
       </div>
-      <span class="hint">Record turns what you type into steps. Keys the system takes first (⌘Q, ⌘Tab) don't arrive: add those with + Key.</span>
+      <span class="hint">Record turns what you type into steps. Keys the system takes first ({isWindows ? "Alt+Tab, Win+L" : "⌘Q, ⌘Tab"}) don't arrive: add those with + Key.</span>
     </Box>
   );
 }
