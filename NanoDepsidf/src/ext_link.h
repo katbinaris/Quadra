@@ -33,3 +33,6 @@ bool ext_controls_link(host_link_t *link, uint32_t *gen);
 // main.c, once, before the USB personality is chosen: true when the restart that led to this
 // boot asked for a serial-only boot (EXT_REBOOT_SERIAL). Clears the request.
 bool ext_take_serial_boot(void);
+// TinyUSB's task: the same restart as EXT_REBOOT_SERIAL, asked for by the console port being
+// set to 1200 baud (what `pio run -t upload` does to a board before it looks for the port).
+void ext_link_serial_boot(void);

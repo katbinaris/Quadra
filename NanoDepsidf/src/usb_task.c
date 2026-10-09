@@ -421,6 +421,14 @@ static void app_sync(uint8_t *sent_buttons, uint8_t *sent_modifier) {
     }
 }
 
+// PlatformIO's uploader opens the board's serial port at 1200 baud and closes it, the sign
+// to restart into the loader ("use_1200bps_touch" in boards/nanofoc_d.json). Here that is one
+// boot with no TinyUSB, so the USB-Serial-JTAG port the uploader waits for comes up.
+static void on_line_coding(int itf, cdcacm_event_t *event) {
+    (void)itf;
+    if (event->line_coding_changed_data.p_line_coding->bit_rate == 1200) ext_link_serial_boot();
+}
+
 static void usb_task_fn(void *arg) {
     ESP_LOGI(TAG, "usb task started on core %d, prio %d", xPortGetCoreID(), uxTaskPriorityGet(NULL));
 
@@ -443,7 +451,7 @@ static void usb_task_fn(void *arg) {
         .callback_rx = NULL,
         .callback_rx_wanted_char = NULL,
         .callback_line_state_changed = NULL,
-        .callback_line_coding_changed = NULL,
+        .callback_line_coding_changed = on_line_coding,
     };
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm_cfg));
     // Redirects stdio (all ESP_LOGx output included) onto this CDC port -- restores a

@@ -142,6 +142,13 @@ bool ext_controls_link(host_link_t *link, uint32_t *gen) {
     return true;
 }
 
+void ext_link_serial_boot(void) {
+    if (atomic_load(&s_reboot_pending)) return;
+    s_serial_boot = SERIAL_BOOT_MAGIC;
+    s_reboot_at = xTaskGetTickCount() + REBOOT_DELAY_TICKS;
+    atomic_store(&s_reboot_pending, true);
+}
+
 bool ext_take_serial_boot(void) {
     bool requested = s_serial_boot == SERIAL_BOOT_MAGIC && esp_reset_reason() == ESP_RST_SW;
     s_serial_boot = 0;

@@ -997,6 +997,10 @@ tools/ui_preview/run.sh out.png           # render every screen on the host
   ticks.
 - **PSRAM runs at 80 MHz.** If a board fails to boot or fails its PSRAM check, set
   `CONFIG_SPIRAM_SPEED_40M=y` in both sdkconfig files.
+- **`pio run -t upload` from HID or MIDI mode** works by the 1200-baud touch: PlatformIO sets
+  the console port to 1200 baud, `on_line_coding()` in `usb_task.c` asks for the same one-boot
+  serial restart as `quadra.py flash` (`ext_link_serial_boot()`), and the uploader takes the
+  USB-Serial-JTAG port that comes up. A terminal opened at 1200 baud does the same.
 - **If an upload cannot find the device,** hold F3 + F4 while powering on (section 2).
 
 ## 17. Rules for changing the control loop
