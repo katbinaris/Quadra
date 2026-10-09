@@ -9,7 +9,7 @@ import { Bits, Box, Card, cls, Dial, KeyField, Num, Row, Seg, Text } from "../..
 import { titleCase } from "../../ui/shell";
 import { inputHaptic, setInputHaptic, SMOOTH, type Session } from "./session";
 
-const TITLE: Record<SlotName, string> = { knob: "Knob", f1: "F1", f2: "F2", f3: "F3", f4: "F4" };
+export const TITLE: Record<SlotName, string> = { knob: "Knob", f1: "F1", f2: "F2", f3: "F3", f4: "F4" };
 const NOTE: Record<SlotName, string> = {
   knob: "Turning it, no key held",
   f1: "Hold F1 and turn, or tap it",
@@ -35,7 +35,7 @@ const MOD_OPTS = [
   { bit: Mod.GUI, label: "⌘ Command" },
 ];
 const mediaName = (u: number | undefined) => titleCase(MEDIA_USAGES.find((m) => m.usage === u)?.label ?? "");
-const turns = (k: Kind | undefined) => k !== undefined && k !== "none" && k !== "tap";
+export const turns = (k: Kind | undefined) => k !== undefined && k !== "none" && k !== "tap";
 
 // A line about what an input does, for its tile.
 function summary(p: ProfileJson, name: SlotName): string {

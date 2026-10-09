@@ -64,7 +64,7 @@ function Sidebar() {
               nav(
                 { page: "profile", id: p.id, tab: "general", input: "knob" },
                 titleCase(p.name),
-                <ProfileIcon icon={p.icon} name={p.name} size={18} ring={p.index === using} />,
+                <ProfileIcon icon={p.icon} name={p.name} size={18} ring={p.index === using} id={p.id} builtin={(p.flags & ProfileFlag.BUILTIN) !== 0} />,
                 live(p.id) ? <i class="chg" /> : p.flags & ProfileFlag.BUILTIN ? null : <span class="val">Yours</span>,
                 r.page === "profile" && r.id === p.id,
               ),

@@ -249,11 +249,16 @@ only, and needs the Quadra app. What the synth sends back goes to the knob, whic
 
 ## 7. Haptics
 
-<img src="app-haptics.png" width="720" alt="Haptics: the five haptic profiles, the feel cards and the tuning sliders">
+<img src="app-haptics.png" width="720" alt="Haptics: the five haptic profiles with the app profiles that use the one picked, the feel cards and the tuning sliders">
 
 A **haptic profile** is a complete feel: how far apart the steps are, how a step pushes back,
 and how strongly. There are five, and everything uses them: the modes, and each input of each
 app profile. Tune one here and it changes everywhere it's used.
+
+Under the five, **used by** lists where the one you picked is in use: each app profile with
+the inputs that turn with it (Figma · Knob, F1), and Mouse or Keys mode when that is the
+current mode. Click a profile to open that input. An input left on Mode default counts for
+App mode's own haptic profile, while App is the mode.
 
 | Haptic profile | Steps per turn |
 |---|---|
@@ -318,7 +323,7 @@ A profile has four tabs.
 | Field | What it is |
 |---|---|
 | **Name** | Up to 15 characters |
-| **Icon** | **Import image…** takes any picture and makes the 48 px and 24 px icons the knob draws |
+| **Icon** | **Import image…** takes any picture and makes the 48 px and 24 px icons the knob draws. The app keeps the picture on this computer and shows it, sharp, in its own lists; another computer shows the knob's pixels |
 | **Key labels** | The words under F1–F4 on the knob's screen, up to 7 characters each |
 | **Main screen** | The middle of the knob's screen: the **Action name**, or a **3D shape** (cube, pyramid or octa, in three styles) that moves as you turn |
 

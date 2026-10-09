@@ -10,6 +10,7 @@ import { duplicateProfile, MAX_PROFILES } from "../../profiles";
 import { device, editorDirty, go, href, inUse, use, type ProfileTab } from "../../store";
 import { Box, Confirm, Row, Seg, SubTabs, Text } from "../../ui/controls";
 import { drawMainScreen } from "../../ui/draw";
+import { keepOriginal } from "../../appart";
 import { ProfileIcon } from "../../ui/icons";
 import { titleCase } from "../../ui/shell";
 import { origin } from "../Mode";
@@ -51,7 +52,7 @@ function Editor(p: { id: string; tab: ProfileTab; input: string }) {
   return (
     <>
       <div class="ph">
-        <ProfileIcon icon={icon} name={entry.name} size={48} />
+        <ProfileIcon icon={icon} name={entry.name} size={48} id={entry.id} builtin={(entry.flags & ProfileFlag.BUILTIN) !== 0} />
         <div class="t">
           <div class="line" style={{ gap: "8px" }}>
             <span class="title">{titleCase(draft?.name ?? entry.name)}</span>
@@ -117,7 +118,7 @@ function GeneralTab(x: { s: Session; p: ProfileJson; flags: number; icon: ImageD
             <button class="btn sm" onClick={() => file.current?.click()}>
               Import image…
             </button>
-            <span class="hint">Any picture, fitted to 48 and 24 pixels</span>
+            <span class="hint">Any picture, fitted to 48 and 24 pixels for the knob; this app keeps the picture for its own lists</span>
             <input
               ref={file}
               type="file"
@@ -131,6 +132,7 @@ function GeneralTab(x: { s: Session; p: ProfileJson; flags: number; icon: ImageD
                   const bmp = await createImageBitmap(f);
                   p.icon48 = imageToIcon(bmp, 48);
                   p.icon24 = imageToIcon(bmp, 24);
+                  keepOriginal(p.id, bmp, p.icon48);
                   s.touch();
                 } catch {
                   s.status.value = { msg: "That file isn't a picture this app can read", bad: true };

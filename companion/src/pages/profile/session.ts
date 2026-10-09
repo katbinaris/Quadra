@@ -7,6 +7,7 @@ import { DeviceError } from "../../device";
 import { HapticProfiles } from "../../proto";
 import { problem, type Action, type ProfileJson } from "../../profile";
 import { device, editorDirty, openEditor, route } from "../../store";
+import { forgetUsage } from "../../usedby";
 
 const APPLY_MS = 350;
 
@@ -61,6 +62,7 @@ export class Session {
     this.say("Sending…");
     try {
       await device.uploadProfile(p, false);
+      forgetUsage(this.id);
       this.sent = rev;
       editorDirty.value = this.sent !== this.edits;
       this.say("Live on the knob");

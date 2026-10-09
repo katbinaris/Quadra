@@ -79,6 +79,7 @@ input, select { user-select: text; -webkit-user-select: text; }
 /* a profile's icon */
 .picon { border-radius: 4px; flex-shrink: 0; display: inline-block; }
 .picon.px { image-rendering: pixelated; }
+.picon.art { object-fit: contain; }
 .picon.blank { display: inline-flex; align-items: center; justify-content: center; background: var(--s3); color: var(--muted); font-weight: 600; }
 .picon.inuse { box-shadow: 0 0 0 2px var(--s1), 0 0 0 3.5px var(--green); }
 
@@ -150,6 +151,9 @@ select.field { appearance: none; -webkit-appearance: none; padding-right: 28px; 
 
 .tag { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 5px; background: var(--s3); color: var(--muted); white-space: nowrap; }
 .badge { font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 99px; background: var(--s3); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+a.badge { color: var(--text); }
+a.badge:hover { text-decoration: none; background: var(--line); }
+.usedby { gap: 8px; }
 .badge.warn { background: var(--amberbg); color: var(--amber); }
 .badge.ok { background: var(--greenbg); color: var(--green); }
 

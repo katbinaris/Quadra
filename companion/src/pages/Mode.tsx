@@ -49,7 +49,7 @@ export function ModePage() {
             <div class="pgrid">
               {device.profiles.filter(Boolean).map((p) => (
                 <Card on={p.index === using} dirty={p.index === using && bit(Set.PROFILE)} onClick={() => device.set(Set.PROFILE, p.index)}>
-                  <ProfileIcon icon={p.icon} name={p.name} size={48} />
+                  <ProfileIcon icon={p.icon} name={p.name} size={48} id={p.id} builtin={(p.flags & ProfileFlag.BUILTIN) !== 0} />
                   <span class="nm">{titleCase(p.name)}</span>
                   <span class={p.flags & ProfileFlag.LIVE ? "sub amber" : "sub"}>{p.flags & ProfileFlag.LIVE ? "Not saved" : origin(p.flags)}</span>
                 </Card>

@@ -241,6 +241,11 @@ sizes. The pixel rules above apply only where it shows **the knob itself**.
   `image-rendering: pixelated`; smaller only as a thumbnail, e.g. the sidebar's; black is
   see-through, as on the device, so no black tile shows behind them), and the idle
   word field (Silkscreen).
+- **A profile as an app** (the sidebar, Mode's cards, a profile's header, Haptics' used by)
+  may show a sharp picture in place of the pixels: the picture its icon was imported from,
+  kept on that computer, or artwork for a built-in in `companion/src/assets/apps/<id>.png`
+  (`appart.ts`). Where the icon is shown as the knob draws it (General's Icon row, the
+  preview) it stays pixels.
 - **The device picture** (`companion/src/assets/device.png`) is a rendered photo of the
   hardware and the one non-pixel image; the sidebar shows it small, with the knob's screen
   drawn on its glass. The app doesn't stream the knob's screen or LEDs.

@@ -2,11 +2,17 @@
 // own values per feel, inside limits the knob sets, so it can't be tuned into instability.
 // Live on the knob while you drag; Save (or F2 on the knob) keeps them.
 
-import { ClickWaves, Feel, HapticProfiles, Limits, Set, type SetId } from "../proto";
-import { device, use } from "../store";
+import { useEffect } from "preact/hooks";
+import { SLOTS, type SlotName } from "../profile";
+import { ClickWaves, Feel, HapticProfiles, HidType, Limits, ProfileFlag, Set, type SetId } from "../proto";
+import { device, href, use } from "../store";
 import { Box, Card, ClickWave, Dial, PageHead, Slider, Wave } from "../ui/controls";
+import { ProfileIcon } from "../ui/icons";
 import { titleCase } from "../ui/shell";
 import { throttled } from "../ui/throttle";
+import { loadUsage, usage, usageLoading, usageRev } from "../usedby";
+import { TITLE, turns } from "./profile/Keys";
+import { inputHaptic } from "./profile/session";
 
 const send = throttled((id: SetId, v: number) => device.set(id, v));
 
@@ -16,9 +22,31 @@ const FEELS = [
   { value: Feel.VISCOSE, name: "Viscose", sub: "Smooth drag" },
 ];
 
+// The app profiles with an input that turns with haptic profile `h`. An input left on "Mode
+// default" turns with App mode's own, which the knob reports only while App is the mode.
+function usedBy(h: number, appDefault: number) {
+  return device.profiles.filter(Boolean).flatMap((p) => {
+    const json = usage(p.id);
+    const inputs = SLOTS.filter((n) => {
+      const a = json?.slots?.[n];
+      if (!turns(a?.kind)) return false;
+      const own = inputHaptic(a);
+      return (own < 0 ? appDefault : own) === h;
+    });
+    return inputs.length ? [{ p, inputs: inputs as SlotName[] }] : [];
+  });
+}
+
 export function HapticsPage() {
-  use("settings");
+  use("settings", "profiles");
   const s = device.settings!;
+  // Every profile's inputs, read once and again when the list changes.
+  const listed = device.profiles.filter(Boolean).map((p) => `${p.id}|${p.index}|${p.flags}|${p.name}`).join();
+  useEffect(() => void loadUsage(), [listed]);
+  void usageRev.value;
+  const mode = s.hidType === HidType.MOUSE ? "Mouse mode" : s.hidType === HidType.KEYBOARD ? "Keys mode" : "";
+  const users = usedBy(s.hapticProfile, s.hidType === HidType.APP ? s.modeHaptic : -2);
+  const byMode = mode !== "" && s.modeHaptic === s.hapticProfile;
   const bit = (id: number) => ((s.dirty >> id) & 1) === 1;
   const prof = HapticProfiles[s.hapticProfile];
   const name = titleCase(prof?.name ?? "");
@@ -39,6 +67,18 @@ export function HapticsPage() {
               <span class="sub">{h.detents ? `${h.detents} per turn` : "No steps · Viscose"}</span>
             </Card>
           ))}
+        </div>
+        <div class="line usedby">
+          <span class="hint">{name} is used by</span>
+          {users.map(({ p, inputs }) => (
+            <a class="badge" href={href({ page: "profile", id: p.id, tab: "keys", input: inputs[0] })}>
+              <ProfileIcon icon={p.icon} name={p.name} size={16} id={p.id} builtin={(p.flags & ProfileFlag.BUILTIN) !== 0} />
+              {titleCase(p.name)}
+              <span class="faint">{inputs.map((n) => TITLE[n]).join(", ")}</span>
+            </a>
+          ))}
+          {byMode && <span class="badge">{mode}</span>}
+          {users.length === 0 && !byMode && <span class="hint faint">{usageLoading.value ? "reading the profiles…" : "no app profile"}</span>}
         </div>
       </Box>
       <div class="split">
