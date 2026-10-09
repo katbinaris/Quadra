@@ -804,7 +804,7 @@ def cmd_flash(args):
 
 # --- checks ---
 
-TAG_SYS_B, CMD_STREAM, CMD_RESET_PEAKS = 0xB7, 0x15, 0x18
+TAG_SYS_A, TAG_SYS_B, CMD_STREAM, CMD_RESET_PEAKS = 0xB6, 0xB7, 0x15, 0x18
 
 
 def cmd_loop(args):
@@ -838,8 +838,78 @@ def cmd_loop(args):
     missed, spikes = struct.unpack_from("<If", last, 24)
     free, low = struct.unpack_from("<II", last, 32)
     print(f"{args.seconds:g} s: work max {wmax:.1f} us, jitter max {jitter:.1f} us, "
-          f"missed ticks +{missed - struct.unpack_from('<I', first, 24)[0]} (total {missed}), "
+          f"missed ticks {missed}, "
           f"spikes {spikes:.2f}/s, heap {free} B free (low {low})")
+
+
+def cmd_loadtest(args):
+    """Phase 10's cross-core load test: peaks reset, a window while the knob is worked hard, then
+    the verdict from SYS INFO's numbers (host_proto.h SYS_A / SYS_B). With --flash the window is
+    for saves (F2 on the knob, Save in the companion): the loop stops while flash is written, so
+    missed ticks are expected and only reported."""
+    q = Quadra()
+
+    def sys_pair(timeout_s):
+        got, end = {}, time.monotonic() + timeout_s
+        while time.monotonic() < end and len(got) < 2:
+            d = q.dev.read(REPORT_SIZE, 100)
+            if d and d[0] in (TAG_SYS_A, TAG_SYS_B):
+                got[d[0]] = bytes(d)
+        return (got[TAG_SYS_A], got[TAG_SYS_B]) if len(got) == 2 else None
+
+    first = sys_pair(1.5)
+    ours = first is None  # nobody streams (the companion does on System info): ask, and stop after
+    if ours:
+        q.send(bytes([CMD_STREAM, 2]))
+        first = sys_pair(3)
+    if first is None:
+        raise SystemExit("no SYS reports from the knob")
+    q.send(bytes([CMD_RESET_PEAKS]))
+    if args.flash:
+        print(f"{args.seconds:g} s: save a few times now (nudge a value and press F2, or Save a "
+              "profile in the companion).")
+    else:
+        print(f"{args.seconds:g} s: spin the knob fast, scroll (MOUSE) or run a command wheel (APP), "
+              "keep the LEDs and the screen moving.")
+    end, shown = time.monotonic() + args.seconds, None
+    while (left := end - time.monotonic()) > 0:
+        if int(left) != shown:
+            shown = int(left)
+            print(f"\r  {shown + 1:4d} s left ", end="", flush=True)
+        q.dev.read(REPORT_SIZE, 200)  # keeps the queue of reports from filling
+    print("\r" + " " * 20 + "\r", end="")
+    last = sys_pair(3)
+    if ours:
+        q.send(bytes([CMD_STREAM, 0]))
+    q.close()
+    if last is None:
+        raise SystemExit("no SYS reports from the knob")
+    a, b = last
+    khz, avg, wmax, jitter = struct.unpack_from("<ffff", b, 8)
+    missed, spikes = struct.unpack_from("<If", b, 24)
+    free, low, drops = struct.unpack_from("<III", b, 32)
+    crc = struct.unpack_from("<I", b, 52)[0]
+    d_missed, d_drops, d_crc = missed, drops, crc  # counted from the reset
+    total_peak = struct.unpack_from("<H", a, 12)[0]
+    chip, chip_peak = struct.unpack_from("<ff", a, 16)
+    coil_peak = struct.unpack_from("<H", a, 26)[0]
+    print(f"  loop        {khz:.2f} kHz, work {avg:.1f} us avg / {wmax:.1f} us max, jitter {jitter:.1f} us, "
+          f"{spikes:.2f} spikes/s")
+    print(f"  missed      {d_missed} ticks")
+    print(f"  HID drops   {d_drops}")
+    print(f"  sensor CRC  {d_crc} errors")
+    print(f"  load        core 0 {b[4]}% (peak {b[6]}%), core 1 {b[5]}% (peak {b[7]}%)")
+    print(f"  heat        chip {chip:.1f} C (peak {chip_peak:.1f}), coil peak {coil_peak} mA, "
+          f"total peak {total_peak} mA (estimate)")
+    print(f"  heap        {free} B free (low {low})")
+    if args.flash:
+        print(f"flash writes: {d_missed} ticks missed ({d_missed / 10:.1f} ms of the loop), "
+              f"worst gap {jitter / 1000:.1f} ms")
+        return
+    failed = [n for n, v in (("missed ticks", d_missed), ("HID drops", d_drops), ("sensor CRC errors", d_crc)) if v]
+    if failed:
+        raise SystemExit("FAIL: " + ", ".join(failed))
+    print("PASS: no missed ticks, no dropped HID reports")
 
 
 def cmd_wifi_check(args):
@@ -1125,6 +1195,11 @@ def main():
     p = sub.add_parser("loop", help="the control loop's health over a window (missed ticks, jitter)")
     p.add_argument("seconds", nargs="?", type=float, default=10)
     p.set_defaults(fn=cmd_loop)
+    p = sub.add_parser("loadtest", help="the cross-core load test: a verdict after a window of hard use "
+                       "(--flash: what saves cost the loop)")
+    p.add_argument("--seconds", type=float, default=120)
+    p.add_argument("--flash", action="store_true")
+    p.set_defaults(fn=cmd_loadtest)
     p = sub.add_parser("wifi-check", help="check the companion's WiFi link against this knob")
     p.add_argument("--rekey", action="store_true",
                    help="also check that a new key ends the old session (every companion pairs again)")
